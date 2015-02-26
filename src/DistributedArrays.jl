@@ -1,7 +1,7 @@
 module DistributedArrays
 
 export DArray, SubOrDArray
-export dzeros, dones, dfill, drand, drandn, distribute, localpart
+export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes
 
 type DArray{T,N,A} <: AbstractArray{T,N}
     dims::NTuple{N,Int}
