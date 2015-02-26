@@ -100,9 +100,9 @@ end
 # get array of start indexes for dividing sz into nc chunks
 function defaultdist(sz::Int, nc::Int)
     if sz >= nc
-        round(Int,linspace(1, sz+1, nc+1))
+        return round(Int,linspace(1, sz+1, nc+1))
     else
-        [[1:(sz+1)], zeros(Int, nc-sz)]
+        return [[1:(sz+1)], zeros(Int, nc-sz)]
     end
 end
 
