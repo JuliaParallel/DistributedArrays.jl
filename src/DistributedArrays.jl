@@ -389,4 +389,11 @@ function mapreducedim!(f, op, R::DArray, A::DArray)
     B = mapreducedim_within(f, op, A, region)
     return mapreducedim_between!(identity, op, R, B, region)
 end
+
+# LinAlg
+Base.scale!(A::DArray, x::Number) = begin
+    @sync for p in procs(A)
+        @spawnat p scale!(localpart(A), x)
+    end
+end
 end # module
