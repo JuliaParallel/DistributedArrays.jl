@@ -1,8 +1,31 @@
 module DistributedArrays
 
 export DArray, SubOrDArray
-export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, mapreducedim!
+export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes
 
+@doc """
+### DArray(init, dims, [procs, dist])
+
+Construct a distributed array.
+
+The parameter `init` is a function that accepts a tuple of index ranges.
+This function should allocate a local chunk of the distributed array and initialize it for the specified indices.
+
+`dims` is the overall size of the distributed array.
+
+`procs` optionally specifies a vector of process IDs to use.
+If unspecified, the array is distributed over all worker processes only. Typically, when running in distributed mode,
+i.e., nprocs() > 1, this would mean that no chunk of the distributed array exists on the process hosting the
+interactive julia prompt.
+
+`dist` is an integer vector specifying how many chunks the distributed array should be divided into in each dimension.
+
+For example, the `dfill` function that creates a distributed array and fills it with a value `v` is implemented as:
+
+```julia
+dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
+```
+""" ->
 type DArray{T,N,A} <: AbstractArray{T,N}
     dims::NTuple{N,Int}
 
@@ -31,8 +54,8 @@ typealias SubOrDArray{T,N}         Union(DArray{T,N}, SubDArray{T,N})
 
 ## core constructors ##
 
-# dist == size(chunks)
 function DArray(init, dims, procs, dist)
+    # dist == size(chunks)
     np = prod(dist)
     procs = procs[1:np]
     idxs, cuts = chunk_idxs([dims...], dist)
@@ -62,6 +85,12 @@ Base.similar{T}(d::DArray{T}, dims::Dims) = similar(d, T, dims)
 Base.similar{T}(d::DArray{T}) = similar(d, T, size(d))
 
 Base.size(d::DArray) = d.dims
+
+@doc """
+### procs(d::DArray)
+
+Get the vector of processes storing pieces of DArray `d`.
+""" ->
 Base.procs(d::DArray) = d.pmap
 
 chunktype{T,N,A}(d::DArray{T,N,A}) = A
@@ -126,9 +155,14 @@ function localpartindex(pmap::Array{Int})
     end
     return 0
 end
-
 localpartindex(d::DArray) = localpartindex(d.pmap)
 
+@doc """
+### localpart(d)
+
+Get the local piece of a distributed array.
+Returns an empty array if no local part exists on the calling process.
+""" ->
 function localpart{T,N,A}(d::DArray{T,N,A})
     lpidx = localpartindex(d)
     if lpidx == 0
@@ -137,6 +171,13 @@ function localpart{T,N,A}(d::DArray{T,N,A})
         fetch(d.chunks[lpidx])::A
     end
 end
+
+@doc """
+### localindexes(d)
+
+A tuple describing the indexes owned by the local process.
+Returns a tuple with empty ranges if no local part exists on the calling process.
+""" ->
 function localindexes(d::DArray)
     lpidx = localpartindex(d)
     if lpidx == 0
@@ -155,19 +196,58 @@ chunk{T,N,A}(d::DArray{T,N,A}, i...) = fetch(d.chunks[i...])::A
 
 ## convenience constructors ##
 
+@doc """
+### dzeros(dims, ...)
+
+Construct a distributed array of zeros.
+Trailing arguments are the same as those accepted by `DArray`.
+""" ->
 dzeros(args...) = DArray(I->zeros(map(length,I)), args...)
 dzeros(d::Int...) = dzeros(d)
+
+@doc """
+### dzeros(dims, ...)
+
+Construct a distributed array of ones.
+Trailing arguments are the same as those accepted by `DArray`.
+""" ->
 dones(args...) = DArray(I->ones(map(length,I)), args...)
 dones(d::Int...) = dones(d)
+
+@doc """
+### dfill(x, dims, ...)
+
+Construct a distributed array filled with value `x`.
+Trailing arguments are the same as those accepted by `DArray`.
+""" ->
 dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 dfill(v, d::Int...) = dfill(v, d)
+
+@doc """
+### drand(dims, ...)
+
+Construct a distributed uniform random array.
+Trailing arguments are the same as those accepted by `DArray`.
+""" ->
 drand(args...)  = DArray(I->rand(map(length,I)), args...)
 drand(d::Int...) = drand(d)
+
+@doc """
+### drandn(dims, ...)
+
+Construct a distributed normal random array.
+Trailing arguments are the same as those accepted by `DArray`.
+""" ->
 drandn(args...) = DArray(I->randn(map(length,I)), args...)
 drandn(d::Int...) = drandn(d)
 
 ## conversions ##
 
+@doc """
+### distribute(a)
+
+Convert a local array to distributed.
+""" ->
 function distribute(a::AbstractArray)
     owner = myid()
     rr = RemoteRef()
@@ -257,7 +337,12 @@ Base.getindex(d::DArray) = d[1]
 Base.getindex(d::DArray, I::Union(Int,UnitRange{Int})...) = sub(d,I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
-    dest.dims == src.dims && dest.pmap == src.pmap && dest.indexes == src.indexes && dest.cuts == src.cuts || throw(DimensionMismatch("destination array doesn't fit to source array"))
+    if !(dest.dims == src.dims &&
+         dest.pmap == src.pmap &&
+         dest.indexes == src.indexes &&
+         dest.cuts == src.cuts)
+        throw(DimensionMismatch("destination array doesn't fit to source array"))
+    end
     for p in dest.pmap
         @spawnat p copy!(localpart(dest), localpart(src))
     end
@@ -384,7 +469,9 @@ end
 
 function mapreducedim!(f, op, R::DArray, A::DArray)
     nd = ndims(A)
-    nd == ndims(R) || throw(ArgumentError("input and output arrays must have the same number of dimensions"))
+    if nd != ndims(R)
+        throw(ArgumentError("input and output arrays must have the same number of dimensions"))
+    end
     region = tuple([1:ndims(A);][[size(R)...] .!= [size(A)...]]...)
     B = mapreducedim_within(f, op, A, region)
     return mapreducedim_between!(identity, op, R, B, region)
