@@ -343,8 +343,10 @@ Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
          dest.cuts == src.cuts)
         throw(DimensionMismatch("destination array doesn't fit to source array"))
     end
-    for p in dest.pmap
-        @spawnat p copy!(localpart(dest), localpart(src))
+    @sync begin
+        for p in dest.pmap
+            @spawnat p copy!(localpart(dest), localpart(src))
+        end
     end
     dest
 end
