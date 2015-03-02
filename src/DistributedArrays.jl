@@ -456,12 +456,14 @@ function mapreducedim_within(f, op, A::DArray, region)
 end
 
 function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
-    for p in procs(R)
-        @sync @spawnat p begin
-            localind = [r for r = localindexes(A)]
-            localind[[region...]] = [1:n for n = size(A)[[region...]]]
-            B = convert(Array, A[localind...])
-            mapreducedim!(f, op, localpart(R), B)
+    @sync begin
+        for p in procs(R)
+            @spawnat p begin
+                localind = [r for r = localindexes(A)]
+                localind[[region...]] = [1:n for n = size(A)[[region...]]]
+                B = convert(Array, A[localind...])
+                mapreducedim!(f, op, localpart(R), B)
+            end
         end
     end
     R
