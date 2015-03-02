@@ -28,23 +28,20 @@ dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 """ ->
 type DArray{T,N,A} <: AbstractArray{T,N}
     dims::NTuple{N,Int}
-
     chunks::Array{RemoteRef,N}
-
-    # pmap[i]==p ⇒ processor p has piece i
-    pmap::Array{Int,N}
-
-    # indexes held by piece i
-    indexes::Array{NTuple{N,UnitRange{Int}},N}
-
-    # cuts[d][i] = first index of chunk i in dimension d
-    cuts::Vector{Vector{Int}}
+    pmap::Array{Int,N}                          # pmap[i]==p ⇒ processor p has piece i
+    indexes::Array{NTuple{N,UnitRange{Int}},N}  # indexes held by piece i
+    cuts::Vector{Vector{Int}}                   # cuts[d][i] = first index of chunk i in dimension d
 
     function DArray(dims, chunks, pmap, indexes, cuts)
         # check invariants
-        assert(size(chunks) == size(indexes))
-        assert(length(chunks) == length(pmap))
-        assert(dims == map(last,last(indexes)))
+        if size(chunks) != size(indexes)
+            throw(ArgumentError("size(chunks) != size(indexes), $(repr(chunks)) != $(repr(indexes))"))
+        elseif length(chunks) != length(pmap)
+            throw(ArgumentError("length(chunks) != length(pmap), $(length(chunks)) != $(length(pmap))"))
+        elseif dims != map(last, last(indexes))
+            throw(ArgumentError("dimension of DArray (dim) and indexes do not match"))
+        end
         return new(dims, chunks, reshape(pmap, size(chunks)), indexes, cuts)
     end
 end
@@ -72,9 +69,9 @@ function DArray(init, dims, procs)
     if isempty(procs)
         throw(ArgumentError("no processors given"))
     end
-    return DArray(init, dims, procs, defaultdist(dims,procs))
+    return DArray(init, dims, procs, defaultdist(dims, procs))
 end
-DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(),maximum(dims))])
+DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(), maximum(dims))])
 
 # new DArray similar to an existing one
 DArray(init, d::DArray) = DArray(init, size(d), procs(d), [size(d.chunks)...])
