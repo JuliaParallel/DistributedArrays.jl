@@ -484,5 +484,7 @@ Base.scale!(A::DArray, x::Number) = begin
     @sync for p in procs(A)
         @spawnat p scale!(localpart(A), x)
     end
+    return A
 end
+
 end # module

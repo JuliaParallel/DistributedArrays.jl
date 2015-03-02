@@ -27,6 +27,11 @@ d2 = map(x->1, d)
 map!(x->1, d)
 @test reduce(+, d) == 100
 
+let a = randn(10,10)
+    da = distribute(a)
+    @test scale!(da, 2) == scale!(a, 2)
+end
+
 # Test mapreduce on DArrays
 let
     # Test that it is functionally equivalent to the standard method
