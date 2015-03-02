@@ -45,12 +45,12 @@ type DArray{T,N,A} <: AbstractArray{T,N}
         assert(size(chunks) == size(indexes))
         assert(length(chunks) == length(pmap))
         assert(dims == map(last,last(indexes)))
-        new(dims, chunks, reshape(pmap, size(chunks)), indexes, cuts)
+        return new(dims, chunks, reshape(pmap, size(chunks)), indexes, cuts)
     end
 end
 
 typealias SubDArray{T,N,D<:DArray} SubArray{T,N,D}
-typealias SubOrDArray{T,N}         Union(DArray{T,N}, SubDArray{T,N})
+typealias SubOrDArray{T,N} Union(DArray{T,N}, SubDArray{T,N})
 
 ## core constructors ##
 
@@ -65,14 +65,14 @@ function DArray(init, dims, procs, dist)
     end
     p = max(1, localpartindex(procs))
     A = remotecall_fetch(procs[p], r->typeof(fetch(r)), chunks[p])
-    DArray{eltype(A),length(dims),A}(dims, chunks, procs, idxs, cuts)
+    return DArray{eltype(A),length(dims),A}(dims, chunks, procs, idxs, cuts)
 end
 
 function DArray(init, dims, procs)
     if isempty(procs)
         throw(ArgumentError("no processors given"))
     end
-    DArray(init, dims, procs, defaultdist(dims,procs))
+    return DArray(init, dims, procs, defaultdist(dims,procs))
 end
 DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(),maximum(dims))])
 
@@ -123,7 +123,7 @@ function defaultdist(dims, procs)
         end
         np = div(np,fac)
     end
-    chunks
+    return chunks
 end
 
 # get array of start indexes for dividing sz into nc chunks
@@ -143,7 +143,7 @@ function chunk_idxs(dims, chunks)
     cartesianmap(tuple(chunks...)) do cidx...
         idxs[cidx...] = ntuple(n, i->(cuts[i][cidx[i]]:cuts[i][cidx[i]+1]-1))
     end
-    idxs, cuts
+    return (idxs, cuts)
 end
 
 function localpartindex(pmap::Array{Int})
@@ -166,10 +166,9 @@ Returns an empty array if no local part exists on the calling process.
 function localpart{T,N,A}(d::DArray{T,N,A})
     lpidx = localpartindex(d)
     if lpidx == 0
-        convert(A, Array(T, ntuple(N,i->0)))::A
-    else
-        fetch(d.chunks[lpidx])::A
+        return convert(A, Array(T, ntuple(N, i->0)))::A
     end
+    return fetch(d.chunks[lpidx])::A
 end
 
 @doc """
@@ -181,16 +180,14 @@ Returns a tuple with empty ranges if no local part exists on the calling process
 function localindexes(d::DArray)
     lpidx = localpartindex(d)
     if lpidx == 0
-        ntuple(ndims(d), i->1:0)
-    else
-        d.indexes[lpidx]
+        return ntuple(ndims(d), i->1:0)
     end
+    return d.indexes[lpidx]
 end
 
 # find which piece holds index (I...)
-function locate(d::DArray, I::Int...)
+locate(d::DArray, I::Int...) =
     ntuple(ndims(d), i->searchsortedlast(d.cuts[i], I[i]))
-end
 
 chunk{T,N,A}(d::DArray{T,N,A}, i...) = fetch(d.chunks[i...])::A
 
@@ -260,7 +257,7 @@ function distribute(a::AbstractArray)
     for chunk in d.chunks
         wait(chunk)
     end
-    d
+    return d
 end
 
 Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
@@ -292,7 +289,7 @@ Base.reshape{T,S<:Array}(A::DArray{T,1,S}, d::Dims) = begin
     if prod(d) != length(A)
         throw(DimensionMismatch("dimensions must be consistent with array size"))
     end
-    DArray(d) do I
+    return DArray(d) do I
         sz = map(length,I)
         d1offs = first(I[1])
         nd = length(I)
@@ -327,7 +324,7 @@ function getindex_tuple{T}(d::DArray{T}, I::(Int...))
     chunk = d.chunks[chidx...]
     idxs = d.indexes[chidx...]
     localidx = ntuple(ndims(d), i->(I[i]-first(idxs[i])+1))
-    chunk[localidx...]::T
+    return chunk[localidx...]::T
 end
 
 Base.getindex(d::DArray, i::Int) = getindex_tuple(d, ind2sub(size(d), i))
@@ -348,7 +345,7 @@ Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
             @spawnat p copy!(localpart(dest), localpart(src))
         end
     end
-    dest
+    return dest
 end
 
 # local copies are obtained by convert(Array, ) or assigning from
@@ -452,7 +449,7 @@ function mapreducedim_within(f, op, A::DArray, region)
     arraysize = [size(A)...]
     gridsize = [size(A.indexes)...]
     arraysize[[region...]] = gridsize[[region...]]
-    DArray(tuple(arraysize...), procs(A), tuple(gridsize...)) do I
+    return DArray(tuple(arraysize...), procs(A), tuple(gridsize...)) do I
         mapreducedim(f, op, localpart(A), region)
     end
 end
@@ -468,7 +465,7 @@ function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
             end
         end
     end
-    R
+    return R
 end
 
 function mapreducedim!(f, op, R::DArray, A::DArray)
