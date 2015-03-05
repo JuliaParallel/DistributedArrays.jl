@@ -44,8 +44,6 @@ let
 end
 
 # Test mapreducedim on DArrays
-# TODO: this seems to be tied to method definitions internal to Base
-#=
 @test mapreducedim(t -> t*t, +, d2, 1) == mapreducedim(t -> t*t, +, convert(Array, d2), 1)
 @test mapreducedim(t -> t*t, +, d2, 2) == mapreducedim(t -> t*t, +, convert(Array, d2), 2)
 @test mapreducedim(t -> t*t, +, d2, (1,2)) == mapreducedim(t -> t*t, +, convert(Array, d2), (1,2))
@@ -64,4 +62,3 @@ for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
     @test_approx_eq mean(d, dms) mean(da, dms)
     # @test_approx_eq std(d, dms) std(da, dms) Requires centralize_sumabs2! for DArrays
 end
-=#

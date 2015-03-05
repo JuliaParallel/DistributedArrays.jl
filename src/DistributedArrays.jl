@@ -428,21 +428,21 @@ end
 # mapreducedim
 function reducedim_initarray{R}(A::DArray, region, v0, ::Type{R})
     procsgrid = reshape(procs(A), size(A.indexes))
-    gridsize = reduced_dims(size(A.indexes), region)
+    gridsize = Base.reduced_dims(size(A.indexes), region)
     procsgrid = procsgrid[UnitRange{Int}[1:n for n = gridsize]...]
-    return dfill(convert(R, v0), reduced_dims(A, region), procsgrid, gridsize)
+    return dfill(convert(R, v0), Base.reduced_dims(A, region), procsgrid, gridsize)
 end
 reducedim_initarray{T}(A::DArray, region, v0::T) = reducedim_initarray(A, region, v0, T)
 
-function reducedim_initarray0{R}(A::DArray, region, v0, ::Type{R})
+Base.reducedim_initarray0{R}(A::DArray, region, v0, ::Type{R}) = begin
     procsgrid = reshape(procs(A), size(A.indexes))
-    gridsize = reduced_dims0(size(A.indexes), region)
+    gridsize = Base.reduced_dims0(size(A.indexes), region)
     procsgrid = procsgrid[UnitRange{Int}[1:n for n = gridsize]...]
-    return dfill(convert(R, v0), reduced_dims0(A, region), procsgrid, gridsize)
+    return dfill(convert(R, v0), Base.reduced_dims0(A, region), procsgrid, gridsize)
 end
-reducedim_initarray0{T}(A::DArray, region, v0::T) = reducedim_initarray0(A, region, v0, T)
+Base.reducedim_initarray0{T}(A::DArray, region, v0::T) = reducedim_initarray0(A, region, v0, T)
 
-function mapreducedim_within(f, op, A::DArray, region)
+mapreducedim_within(f, op, A::DArray, region) = begin
     arraysize = [size(A)...]
     gridsize = [size(A.indexes)...]
     arraysize[[region...]] = gridsize[[region...]]
@@ -458,14 +458,14 @@ function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
                 localind = [r for r = localindexes(A)]
                 localind[[region...]] = [1:n for n = size(A)[[region...]]]
                 B = convert(Array, A[localind...])
-                mapreducedim!(f, op, localpart(R), B)
+                Base.mapreducedim!(f, op, localpart(R), B)
             end
         end
     end
     return R
 end
 
-function mapreducedim!(f, op, R::DArray, A::DArray)
+Base.mapreducedim!(f, op, R::DArray, A::DArray) = begin
     nd = ndims(A)
     if nd != ndims(R)
         throw(ArgumentError("input and output arrays must have the same number of dimensions"))
@@ -473,6 +473,10 @@ function mapreducedim!(f, op, R::DArray, A::DArray)
     region = tuple([1:ndims(A);][[size(R)...] .!= [size(A)...]]...)
     B = mapreducedim_within(f, op, A, region)
     return mapreducedim_between!(identity, op, R, B, region)
+end
+
+Base.mapreducedim(f, op, R::DArray, A::DArray) = begin
+    Base.mapreducedim!(f, op, reducedim_initarray(A, region, v0), A)
 end
 
 # LinAlg

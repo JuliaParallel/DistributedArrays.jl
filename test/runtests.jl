@@ -7,4 +7,3 @@ blas_set_num_threads(1)
 @everywhere using DistributedArrays
 
 include("darray.jl")
-
