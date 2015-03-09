@@ -466,10 +466,8 @@ function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
 end
 
 Base.mapreducedim!(f, op, R::DArray, A::DArray) = begin
-    nd = ndims(A)
-    if nd != ndims(R)
-        throw(ArgumentError("input and output arrays must have the same number of dimensions"))
-    end
+    lsize = Base.check_reducedims(R,A)
+    isempty(A) && return R
     region = tuple([1:ndims(A);][[size(R)...] .!= [size(A)...]]...)
     B = mapreducedim_within(f, op, A, region)
     return mapreducedim_between!(identity, op, R, B, region)
