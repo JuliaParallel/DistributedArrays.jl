@@ -1,9 +1,11 @@
+srand(123)
+
 if nworkers() < 3
     remotecall_fetch(1, () -> addprocs(3))
 end
 
-id_me = myid()
-id_other = filter(x -> x != id_me, procs())[rand(1:(nprocs()-1))]
+const id_me = myid()
+const id_other = filter(x -> x != id_me, procs())[rand(1:(nprocs()-1))]
 
 d = drand((200,200), [id_me, id_other])
 dc = copy(d)
@@ -61,4 +63,18 @@ for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
     # statistical function (works generically through calls to mapreducedim!, i.e. not implemented specifically for DArrays)
     @test_approx_eq mean(d, dms) mean(da, dms)
     # @test_approx_eq std(d, dms) std(da, dms) Requires centralize_sumabs2! for DArrays
+end
+
+let A = randn(100,100), DA = distribute(A)
+    #@test_throws BoundsError sum(DA,-1)
+    @test sum(A,0) == sum(DA,0)
+    @test_approx_eq_eps sum(A) sum(DA) 1e-12
+    @test_approx_eq_eps sum(A,1) sum(DA,1) 1e-12
+    @test_approx_eq_eps sum(A,2) sum(DA,2) 1e-12
+    @test_approx_eq_eps sum(A,3) sum(DA,3) 1e-12
+
+    @test_throws BoundsError size(DA, 0)
+    @test size(A,1) == size(DA,1)
+    @test size(A,2) == size(DA,2)
+    @test size(A,3) == size(DA,3)
 end

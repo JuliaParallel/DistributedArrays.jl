@@ -452,14 +452,12 @@ mapreducedim_within(f, op, A::DArray, region) = begin
 end
 
 function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
-    @sync begin
-        for p in procs(R)
-            @spawnat p begin
-                localind = [r for r = localindexes(A)]
-                localind[[region...]] = [1:n for n = size(A)[[region...]]]
-                B = convert(Array, A[localind...])
-                Base.mapreducedim!(f, op, localpart(R), B)
-            end
+    @sync for p in procs(R)
+        @spawnat p begin
+            localind = [r for r = localindexes(A)]
+            localind[[region...]] = [1:n for n = size(A)[[region...]]]
+            B = convert(Array, A[localind...])
+            Base.mapreducedim!(f, op, localpart(R), B)
         end
     end
     return R
@@ -467,8 +465,12 @@ end
 
 Base.mapreducedim!(f, op, R::DArray, A::DArray) = begin
     lsize = Base.check_reducedims(R,A)
-    isempty(A) && return R
+    #TODO: possible aliasing of result array?
+    isempty(A) && return copy(R)
     region = tuple([1:ndims(A);][[size(R)...] .!= [size(A)...]]...)
+    if isempty(region)
+        return copy!(R, A)
+    end
     B = mapreducedim_within(f, op, A, region)
     return mapreducedim_between!(identity, op, R, B, region)
 end
