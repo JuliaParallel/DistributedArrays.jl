@@ -78,3 +78,9 @@ let A = randn(100,100), DA = distribute(A)
     @test size(A,2) == size(DA,2)
     @test size(A,3) == size(DA,3)
 end
+
+# test length / endof
+let A = randn(100,100), DA = distribute(A)
+    @test length(A) == length(DA)
+    @test endof(A) == endof(DA)
+end
