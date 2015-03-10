@@ -465,8 +465,9 @@ end
 
 Base.mapreducedim!(f, op, R::DArray, A::DArray) = begin
     lsize = Base.check_reducedims(R,A)
-    #TODO: possible aliasing of result array?
-    isempty(A) && return copy(R)
+    if isempty(A)
+        return copy(R)
+    end
     region = tuple([1:ndims(A);][[size(R)...] .!= [size(A)...]]...)
     if isempty(region)
         return copy!(R, A)
