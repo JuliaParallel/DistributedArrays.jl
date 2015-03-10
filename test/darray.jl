@@ -83,15 +83,6 @@ facts("test mapreducdim, reducedim on DArrays") do
     end
 end
 
-
-#=
-# statistical function (works generically through calls to mapreducedim!,
-i.e. not implemented specifically for DArrays)
-@test_approx_eq mean(d, dms) mean(da, dms)
-# @test_approx_eq std(d, dms) std(da, dms) Requires centralize_sumabs2! for DArrays
-end
-=#
-
 facts("test statistical functions on DArrays") do
     dims = (20,20,20)
     DA = drandn(dims)
@@ -100,6 +91,12 @@ facts("test statistical functions on DArrays") do
     context("test mean") do
         for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
             @fact mean(DA,dms) => roughly(mean(A,dms), atol=1e-12)
+        end
+    end
+
+    context("test std") do
+        for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
+            @pending std(DA,dms) => roughly(std(A,dms), atol=1e-12)
         end
     end
 end
