@@ -92,6 +92,18 @@ i.e. not implemented specifically for DArrays)
 end
 =#
 
+facts("test statistical functions on DArrays") do
+    dims = (20,20,20)
+    DA = drandn(dims)
+    A = convert(Array, DA)
+
+    context("test mean") do
+        for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
+            @fact mean(DA,dms) => roughly(mean(A,dms), atol=1e-12)
+        end
+    end
+end
+
 facts("test sum on DArrays") do
     A = randn(100,100)
     DA = distribute(A)
