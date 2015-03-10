@@ -1,8 +1,5 @@
-srand(123)
 
-if nworkers() < 3
-    remotecall_fetch(1, () -> addprocs(3))
-end
+srand(123)
 
 const id_me = myid()
 const id_other = filter(x -> x != id_me, procs())[rand(1:(nprocs()-1))]
