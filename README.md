@@ -155,3 +155,33 @@ is `DArray`\ -specific, but we list it here for completeness::
         new
     end
 ```
+
+Numerical Results of Distributed Computations
+---------------------------------------------
+
+Floating point arithmetic is not associative and this comes up
+when performing distributed computations over `DArray`s.  All `DArray`
+operations are performed over the `localpart` chunks and then aggregated.
+The change in ordering of the operations will change the numeric result as
+seen in this simple example:
+
+```julia
+julia> addprocs(8);
+
+julia> @everywhere using DistributedArrays
+
+julia> A = fill(1.1, (100,100));
+
+julia> sum(A)
+11000.000000000013
+
+julia> DA = distribute(A);
+
+julia> sum(DA)
+11000.000000000127
+
+julia> sum(A) == sum(DA)
+false
+```
+
+The ultimate ordering of operations will be dependent on how the Array is distributed.
