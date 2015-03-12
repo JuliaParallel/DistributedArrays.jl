@@ -15,6 +15,16 @@ facts("test DArray equality") do
     end
 end
 
+facts("test @DArray comprehension constructor") do
+
+    context("test valid use of @DArray") do
+        @fact (@DArray [i+j for i=1:10, j=1:10]) => [i+j for i=1:10, j=1:10]
+    end
+
+    context("test invalid use of @DArray") do
+        @fact_throws ArgumentError eval(:((@DArray [1,2,3,4])))
+    end
+end
 
 facts("test DArray / Array conversion") do
     D = drand((200,200), [MYID, OTHERIDS])
