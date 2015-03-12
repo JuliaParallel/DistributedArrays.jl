@@ -119,7 +119,7 @@ function defaultdist(dims, procs)
     k = 1
     while np > 1
         # repeatedly allocate largest factor to largest dim
-        if np%f[k] != 0
+        if np % f[k] != 0
             k += 1
             if k > length(f)
                 break
@@ -133,7 +133,7 @@ function defaultdist(dims, procs)
             dims[dno] = div(dims[dno], fac)
             chunks[dno] *= fac
         end
-        np = div(np,fac)
+        np = div(np, fac)
     end
     return chunks
 end
@@ -141,7 +141,7 @@ end
 # get array of start indexes for dividing sz into nc chunks
 function defaultdist(sz::Int, nc::Int)
     if sz >= nc
-        return round(Int,linspace(1, sz+1, nc+1))
+        return round(Int, linspace(1, sz+1, nc+1))
     else
         return [[1:(sz+1)], zeros(Int, nc-sz)]
     end
@@ -343,7 +343,7 @@ Base.getindex(d::DArray, i::Int) = getindex_tuple(d, ind2sub(size(d), i))
 Base.getindex(d::DArray, i::Int...) = getindex_tuple(d, i)
 
 Base.getindex(d::DArray) = d[1]
-Base.getindex(d::DArray, I::Union(Int,UnitRange{Int})...) = sub(d,I...)
+Base.getindex(d::DArray, I::Union(Int,UnitRange{Int})...) = sub(d, I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
     if !(dest.dims == src.dims &&
@@ -352,10 +352,8 @@ Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
          dest.cuts == src.cuts)
         throw(DimensionMismatch("destination array doesn't fit to source array"))
     end
-    @sync begin
-        for p in dest.pmap
-            @spawnat p copy!(localpart(dest), localpart(src))
-        end
+    @sync for p in dest.pmap
+        @spawnat p copy!(localpart(dest), localpart(src))
     end
     return dest
 end
@@ -365,11 +363,9 @@ end
 
 Base.setindex!(a::Array, d::DArray, I::UnitRange{Int}...) = begin
     n = length(I)
-    @sync begin
-        for i = 1:length(d.chunks)
-            K = d.indexes[i]
-            @async a[[I[j][K[j]] for j=1:n]...] = chunk(d, i)
-        end
+    @sync for i = 1:length(d.chunks)
+        K = d.indexes[i]
+        @async a[[I[j][K[j]] for j=1:n]...] = chunk(d, i)
     end
     return a
 end
@@ -383,23 +379,21 @@ Base.setindex!(a::Array, s::SubDArray, I::UnitRange{Int}...) = begin
         return a
     end
     offs = [isa(J[i],Int) ? J[i]-1 : first(J[i])-1 for i=1:n]
-    @sync begin
-        for i = 1:length(d.chunks)
-            K_c = Any[d.indexes[i]...]
-            K = [ intersect(J[j],K_c[j]) for j=1:n ]
-            if !any(isempty, K)
-                idxs = [ I[j][K[j]-offs[j]] for j=1:n ]
-                if isequal(K, K_c)
-                    # whole chunk
-                    @async a[idxs...] = chunk(d, i)
-                else
-                    # partial chunk
-                    ch = d.chunks[i]
-                    @async a[idxs...] =
-                        remotecall_fetch(ch.where,
-                                         ()->sub(fetch(ch),
-                                         [K[j]-first(K_c[j])+1 for j=1:n]...))
-                end
+    @sync for i = 1:length(d.chunks)
+        K_c = Any[d.indexes[i]...]
+        K = [ intersect(J[j],K_c[j]) for j=1:n ]
+        if !any(isempty, K)
+            idxs = [ I[j][K[j]-offs[j]] for j=1:n ]
+            if isequal(K, K_c)
+                # whole chunk
+                @async a[idxs...] = chunk(d, i)
+            else
+                # partial chunk
+                ch = d.chunks[i]
+                @async a[idxs...] =
+                    remotecall_fetch(ch.where,
+                                     ()->sub(fetch(ch),
+                                     [K[j]-first(K_c[j])+1 for j=1:n]...))
             end
         end
     end
@@ -409,8 +403,7 @@ end
 # to disambiguate
 Base.setindex!(a::Array{Any}, d::SubOrDArray, i::Int) = arrayset(a, d, i)
 Base.setindex!(a::Array, d::SubOrDArray, I::Union(Int,UnitRange{Int})...) =
-    setindex!(a, d, [isa(i,Int) ? (i:i) : i for i in I ]...)
-
+    setindex!(a, d, [isa(i, Int) ? (i:i) : i for i in I ]...)
 
 Base.fill!(A::DArray, x) = begin
     @sync for p in procs(A)
@@ -432,10 +425,8 @@ Base.mapreduce(f, opt::Function, d::DArray) =
               Any[ @spawnat p mapreduce(f, opt, localpart(d)) for p in procs(d) ])
 
 Base.map!(f, d::DArray) = begin
-    @sync begin
-        for p in procs(d)
-            @spawnat p map!(f, localpart(d))
-        end
+    @sync for p in procs(d)
+        @spawnat p map!(f, localpart(d))
     end
     return d
 end
@@ -483,7 +474,7 @@ Base.mapreducedim!(f, op, R::DArray, A::DArray) = begin
     if isempty(A)
         return copy(R)
     end
-    region = tuple([1:ndims(A);][[size(R)...] .!= [size(A)...]]...)
+    region = tuple(collect(1:ndims(A))[[size(R)...] .!= [size(A)...]]...)
     if isempty(region)
         return copy!(R, A)
     end
