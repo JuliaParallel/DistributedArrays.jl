@@ -98,6 +98,27 @@ into a distributed array constructor:
 In this case the `init` function only needs to call `fill` with the
 dimensions of the local piece it is creating.
 
+`DArray`'s can also be constructed from multidimensional `Array` comprehensions with
+the `@DArray` macro syntax.  This syntax is just sugar for the primitive `DArray` constructor:
+
+```julia
+julia> [i+j for i = 1:5, j = 1:5]
+5x5 Array{Int64,2}:
+ 2  3  4  5   6
+ 3  4  5  6   7
+ 4  5  6  7   8
+ 5  6  7  8   9
+ 6  7  8  9  10
+
+julia> @DArray [i+j for i = 1:5, j = 1:5]
+5x5 DistributedArrays.DArray{Int64,2,Array{Int64,2}}:
+ 2  3  4  5   6
+ 3  4  5  6   7
+ 4  5  6  7   8
+ 5  6  7  8   9
+ 6  7  8  9  10
+```
+
 Distributed Array Operations
 ----------------------------
 
