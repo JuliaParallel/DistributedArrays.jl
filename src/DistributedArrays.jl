@@ -1,6 +1,6 @@
 module DistributedArrays
 
-export DArray, SubOrDArray
+export DArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes
 
 @doc """
@@ -75,6 +75,21 @@ DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(), maximum(dims
 
 # new DArray similar to an existing one
 DArray(init, d::DArray) = DArray(init, size(d), procs(d), [size(d.chunks)...])
+
+macro DArray(ex::Expr)
+    if ex.head !== :comprehension
+        throw(ArgumentError("invalid @DArray syntax"))
+    end
+    ex.args[1] = esc(ex.args[1])
+    ndim = length(ex.args) - 1
+    ranges = map(r->esc(r.args[2]), ex.args[2:end])
+    for d = 1:ndim
+        var = ex.args[d+1].args[1]
+        ex.args[d+1] = :( $(esc(var)) = ($(ranges[d]))[I[$d]] )
+    end
+    return :( DArray((I::(UnitRange{Int}...))->($ex),
+                tuple($(map(r->:(length($r)), ranges)...))) )
+end
 
 Base.similar(d::DArray, T, dims::Dims) = DArray(I->Array(T, map(length,I)), dims, procs(d))
 Base.similar(d::DArray, T) = similar(d, T, size(d))
