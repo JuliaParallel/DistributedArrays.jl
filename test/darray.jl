@@ -115,8 +115,9 @@ facts("test sum on DArrays") do
     A = randn(100,100)
     DA = distribute(A)
 
-    #@test_throws BoundsError sum(DA,-1)
-    #@fact sum(DA,0) => sum(DA,0)
+    @fact_throws ArgumentError sum(DA,-1)
+    @fact_throws ArgumentError sum(DA, 0)
+
     @fact sum(DA) => roughly(sum(A), atol=1e-12)
     @fact sum(DA,1) => roughly(sum(A,1), atol=1e-12)
     @fact sum(DA,2) => roughly(sum(A,2), atol=1e-12)
