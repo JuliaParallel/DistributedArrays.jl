@@ -4,6 +4,9 @@
 
 Distributed Arrays for Julia
 
+***NOTE*** 
+Distributed Arrays will only work on the latest development version of Julia (v0.4.0-dev).
+
 Distributed Arrays
 ------------------
 
