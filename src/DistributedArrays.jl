@@ -253,15 +253,18 @@ drandn(d::Int...) = drandn(d)
 ## conversions ##
 
 @doc """
-### distribute(a)
+### distribute(A[, procs])
 
 Convert a local array to distributed.
+
+`procs` optionally specifies a vector of process IDs to use. (defaults to all workers)
 """ ->
-function distribute(a::AbstractArray)
+function distribute(A::AbstractArray;
+                    procs=workers()[1:min(nworkers(), maximum(size(A)))])
     owner = myid()
     rr = RemoteRef()
-    put!(rr, a)
-    d = DArray(size(a)) do I
+    put!(rr, A)
+    d = DArray(size(A), procs) do I
         remotecall_fetch(owner, ()->fetch(rr)[I...])
     end
     # Ensure that all workers have fetched their localparts.

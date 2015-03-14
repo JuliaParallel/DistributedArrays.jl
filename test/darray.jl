@@ -1,6 +1,20 @@
 const MYID = myid()
 const OTHERIDS = filter(id-> id != MYID, procs())[rand(1:(nprocs()-1))]
 
+facts("test distribute") do
+    A = randn(100,100)
+
+    context("test default distribute") do
+        DA = distribute(A)
+        @fact length(DA.pmap) => nworkers()
+    end
+
+    context("test distribute with procs arguments") do
+        DA = distribute(A, procs=[1,2])
+        @fact length(DA.pmap) => 2
+    end
+end
+
 facts("test DArray equality") do
     D = drand((200,200), [MYID, OTHERIDS])
     DC = copy(D)
