@@ -487,4 +487,21 @@ Base.scale!(A::DArray, x::Number) = begin
     return A
 end
 
+Base.sum(d::DArray) = reduce(Base.AddFun(), d)
+Base.maximum(d::DArray) = reduce(Base.MaxFun(), d)
+Base.minimum(d::DArray) = reduce(Base.MinFun(), d)
+Base.maxabs(d::DArray) = maximum([fetch(r) for r in [@spawnat p maxabs(localpart(d)) for p in procs(d)]])
+Base.minabs(d::DArray) = minimum([fetch(r) for r in [@spawnat p minabs(localpart(d)) for p in procs(d)]])
+Base.sumabs(d::DArray) = sum([fetch(r) for r in [@spawnat p sumabs(localpart(d)) for p in procs(d)]])
+Base.sumabs2(d::DArray) = sum([fetch(r) for r in [@spawnat p sumabs2(localpart(d)) for p in procs(d)]])
+Base.prod(d::DArray) = reduce(Base.MulFun(), d)
+
+Base.any(d::DArray) = reduce(Base.OrFun(), d)
+Base.any(p::Function, d::DArray) = mapreduce(p, Base.OrFun(), d)
+
+Base.all(d::DArray) = reduce(Base.AndFun(), d)
+Base.all(p::Function, d::DArray) = mapreduce(p, Base.AndFun(), d)
+
+Base.count(f::Function, d::DArray) = sum([fetch(r) for r in [@spawnat p count(f, localpart(d)) for p in procs(d)]])
+
 end # module

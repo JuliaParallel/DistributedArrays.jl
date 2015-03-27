@@ -62,3 +62,50 @@ for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
     @test_approx_eq mean(d, dms) mean(da, dms)
     # @test_approx_eq std(d, dms) std(da, dms) Requires centralize_sumabs2! for DArrays
 end
+
+
+a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
+d = distribute(a)
+
+@test sum(a) == sum(d);
+@test maximum(a) == maximum(d);
+@test minimum(a) == minimum(d);
+@test maxabs(a) == maxabs(d);
+@test minabs(a) == minabs(d);
+@test sumabs(a) == sumabs(d);
+@test sumabs2(a) == sumabs2(d);
+
+a = [true for i in 1:100];
+d = distribute(a);
+
+@test all(d) == true
+@test any(d) == true
+
+a[50] = false;
+d = distribute(a);
+@test all(d) == false
+@test any(d) == true
+
+a = [false for i in 1:100];
+d = distribute(a);
+@test all(d) == false
+@test any(d) == false
+
+d = dones(10,10);
+@test all(x-> x>1.0, d) == false
+@test all(x-> x>0.0, d) == true
+
+a = ones(10,10);
+a[10] = 2.0;
+d = distribute(a);
+@test any(x-> x == 1.0, d) == true
+@test any(x-> x == 2.0, d) == true
+@test any(x-> x == 3.0, d) == false
+
+@test count(x-> x == 2.0, d) == 1
+@test count(x-> x == 1.0, d) == 99
+@test count(x-> x == 0.0, d) == 0
+
+a = fill(2, 10);
+d = distribute(a);
+@test prod(d) == 2^10
