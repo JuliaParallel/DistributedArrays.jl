@@ -162,50 +162,61 @@ facts("test collections API") do
     end
 end
 
-using Base.Test
+facts("test max / min / sum") do
+    a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
+    d = distribute(a)
 
-a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
-d = distribute(a)
+    @fact sum(d) => sum(a)
+    @fact maximum(d) => maximum(a)
+    @fact minimum(d) => minimum(a)
+    @fact maxabs(d) => maxabs(a)
+    @fact minabs(d) => minabs(a)
+    @fact sumabs(d) => sumabs(a)
+    @fact sumabs2(d) => sumabs2(a)
+end
 
-@test sum(a) == sum(d);
-@test maximum(a) == maximum(d);
-@test minimum(a) == minimum(d);
-@test maxabs(a) == maxabs(d);
-@test minabs(a) == minabs(d);
-@test sumabs(a) == sumabs(d);
-@test sumabs2(a) == sumabs2(d);
+facts("test all / any") do
+    a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
+    a = [true for i in 1:100]
+    d = distribute(a)
 
-a = [true for i in 1:100];
-d = distribute(a);
+    @fact all(d) => true
+    @fact any(d) => true
 
-@test all(d) == true
-@test any(d) == true
+    a[50] = false
+    d = distribute(a)
+    @fact all(d) => false
+    @fact any(d) => true
 
-a[50] = false;
-d = distribute(a);
-@test all(d) == false
-@test any(d) == true
+    a = [false for i in 1:100]
+    d = distribute(a)
+    @fact all(d) => false
+    @fact any(d) => false
 
-a = [false for i in 1:100];
-d = distribute(a);
-@test all(d) == false
-@test any(d) == false
+    d = dones(10,10)
+    @fact all(x-> x>1.0, d) => false
+    @fact all(x-> x>0.0, d) => true
 
-d = dones(10,10);
-@test all(x-> x>1.0, d) == false
-@test all(x-> x>0.0, d) == true
+    a = ones(10,10)
+    a[10] = 2.0
+    d = distribute(a)
+    @fact any(x-> x == 1.0, d) => true
+    @fact any(x-> x == 2.0, d) => true
+    @fact any(x-> x == 3.0, d) => false
+end
 
-a = ones(10,10);
-a[10] = 2.0;
-d = distribute(a);
-@test any(x-> x == 1.0, d) == true
-@test any(x-> x == 2.0, d) == true
-@test any(x-> x == 3.0, d) == false
+facts("test count" ) do
+    a = ones(10,10)
+    a[10] = 2.0
+    d = distribute(a)
 
-@test count(x-> x == 2.0, d) == 1
-@test count(x-> x == 1.0, d) == 99
-@test count(x-> x == 0.0, d) == 0
+    @fact count(x-> x == 2.0, d) => 1
+    @fact count(x-> x == 1.0, d) => 99
+    @fact count(x-> x == 0.0, d) => 0
+end
 
-a = fill(2, 10);
-d = distribute(a);
-@test prod(d) == 2^10
+facts("test prod") do
+    a = fill(2, 10);
+    d = distribute(a);
+    @fact prod(d) => 2^10
+end
