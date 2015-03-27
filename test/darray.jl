@@ -162,6 +162,7 @@ facts("test collections API") do
     end
 end
 
+using Base.Test
 
 a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
 d = distribute(a)

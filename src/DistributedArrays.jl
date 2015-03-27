@@ -507,10 +507,10 @@ Base.sumabs2(d::DArray) = sum([fetch(r) for r in [@spawnat p sumabs2(localpart(d
 Base.prod(d::DArray) = reduce(Base.MulFun(), d)
 
 Base.any(d::DArray) = reduce(Base.OrFun(), d)
-Base.any(p::Function, d::DArray) = mapreduce(p, Base.OrFun(), d)
+Base.any(f::Function, d::DArray) = any([fetch(r) for r in [@spawnat p any(f, localpart(d)) for p in procs(d)]])
 
 Base.all(d::DArray) = reduce(Base.AndFun(), d)
-Base.all(p::Function, d::DArray) = mapreduce(p, Base.AndFun(), d)
+Base.all(f::Function, d::DArray) = all([fetch(r) for r in [@spawnat p all(f, localpart(d)) for p in procs(d)]])
 
 Base.count(f::Function, d::DArray) = sum([fetch(r) for r in [@spawnat p count(f, localpart(d)) for p in procs(d)]])
 
