@@ -404,7 +404,7 @@ Base.setindex!(a::Array, s::SubDArray, I::UnitRange{Int}...) = begin
 end
 
 # to disambiguate
-Base.setindex!(a::Array{Any}, d::SubOrDArray, i::Int) = arrayset(a, d, i)
+Base.setindex!(a::Array{Any}, d::SubOrDArray, i::Int) = Base.arrayset(a, d, i)
 Base.setindex!(a::Array, d::SubOrDArray, I::Union(Int,UnitRange{Int})...) =
     setindex!(a, d, [isa(i, Int) ? (i:i) : i for i in I ]...)
 
