@@ -423,7 +423,9 @@ Base.reduce(f, d::DArray) =
     mapreduce(fetch, f,
               Any[ @spawnat p reduce(f, localpart(d)) for p in procs(d) ])
 
-Base.mapreduce(f, opt::Function, d::DArray) =
+Base.mapreduce(f, opt::Function, d::DArray) = mapreduce(f, Base.specialized_binary(opt), d)
+
+Base.mapreduce(f, opt, d::DArray) =
     mapreduce(fetch, opt,
               Any[ @spawnat p mapreduce(f, opt, localpart(d)) for p in procs(d) ])
 
@@ -497,21 +499,35 @@ Base.scale!(A::DArray, x::Number) = begin
     return A
 end
 
-Base.sum(d::DArray) = reduce(Base.AddFun(), d)
-Base.maximum(d::DArray) = reduce(Base.MaxFun(), d)
-Base.minimum(d::DArray) = reduce(Base.MinFun(), d)
-Base.maxabs(d::DArray) = maximum([fetch(r) for r in [@spawnat p maxabs(localpart(d)) for p in procs(d)]])
-Base.minabs(d::DArray) = minimum([fetch(r) for r in [@spawnat p minabs(localpart(d)) for p in procs(d)]])
-Base.sumabs(d::DArray) = sum([fetch(r) for r in [@spawnat p sumabs(localpart(d)) for p in procs(d)]])
-Base.sumabs2(d::DArray) = sum([fetch(r) for r in [@spawnat p sumabs2(localpart(d)) for p in procs(d)]])
-Base.prod(d::DArray) = reduce(Base.MulFun(), d)
+# reduce like
+for (fn, fr) in ((:sum, :AddFun),
+                 (:prod, :MulFun),
+                 (:maximum, :MaxFun),
+                 (:minimum, :MinFun),
+                 (:any, :OrFun),
+                 (:all, :AndFun))
+    @eval begin
+        (Base.$fn)(d::DArray) = reduce((Base.$fr)(), d)
+    end
+end
 
-Base.any(d::DArray) = reduce(Base.OrFun(), d)
-Base.any(f::Function, d::DArray) = any([fetch(r) for r in [@spawnat p any(f, localpart(d)) for p in procs(d)]])
+# mapreduce like
+for (fn, fr1, fr2) in ((:maxabs, :AbsFun, :MaxFun),
+                       (:minabs, :AbsFun, :MinFun),
+                       (:sumabs, :AbsFun, :AddFun),
+                       (:sumabs2, :Abs2Fun, :AddFun))
+    @eval begin
+        (Base.$fn)(d::DArray) = mapreduce((Base.$fr1)(), (Base.$fr2)(), d)
+    end
+end
 
-Base.all(d::DArray) = reduce(Base.AndFun(), d)
-Base.all(f::Function, d::DArray) = all([fetch(r) for r in [@spawnat p all(f, localpart(d)) for p in procs(d)]])
-
-Base.count(f::Function, d::DArray) = sum([fetch(r) for r in [@spawnat p count(f, localpart(d)) for p in procs(d)]])
+# semi mapreduce
+for (fn, fr) in ((:any, :OrFun),
+                 (:all, :AndFun),
+                 (:count, :AddFun))
+    @eval begin
+        (Base.$fn)(f::Union(Base.Callable,Base.Func{1}), d::DArray) = mapreduce(f, (Base.$fr)(), d)
+    end
+end
 
 end # module
