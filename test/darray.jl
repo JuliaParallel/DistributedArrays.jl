@@ -220,3 +220,135 @@ facts("test prod") do
     d = distribute(a);
     @fact prod(d) => 2^10
 end
+
+facts("test zeros") do
+    context("1D dzeros default element type") do
+        A = dzeros(10)
+        @fact A => zeros(10)
+        @fact eltype(A) => Float64
+        @fact size(A) => (10,)
+    end
+
+    context("1D dzeros with specified element type") do
+        A = dzeros(Int, 10)
+        @fact A => zeros(10)
+        @fact eltype(A) => Int
+        @fact size(A) => (10,)
+    end
+
+    context("2D dzeros default element type, Dims constuctor") do
+        A = dzeros((10,10))
+        @fact A => zeros((10,10))
+        @fact eltype(A) => Float64
+        @fact size(A) => (10,10)
+    end
+
+    context("2D dzeros specified element type, Dims constructor") do
+        A = dzeros(Int, (10,10))
+        @fact A => zeros(Int, (10,10))
+        @fact eltype(A) => Int
+        @fact size(A) => (10,10)
+    end
+
+    context("2D dzeros, default element type") do
+        A = dzeros(10,10)
+        @fact A => zeros(10,10)
+        @fact eltype(A) => Float64
+        @fact size(A) => (10,10)
+    end
+
+    context("2D dzeros, specified element type") do
+        A = dzeros(Int, 10, 10)
+        @fact A => zeros(Int, 10, 10)
+        @fact eltype(A) => Int
+        @fact size(A) => (10,10)
+    end
+end
+
+
+facts("test dones") do
+    context("1D dones default element type") do
+        A = dones(10)
+        @fact A => ones(10)
+        @fact eltype(A) => Float64
+        @fact size(A) => (10,)
+    end
+
+    context("1D dones with specified element type") do
+        A = dones(Int, 10)
+        @fact eltype(A) => Int
+        @fact size(A) => (10,)
+    end
+
+    context("2D dones default element type, Dims constuctor") do
+        A = dones((10,10))
+        @fact A => ones((10,10))
+        @fact eltype(A) => Float64
+        @fact size(A) => (10,10)
+    end
+
+    context("2D dones specified element type, Dims constructor") do
+        A = dones(Int, (10,10))
+        @fact A => ones(Int, (10,10))
+        @fact eltype(A) => Int
+        @fact size(A) => (10,10)
+    end
+
+    context("2D dones, default element type") do
+        A = dones(10,10)
+        @fact A => ones(10,10)
+        @fact eltype(A) => Float64
+        @fact size(A) => (10,10)
+    end
+
+    context("2D dones, specified element type") do
+        A = dones(Int, 10, 10)
+        @fact A => ones(Int, 10, 10)
+        @fact eltype(A) => Int
+        @fact size(A) => (10,10)
+    end
+end
+
+facts("test drand") do
+    context("1D drand") do
+        A = drand(100)
+        @fact eltype(A) => Float64
+        @fact size(A) => (100,)
+        @fact all(x-> x >= 0.0 && x <= 1.0, A) => true
+    end
+
+    context("2D drand, Dims constructor") do
+        A = drand((50,50))
+        @fact eltype(A) => Float64
+        @fact size(A) => (50,50)
+        @fact all(x-> x >= 0.0 && x <= 1.0, A) => true
+    end
+
+    context("2D drand") do
+        A = drand(100,100)
+        @fact eletype(A) => Float64
+        @fact size(A) => (100,)
+        @fact all(x-> x >= 0.0 && x <= 1.0, A) => true
+    end
+
+end
+
+facts("test randn") do
+    context("1D drandn") do
+        A = drandn(100)
+        @fact eltype(A) => Float64
+        @fact size(A) => (100,)
+    end
+
+    context("2D drandn, Dims constructor") do
+        A = drandn((50,50))
+        @fact eltype(A) => Float64
+        @fact size(A) => (50,50)
+    end
+
+    context("2D drandn") do
+        A = drandn(100,100)
+        @fact eletype(A) => Float64
+        @fact size(A) => (100,)
+    end
+end

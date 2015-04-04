@@ -211,8 +211,11 @@ chunk{T,N,A}(d::DArray{T,N,A}, i...) = fetch(d.chunks[i...])::A
 Construct a distributed array of zeros.
 Trailing arguments are the same as those accepted by `DArray`.
 """ ->
-dzeros(args...) = DArray(I->zeros(map(length,I)), args...)
-dzeros(d::Int...) = dzeros(d)
+dzeros{T}(::Type{T}, dims::Dims, args...) = DArray(I->zeros(T,map(length,I)), dims, args...)
+dzeros{T}(::Type{T}, d1::Integer, drest::Integer...) = dzeros(T, convert(Dims, tuple(d1, drest...)))
+dzeros(d1::Integer, drest::Integer...) = dzeros(Float64, convert(Dims, tuple(d1, drest...)))
+dzeros(d::Dims) = dzeros(Float64, d)
+
 
 @doc """
 ### dzeros(dims, ...)
@@ -220,8 +223,10 @@ dzeros(d::Int...) = dzeros(d)
 Construct a distributed array of ones.
 Trailing arguments are the same as those accepted by `DArray`.
 """ ->
-dones(args...) = DArray(I->ones(map(length,I)), args...)
-dones(d::Int...) = dones(d)
+dones{T}(::Type{T}, dims::Dims, args...) = DArray(I->ones(T,map(length,I)), dims, args...)
+dones{T}(::Type{T}, d1::Integer, drest::Integer...) = dones(T, convert(Dims, tuple(d1, drest...)))
+dones(d1::Integer, drest::Integer...) = dones(Float64, convert(Dims, tuple(d1, drest...)))
+dones(d::Dims) = dones(Float64, d)
 
 @doc """
 ### dfill(x, dims, ...)
@@ -229,8 +234,8 @@ dones(d::Int...) = dones(d)
 Construct a distributed array filled with value `x`.
 Trailing arguments are the same as those accepted by `DArray`.
 """ ->
-dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
-dfill(v, d::Int...) = dfill(v, d)
+dfill(v, dims::Dims, args...) = DArray(I->fill(v, map(length,I)), dims, args...)
+dfill(v, d1::Integer, drest::Integer...) = dfill(v, convert(Dims, tuple(d1, drest...)))
 
 @doc """
 ### drand(dims, ...)
@@ -238,8 +243,8 @@ dfill(v, d::Int...) = dfill(v, d)
 Construct a distributed uniform random array.
 Trailing arguments are the same as those accepted by `DArray`.
 """ ->
-drand(args...)  = DArray(I->rand(map(length,I)), args...)
-drand(d::Int...) = drand(d)
+drand(dims::Dims, args...)  = DArray(I->rand(map(length,I)), dims, args...)
+drand(d1::Integer, drest::Integer...) = drand(convert(Dims, tuple(d1, drest...)))
 
 @doc """
 ### drandn(dims, ...)
@@ -247,8 +252,8 @@ drand(d::Int...) = drand(d)
 Construct a distributed normal random array.
 Trailing arguments are the same as those accepted by `DArray`.
 """ ->
-drandn(args...) = DArray(I->randn(map(length,I)), args...)
-drandn(d::Int...) = drandn(d)
+drandn(dims::Dims, args...) = DArray(I->randn(map(length,I)), dims, args...)
+drandn(d1::Integer, drest::Integer...) = drandn(convert(Dims, tuple(d1, drest...)))
 
 ## conversions ##
 
