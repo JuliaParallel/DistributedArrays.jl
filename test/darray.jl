@@ -327,7 +327,7 @@ facts("test drand") do
     context("2D drand") do
         A = drand(100,100)
         @fact eltype(A) => Float64
-        @fact size(A) => (100,)
+        @fact size(A) => (100,100)
         @fact all(x-> x >= 0.0 && x <= 1.0, A) => true
     end
 
@@ -348,7 +348,7 @@ facts("test randn") do
 
     context("2D drandn") do
         A = drandn(100,100)
-        @fact eletype(A) => Float64
-        @fact size(A) => (100,)
+        @fact eltype(A) => Float64
+        @fact size(A) => (100,100)
     end
 end
