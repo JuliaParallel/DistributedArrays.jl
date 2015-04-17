@@ -87,7 +87,7 @@ macro DArray(ex::Expr)
         var = ex.args[d+1].args[1]
         ex.args[d+1] = :( $(esc(var)) = ($(ranges[d]))[I[$d]] )
     end
-    return :( DArray((I::(UnitRange{Int}...))->($ex),
+    return :( DArray((I::$(esc(Tuple{UnitRange{Int}, ...})))->($ex),
                 tuple($(map(r->:(length($r)), ranges)...))) )
 end
 
@@ -293,7 +293,7 @@ end
 Base.convert{S,T,N}(::Type{Array{S,N}}, s::SubDArray{T,N}) = begin
     I = s.indexes
     d = s.parent
-    if isa(I,(UnitRange{Int}...)) && S<:T && T<:S
+    if isa(I,Tuple{UnitRange{Int},...}) && S<:T && T<:S
         l = locate(d, map(first, I)...)
         if isequal(d.indexes[l...], I)
             # SubDArray corresponds to a chunk
@@ -339,7 +339,7 @@ Base.getindex(r::RemoteRef, args...) = begin
     return remotecall_fetch(r.where, getindex, r, args...)
 end
 
-function getindex_tuple{T}(d::DArray{T}, I::(Int...))
+function getindex_tuple{T}(d::DArray{T}, I::Tuple{Int, ...})
     chidx = locate(d, I...)
     chunk = d.chunks[chidx...]
     idxs = d.indexes[chidx...]
