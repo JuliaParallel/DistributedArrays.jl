@@ -1,7 +1,11 @@
 module DistributedArrays
 
+importall Base
+import Base.Callable
+ 
+export .+, .-, .*, ./, .%, .<<, .>>, div, mod, rem, &, |, $
 export DArray, SubOrDArray, @DArray
-export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes
+export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, samedist
 
 @doc """
 ### DArray(init, dims, [procs, dist])
@@ -532,6 +536,47 @@ for (fn, fr) in ((:any, :OrFun),
                  (:count, :AddFun))
     @eval begin
         (Base.$fn)(f::Union(Base.Callable,Base.Func{1}), d::DArray) = mapreduce(f, (Base.$fr)(), d)
+    end
+end
+
+# scalar ops
+(+)(A::DArray{Bool}, x::Bool) = A .+ x
+(+)(x::Bool, A::DArray{Bool}) = x .+ A
+(-)(A::DArray{Bool}, x::Bool) = A .- x
+(-)(x::Bool, A::DArray{Bool}) = x .- A
+(+)(A::DArray, x::Number) = A .+ x
+(+)(x::Number, A::DArray) = x .+ A
+(-)(A::DArray, x::Number) = A .- x
+(-)(x::Number, A::DArray) = x .- A
+
+mappart(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
+mappart(f::Callable, d1::DArray, d2::DArray) = DArray(I->f(localpart(d)), d)
+ 
+# Here we assume all the DArrays have
+# the same size and distribution
+mappart(f::Callable, As::DArray...) = DArray(I->f(map(localpart, As)...), As[1])
+ 
+for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
+    @eval begin
+        ($f){T}(A::DArray{T}, B::Number) = mappart(r->($f)(r, B), A)
+        ($f){T}(A::Number, B::DArray{T}) = mappart(r->($f)(r, A), B)
+    end
+end
+ 
+function samedist(A::DArray, B::DArray)
+    (size(A) == size(B)) || error(DimensionMismatch())
+    if (A.pmap != B.pmap) || (A.cuts != B.cuts)
+        B = DArray(x->B[x...], A)
+    end
+    B
+end
+ 
+for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
+    @eval begin
+        function ($f){T}(A::DArray{T}, B::DArray{T})
+            B = samedist(A, B)
+            mappart($f, A, B)
+        end
     end
 end
 
