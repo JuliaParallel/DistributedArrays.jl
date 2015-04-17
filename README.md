@@ -4,10 +4,10 @@
 
 Distributed Arrays for Julia
 
-***NOTE*** 
+***NOTE***
 Distributed Arrays will only work on the latest development version of Julia (v0.4.0-dev).
 
-`DArray`'s have been removed from Julia Base library in v0.4 so it is now necessary to import the `DistributedArrays` package on all spawned processes.
+`DArray`s have been removed from Julia Base library in v0.4 so it is now necessary to import the `DistributedArrays` package on all spawned processes.
 
 ```julia
 @everywhere using DistributedArrays
@@ -107,7 +107,7 @@ into a distributed array constructor:
 In this case the `init` function only needs to call `fill` with the
 dimensions of the local piece it is creating.
 
-`DArray`'s can also be constructed from multidimensional `Array` comprehensions with
+`DArray`s can also be constructed from multidimensional `Array` comprehensions with
 the `@DArray` macro syntax.  This syntax is just sugar for the primitive `DArray` constructor:
 
 ```julia
