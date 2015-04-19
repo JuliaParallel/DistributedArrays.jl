@@ -352,3 +352,14 @@ facts("test randn") do
         @fact size(A) => (100,100)
     end
 end
+
+facts("test ctranspose") do
+    a = drand(10, 20);
+    b = ctranspose(a);
+    (x,y) = size(a)
+    for i in 1:x
+        for j in 1:y
+            @fact a[i,j] => b[j,i]
+        end
+    end
+end

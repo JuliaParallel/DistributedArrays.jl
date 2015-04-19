@@ -2,7 +2,7 @@ module DistributedArrays
 
 importall Base
 import Base.Callable
- 
+
 export .+, .-, .*, ./, .%, .<<, .>>, div, mod, rem, &, |, $
 export DArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, samedist
@@ -551,18 +551,18 @@ end
 
 mappart(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
 mappart(f::Callable, d1::DArray, d2::DArray) = DArray(I->f(localpart(d)), d)
- 
+
 # Here we assume all the DArrays have
 # the same size and distribution
 mappart(f::Callable, As::DArray...) = DArray(I->f(map(localpart, As)...), As[1])
- 
+
 for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
     @eval begin
         ($f){T}(A::DArray{T}, B::Number) = mappart(r->($f)(r, B), A)
         ($f){T}(A::Number, B::DArray{T}) = mappart(r->($f)(r, A), B)
     end
 end
- 
+
 function samedist(A::DArray, B::DArray)
     (size(A) == size(B)) || error(DimensionMismatch())
     if (A.pmap != B.pmap) || (A.cuts != B.cuts)
@@ -570,7 +570,7 @@ function samedist(A::DArray, B::DArray)
     end
     B
 end
- 
+
 for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
     @eval begin
         function ($f){T}(A::DArray{T}, B::DArray{T})
@@ -579,5 +579,21 @@ for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
         end
     end
 end
+
+function ctranspose{T}(D::DArray{T,2})
+    DArray(reverse(D.dims), procs(D)) do I
+        lp = Array(T, map(length,I))
+        rp = convert(Array, D[reverse(I)...])
+        (x,y) = size(rp)
+
+        for i in 1:x
+            for j in 1:y
+                lp[j,i] = rp[i,j]
+            end
+        end
+        lp
+    end
+end
+
 
 end # module
