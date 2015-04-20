@@ -375,3 +375,26 @@ facts("test convert from subdarray") do
     @fact isa(s, SubDArray) => true
     @fact s => convert(DArray, s)
 end
+
+facts("test scalar math") do
+    a = drand(20, 20);
+    b = convert(Array, a)
+    for f in (:abs, :abs2, :acos, :acosd, :acot, :acotd, :acsch, :angle, :asech, :asin, :asind, :asinh, :atan, :atand, :atanh,
+              :big, :cbrt, :ceil, :cis, :complex, :conj, :cos, :cosc, :cosd, :cosh, :cospi, :cot, :cotd, :coth, :csc, :cscd, :csch,
+              :dawson, :deg2rad, :digamma,
+              :erf, :erfc, :erfcinv, :erfcx, :erfi, :erfinv, :exp, :exp10, :exp2, :expm1, :exponent,
+              :float, :floor, :gamma, :imag, :invdigamma, :isfinite, :isinf, :isnan,
+              :lfact, :lgamma, :log, :log10, :log1p, :log2, :rad2deg, :real,
+              :sec, :secd, :sech, :sign, :sin, :sinc, :sind, :sinh, :sinpi, :sqrt, :tan, :tand, :tanh, :trigamma)
+        context("$f") do
+            @fact (eval(f))(a) => (eval(f))(b)
+        end
+    end
+    a = a + 1
+    b = b + 1
+    for f in (:asec, :asecd, :acosh, :acsc, :acscd, :acoth)
+        context("$f") do
+            @fact (eval(f))(a) => (eval(f))(b)
+        end
+    end
+end

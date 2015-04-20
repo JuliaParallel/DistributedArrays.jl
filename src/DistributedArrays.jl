@@ -614,5 +614,16 @@ function ctranspose{T}(D::DArray{T,2})
     end
 end
 
+for f in (:abs, :abs2, :acos, :acosd, :acosh, :acot, :acotd, :acoth, :acsc, :acscd, :acsch, :angle, :asec, :asecd, :asech, :asin, :asind, :asinh, :atan, :atand, :atanh, 
+          :big, :cbrt, :ceil, :cis, :complex, :cos, :cosc, :cosd, :cosh, :cospi, :cot, :cotd, :coth, :csc, :cscd, :csch,
+          :dawson, :deg2rad, :digamma,
+          :erf, :erfc, :erfcinv, :erfcx, :erfi, :erfinv, :exp, :exp10, :exp2, :expm1, :exponent,
+          :float, :floor, :gamma, :imag, :invdigamma, :isfinite, :isinf, :isnan,
+          :lfact, :lgamma, :log, :log10, :log1p, :log2, :rad2deg, :real,
+          :sec, :secd, :sech, :sign, :sin, :sinc, :sind, :sinh, :sinpi, :sqrt, :tan, :tand, :tanh, :trigamma)
+    @eval begin
+        ($f)(A::DArray) = map($f, A)
+    end
+end
 
 end # module
