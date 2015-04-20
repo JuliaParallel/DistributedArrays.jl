@@ -6,6 +6,7 @@ import Base.Callable
 export .+, .-, .*, ./, .%, .<<, .>>, div, mod, rem, &, |, $
 export DArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, samedist
+export ppeval
 
 @doc """
 ### DArray(init, dims, [procs, dist])
@@ -595,5 +596,33 @@ function ctranspose{T}(D::DArray{T,2})
     end
 end
 
+function ppeval(f::Function, args...)
+    # Broadcast args that are not DArrays. Call DArrays only on localparts.
+    # Ensure localpart's exist on all procs as the first DArray
+
+    first_darray_arg = nothing
+    for a in args
+        if isa(a, DArray)
+            if first_darray_arg == nothing
+                first_darray_arg = a
+            end
+            if Set(procs(a)) != Set(procs(first_darray_arg))
+                throw(ArgumentError("All DArrays must exist on all processors"))
+            end
+        end
+    end
+
+    nargs = length(args)
+    remotef = ()-> begin
+        largs = ntuple(nargs, x->isa(args[x], DArray)?localpart(args[x]):args[x])
+        f(largs...)
+    end
+
+    if isa(first_darray_arg, DArray)
+        [fetch(remotecall(p, remotef)) for p in procs(first_darray_arg)]
+    else
+        return [f(args...)]
+    end
+end
 
 end # module
