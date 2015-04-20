@@ -4,7 +4,7 @@ importall Base
 import Base.Callable
 
 export .+, .-, .*, ./, .%, .<<, .>>, div, mod, rem, &, |, $
-export DArray, SubOrDArray, @DArray
+export DArray, SubDArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, samedist
 
 @doc """
@@ -147,7 +147,7 @@ function defaultdist(sz::Int, nc::Int)
     if sz >= nc
         return round(Int, linspace(1, sz+1, nc+1))
     else
-        return [[1:(sz+1)], zeros(Int, nc-sz)]
+        return [[1:(sz+1);], zeros(Int, nc-sz);]
     end
 end
 
@@ -307,6 +307,25 @@ Base.convert{S,T,N}(::Type{Array{S,N}}, s::SubDArray{T,N}) = begin
     a = Array(S, size(s))
     a[[1:size(a,i) for i=1:N]...] = s
     return a
+end
+
+function Base.convert{T,N}(::Type{DArray}, SD::SubArray{T,N})
+    D = SD.parent
+    DArray(SD.dims, procs(D)) do I
+        TR = typeof(SD.indexes[1])
+        lindices = Array(TR, 0)
+        for (i,r) in zip(I, SD.indexes)
+            st = step(r)
+            lrstart = first(r) + st*(first(i)-1)
+            lrend = first(r) + st*(last(i)-1)
+            if TR <: UnitRange
+                push!(lindices, lrstart:lrend)
+            else
+                push!(lindices, lrstart:st:lrend)
+            end
+        end
+        convert(Array, D[lindices...])
+    end
 end
 
 Base.reshape{T,S<:Array}(A::DArray{T,1,S}, d::Dims) = begin
