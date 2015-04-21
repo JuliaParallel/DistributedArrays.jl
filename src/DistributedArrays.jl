@@ -247,8 +247,10 @@ dfill(v, d1::Integer, drest::Integer...) = dfill(v, convert(Dims, tuple(d1, dres
 Construct a distributed uniform random array.
 Trailing arguments are the same as those accepted by `DArray`.
 """ ->
-drand(dims::Dims, args...)  = DArray(I->rand(map(length,I)), dims, args...)
-drand(d1::Integer, drest::Integer...) = drand(convert(Dims, tuple(d1, drest...)))
+drand{T}(::Type{T}, dims::Dims, args...) = DArray(I->rand(T,map(length,I)), dims, args...)
+drand{T}(::Type{T}, d1::Integer, drest::Integer...) = drand(T, convert(Dims, tuple(d1, drest...)))
+drand(d1::Integer, drest::Integer...) = drand(Float64, convert(Dims, tuple(d1, drest...)))
+drand(d::Dims, args...)  = drand(Float64, d, args...)
 
 @doc """
 ### drandn(dims, ...)
@@ -614,7 +616,7 @@ function ctranspose{T}(D::DArray{T,2})
     end
 end
 
-for f in (:abs, :abs2, :acos, :acosd, :acosh, :acot, :acotd, :acoth, :acsc, :acscd, :acsch, :angle, :asec, :asecd, :asech, :asin, :asind, :asinh, :atan, :atand, :atanh, 
+for f in (:abs, :abs2, :acos, :acosd, :acosh, :acot, :acotd, :acoth, :acsc, :acscd, :acsch, :angle, :asec, :asecd, :asech, :asin, :asind, :asinh, :atan, :atand, :atanh,
           :big, :cbrt, :ceil, :cis, :complex, :cos, :cosc, :cosd, :cosh, :cospi, :cot, :cotd, :coth, :csc, :cscd, :csch,
           :dawson, :deg2rad, :digamma,
           :erf, :erfc, :erfcinv, :erfcx, :erfi, :erfinv, :exp, :exp10, :exp2, :expm1, :exponent,

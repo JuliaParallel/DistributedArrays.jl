@@ -317,6 +317,12 @@ facts("test drand") do
         @fact all(x-> x >= 0.0 && x <= 1.0, A) => true
     end
 
+    context("1D drand, specified element type") do
+        A = drand(Int, 100)
+        @fact eltype(A) => Int
+        @fact size(A) => (100,)
+    end
+
     context("2D drand, Dims constructor") do
         A = drand((50,50))
         @fact eltype(A) => Float64
@@ -331,6 +337,17 @@ facts("test drand") do
         @fact all(x-> x >= 0.0 && x <= 1.0, A) => true
     end
 
+    context("2D drand, Dims constructor, specified element type") do
+        A = drand(Int, (100,100))
+        @fact eltype(A) => Int
+        @fact size(A) => (100,100)
+    end
+
+    context("2D drand, specified element type") do
+        A = drand(Int, 100, 100)
+        @fact eltype(A) => Int
+        @fact size(A) => (100,100)
+    end
 end
 
 facts("test randn") do
