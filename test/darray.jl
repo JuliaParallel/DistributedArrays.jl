@@ -6,12 +6,12 @@ facts("test distribute") do
 
     context("test default distribute") do
         DA = distribute(A)
-        @fact length(DA.pmap) => nworkers()
+        @fact length(DA.pids) => nworkers()
     end
 
     context("test distribute with procs arguments") do
         DA = distribute(A, procs=[1,2])
-        @fact length(DA.pmap) => 2
+        @fact length(DA.pids) => 2
     end
 end
 
@@ -397,4 +397,51 @@ facts("test scalar math") do
             @fact (eval(f))(a) => (eval(f))(b)
         end
     end
+end
+
+# The mapslices tests have been taken from Base.
+# Commented out tests that need to be enabled in due course when DArray support is more complete
+facts("test mapslices") do
+    a = drand((5,5), workers(), [1, min(nworkers(), 5)])
+    h = mapslices(v -> hist(v,0:0.1:1)[2], a, 1)
+#    H = mapslices(v -> hist(v,0:0.1:1)[2], a, 2)
+#    s = mapslices(sort, a, [1])
+#    S = mapslices(sort, a, [2])
+    for i = 1:5
+        @fact h[:,i] => hist(a[:,i],0:0.1:1)[2]
+#        @fact vec(H[i,:]) => hist(vec(a[i,:]),0:0.1:1)[2]
+#        @fact s[:,i] => sort(a[:,i])
+#        @fact vec(S[i,:]) => sort(vec(a[i,:]))
+    end
+
+    # issue #3613
+    b = mapslices(sum, dones(Float64, (2,3,4), workers(), [1,1,min(nworkers(),4)]), [1,2])
+    @fact size(b) => exactly((1,1,4))
+    @fact all(b.==6) => true
+
+    # issue #5141
+    ## Update Removed the version that removes the dimensions when dims==1:ndims(A)
+    c1 = mapslices(x-> maximum(-x), a, [])
+#    @fact c1 => -a
+
+    # other types than Number
+    @fact mapslices(prod,distribute(["1" "2"; "3" "4"]),1) => ["13" "24"]
+    @fact mapslices(prod,distribute(["1"]),1) => ["1"]
+
+    # issue #5177
+
+    c = dones(Float64, (2,3,4,5), workers(), [1,1,1,min(nworkers(),5)])
+    m1 = mapslices(x-> ones(2,3), c, [1,2])
+    m2 = mapslices(x-> ones(2,4), c, [1,3])
+    m3 = mapslices(x-> ones(3,4), c, [2,3])
+    @fact size(m1) == size(m2) == size(m3) == size(c) => true
+
+    n1 = mapslices(x-> ones(6), c, [1,2])
+    n2 = mapslices(x-> ones(6), c, [1,3])
+    n3 = mapslices(x-> ones(6), c, [2,3])
+    n1a = mapslices(x-> ones(1,6), c, [1,2])
+    n2a = mapslices(x-> ones(1,6), c, [1,3])
+    n3a = mapslices(x-> ones(1,6), c, [2,3])
+    @fact size(n1a) == (1,6,4,5) && size(n2a) == (1,3,6,5)  && size(n3a) == (2,1,6,5) => true
+    @fact size(n1) == (6,1,4,5) && size(n2) == (6,3,1,5)  && size(n3) == (2,6,1,5) => true
 end

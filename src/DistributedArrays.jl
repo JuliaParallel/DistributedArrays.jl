@@ -33,20 +33,20 @@ dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 type DArray{T,N,A} <: AbstractArray{T,N}
     dims::NTuple{N,Int}
     chunks::Array{RemoteRef,N}
-    pmap::Array{Int,N}                          # pmap[i]==p ⇒ processor p has piece i
+    pids::Array{Int,N}                          # pids[i]==p ⇒ processor p has piece i
     indexes::Array{NTuple{N,UnitRange{Int}},N}  # indexes held by piece i
     cuts::Vector{Vector{Int}}                   # cuts[d][i] = first index of chunk i in dimension d
 
-    function DArray(dims, chunks, pmap, indexes, cuts)
+    function DArray(dims, chunks, pids, indexes, cuts)
         # check invariants
         if size(chunks) != size(indexes)
             throw(ArgumentError("size(chunks) != size(indexes), $(repr(chunks)) != $(repr(indexes))"))
-        elseif length(chunks) != length(pmap)
-            throw(ArgumentError("length(chunks) != length(pmap), $(length(chunks)) != $(length(pmap))"))
+        elseif length(chunks) != length(pids)
+            throw(ArgumentError("length(chunks) != length(pids), $(length(chunks)) != $(length(pids))"))
         elseif dims != map(last, last(indexes))
             throw(ArgumentError("dimension of DArray (dim) and indexes do not match"))
         end
-        return new(dims, chunks, reshape(pmap, size(chunks)), indexes, cuts)
+        return new(dims, chunks, reshape(pids, size(chunks)), indexes, cuts)
     end
 end
 
@@ -107,7 +107,7 @@ Base.size(d::DArray) = d.dims
 
 Get the vector of processes storing pieces of DArray `d`.
 """ ->
-Base.procs(d::DArray) = d.pmap
+Base.procs(d::DArray) = d.pids
 
 chunktype{T,N,A}(d::DArray{T,N,A}) = A
 
@@ -162,16 +162,16 @@ function chunk_idxs(dims, chunks)
     return (idxs, cuts)
 end
 
-function localpartindex(pmap::Array{Int})
+function localpartindex(pids::Array{Int})
     mi = myid()
-    for i = 1:length(pmap)
-        if pmap[i] == mi
+    for i = 1:length(pids)
+        if pids[i] == mi
             return i
         end
     end
     return 0
 end
-localpartindex(d::DArray) = localpartindex(d.pmap)
+localpartindex(d::DArray) = localpartindex(d.pids)
 
 @doc """
 ### localpart(d)
@@ -378,12 +378,12 @@ Base.getindex(d::DArray, I::Union(Int,UnitRange{Int})...) = sub(d, I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
     if !(dest.dims == src.dims &&
-         dest.pmap == src.pmap &&
+         dest.pids == src.pids &&
          dest.indexes == src.indexes &&
          dest.cuts == src.cuts)
         throw(DimensionMismatch("destination array doesn't fit to source array"))
     end
-    @sync for p in dest.pmap
+    @sync for p in dest.pids
         @spawnat p copy!(localpart(dest), localpart(src))
     end
     return dest
@@ -584,7 +584,7 @@ end
 
 function samedist(A::DArray, B::DArray)
     (size(A) == size(B)) || error(DimensionMismatch())
-    if (A.pmap != B.pmap) || (A.cuts != B.cuts)
+    if (A.pids != B.pids) || (A.cuts != B.cuts)
         B = DArray(x->B[x...], A)
     end
     B
@@ -625,5 +625,69 @@ for f in (:abs, :abs2, :acos, :acosd, :acosh, :acot, :acotd, :acoth, :acsc, :acs
         ($f)(A::DArray) = map($f, A)
     end
 end
+
+function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
+    #Ensure that the complete DArray is available on the specified dims on all processors
+    for d in dims
+        for idxs in D.indexes
+            if length(idxs[d]) != size(D, d)
+                throw(DimensionMismatch("Dimension $d is distributed. mapslice requires dimension $d to be completely available on all processors."))
+            end
+        end
+    end
+
+    ddims = size(D.chunks)      # dims of the distribution
+
+    nchunks = reshape([remotecall(p, (x,y,z)->mapslices(x,localpart(y),z), f, D, dims) for p in procs(D)], ddims)
+    npids = copy(procs(D))
+
+    nsizes = cell(length(nchunks))
+    @sync for i in 1:length(nchunks)
+        let i=i
+            @async nsizes[i] = remotecall_fetch(npids[i], r->size(fetch(r)), nchunks[i])
+        end
+    end
+
+    ndims = ntuple(length(D.dims), x->begin
+        if x in dims
+            # mapslices could have changed the dimension lengths
+            nsizes[1][x]
+        else
+            # same as original
+            D.dims[x]
+        end
+    end)
+
+    nsizes = reshape(nsizes, ddims)
+    nindexes = Array(NTuple{length(ddims),UnitRange{Int}}, ddims...)
+
+    for i in 1:length(nindexes)
+        subidx = ind2sub(ddims, i)
+        nindexes[i] = ntuple(length(subidx), x->begin
+            idx_in_dim = subidx[x]
+            startidx = 1
+            for j in 1:(idx_in_dim-1)
+                prevsubidx = ntuple(length(subidx), y-> y==x?j:subidx[y])
+                prevsize = nsizes[prevsubidx...]
+                startidx += prevsize[x]
+            end
+            startidx:startidx+(nsizes[i][x])-1
+        end)
+    end
+
+    ncuts = [begin
+        if i in dims
+            [1, nsizes[1][i]+1]
+        else
+            D.cuts[i]
+        end
+    end for i in 1:length(D.dims)]
+
+    p = max(1, localpartindex(npids))
+    A = remotecall_fetch(npids[p], r->typeof(fetch(r)), nchunks[p])
+
+    return DArray{eltype(A),N,A}(ndims, nchunks, npids, nindexes, ncuts)
+end
+
 
 end # module
