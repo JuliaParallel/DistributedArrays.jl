@@ -616,13 +616,16 @@ function ctranspose{T}(D::DArray{T,2})
     end
 end
 
-for f in (:abs, :abs2, :acos, :acosd, :acosh, :acot, :acotd, :acoth, :acsc, :acscd, :acsch, :angle, :asec, :asecd, :asech, :asin, :asind, :asinh, :atan, :atand, :atanh,
-          :big, :cbrt, :ceil, :cis, :complex, :cos, :cosc, :cosd, :cosh, :cospi, :cot, :cotd, :coth, :csc, :cscd, :csch,
-          :dawson, :deg2rad, :digamma,
-          :erf, :erfc, :erfcinv, :erfcx, :erfi, :erfinv, :exp, :exp10, :exp2, :expm1, :exponent,
-          :float, :floor, :gamma, :imag, :invdigamma, :isfinite, :isinf, :isnan,
-          :lfact, :lgamma, :log, :log10, :log1p, :log2, :rad2deg, :real,
-          :sec, :secd, :sech, :sign, :sin, :sinc, :sind, :sinh, :sinpi, :sqrt, :tan, :tand, :tanh, :trigamma)
+for f in (:abs, :abs2, :acos, :acosd, :acosh, :acot, :acotd, :acoth,
+          :acsc, :acscd, :acsch, :angle, :asec, :asecd, :asech, :asin,
+          :asind, :asinh, :atan, :atand, :atanh, :big, :cbrt, :ceil, :cis,
+          :complex, :cos, :cosc, :cosd, :cosh, :cospi, :cot, :cotd, :coth,
+          :csc, :cscd, :csch, :dawson, :deg2rad, :digamma, :erf, :erfc,
+          :erfcinv, :erfcx, :erfi, :erfinv, :exp, :exp10, :exp2, :expm1,
+          :exponent, :float, :floor, :gamma, :imag, :invdigamma, :isfinite,
+          :isinf, :isnan, :lfact, :lgamma, :log, :log10, :log1p, :log2, :rad2deg,
+          :real, :sec, :secd, :sech, :sign, :sin, :sinc, :sind, :sinh, :sinpi,
+          :sqrt, :tan, :tand, :tanh, :trigamma)
     @eval begin
         ($f)(A::DArray) = map($f, A)
     end
@@ -633,14 +636,16 @@ function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
     for d in dims
         for idxs in D.indexes
             if length(idxs[d]) != size(D, d)
-                throw(DimensionMismatch("Dimension $d is distributed. mapslice requires dimension $d to be completely available on all processors."))
+                throw(DimensionMismatch(string("dimension $d is distributed. ",
+                    "mapslices requires dimension $d to be completely available on all processors.")))
             end
         end
     end
 
     ddims = size(D.chunks)      # dims of the distribution
 
-    nchunks = reshape([remotecall(p, (x,y,z)->mapslices(x,localpart(y),z), f, D, dims) for p in procs(D)], ddims)
+    nchunks = reshape([remotecall(p,
+        (x,y,z)->mapslices(x,localpart(y),z), f, D, dims) for p in procs(D)], ddims)
     npids = copy(procs(D))
 
     nsizes = cell(length(nchunks))
@@ -669,7 +674,7 @@ function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
             idx_in_dim = subidx[x]
             startidx = 1
             for j in 1:(idx_in_dim-1)
-                prevsubidx = ntuple(length(subidx), y-> y==x?j:subidx[y])
+                prevsubidx = ntuple(length(subidx), y -> y == x ? j : subidx[y])
                 prevsize = nsizes[prevsubidx...]
                 startidx += prevsize[x]
             end
