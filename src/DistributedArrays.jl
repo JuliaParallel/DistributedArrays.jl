@@ -603,16 +603,17 @@ end
 
 function ctranspose{T}(D::DArray{T,2})
     DArray(reverse(D.dims), procs(D)) do I
-        lp = Array(T, map(length,I))
+        lp = Array(T, map(length, I))
         rp = convert(Array, D[reverse(I)...])
-        (x,y) = size(rp)
+        ctranspose!(lp, rp)
+    end
+end
 
-        for i in 1:x
-            for j in 1:y
-                lp[j,i] = rp[i,j]
-            end
-        end
-        lp
+function transpose{T}(D::DArray{T,2})
+    DArray(reverse(D.dims), procs(D)) do I
+        lp = Array(T, map(length, I))
+        rp = convert(Array, D[reverse(I)...])
+        transpose!(lp, rp)
     end
 end
 

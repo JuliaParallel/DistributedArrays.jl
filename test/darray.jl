@@ -370,14 +370,22 @@ facts("test randn") do
     end
 end
 
-facts("test ctranspose") do
-    a = drand(10, 20);
-    b = ctranspose(a);
-    (x,y) = size(a)
-    for i in 1:x
-        for j in 1:y
-            @fact a[i,j] => b[j,i]
-        end
+facts("test c/transpose") do
+    context("test ctranspose real") do
+        A = drand(Float64, 100, 200)
+        @fact A' => Array(A)'
+    end
+    context("test ctranspose complex") do
+        A = drand(Complex128, 200, 100)
+        @fact A' => Array(A)'
+    end
+    context("test transpose real") do
+        A = drand(Float64, 200, 100)
+        @fact A.' => Array(A).'
+    end
+    context("test ctranspose complex") do
+        A = drand(Complex128, 100, 200)
+        @fact A.' => Array(A).'
     end
 end
 
