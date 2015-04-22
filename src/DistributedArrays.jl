@@ -571,7 +571,9 @@ end
 (-)(x::Number, A::DArray) = x .- A
 
 mappart(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
-mappart(f::Callable, d1::DArray, d2::DArray) = DArray(I->f(localpart(d)), d)
+mappart(f::Callable, d1::DArray, d2::DArray) = DArray(d1.dims, procs(d1)) do I
+    f(localpart(d1), localpart(d2))
+end
 
 # Here we assume all the DArrays have
 # the same size and distribution

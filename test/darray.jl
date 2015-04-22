@@ -470,3 +470,34 @@ facts("test mapslices") do
     @fact size(n1a) == (1,6,4,5) && size(n2a) == (1,3,6,5)  && size(n3a) == (2,1,6,5) => true
     @fact size(n1) == (6,1,4,5) && size(n2) == (6,3,1,5)  && size(n3) == (2,6,1,5) => true
 end
+
+facts("test scalar ops") do
+    a = drand(20,20)
+    b = convert(Array, a)
+    c = drand(20,20)
+    d = convert(Array, c)
+
+    for f in (:.+, :.-, :.*, :./, :.%, :div, :mod)
+        context("$f") do
+            x = rand()
+            @fact (eval(f))(a, x) => (eval(f))(b, x)
+            @fact (eval(f))(a, c) => (eval(f))(b, d)
+        end
+    end
+
+    a = dones(Int, 20, 20)
+    b = convert(Array, a)
+    for f in (:.<<, :.>>)
+        context("$f") do
+            @fact (eval(f))(a, 2) => (eval(f))(b, 2)
+            @fact (eval(f))(a, a) => (eval(f))(b, b)
+        end
+    end
+
+    for f in (:rem,)
+        context("$f") do
+            x = rand()
+            @fact (eval(f))(a, x) => (eval(f))(b, x)
+        end
+    end
+end
