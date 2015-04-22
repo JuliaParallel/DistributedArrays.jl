@@ -601,7 +601,7 @@ for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
     end
 end
 
-function ctranspose{T}(D::DArray{T,2})
+function Base.ctranspose{T}(D::DArray{T,2})
     DArray(reverse(D.dims), procs(D)) do I
         lp = Array(T, map(length, I))
         rp = convert(Array, D[reverse(I)...])
@@ -609,7 +609,7 @@ function ctranspose{T}(D::DArray{T,2})
     end
 end
 
-function transpose{T}(D::DArray{T,2})
+function Base.transpose{T}(D::DArray{T,2})
     DArray(reverse(D.dims), procs(D)) do I
         lp = Array(T, map(length, I))
         rp = convert(Array, D[reverse(I)...])
