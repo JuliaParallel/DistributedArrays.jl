@@ -64,6 +64,11 @@ function DArray(init, dims, procs, dist)
     for i = 1:np
         chunks[i] = remotecall(procs[i], init, idxs[i])
     end
+
+    return construct_darray(dims, chunks, procs, idxs, cuts)
+end
+
+function construct_darray(dims, chunks, procs, idxs, cuts)
     p = max(1, localpartindex(procs))
     A = remotecall_fetch(procs[p], r->typeof(fetch(r)), chunks[p])
     return DArray{eltype(A),length(dims),A}(dims, chunks, procs, idxs, cuts)
@@ -79,6 +84,42 @@ DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(), maximum(dims
 
 # new DArray similar to an existing one
 DArray(init, d::DArray) = DArray(init, size(d), procs(d), [size(d.chunks)...])
+
+# Create a DArray from a collection of references
+function DArray(refs::Array{RemoteRef})
+    dimdist = size(refs)
+
+    npids = [r.where for r in refs]
+    nsizes = Array(Tuple, dimdist)
+    @sync for i in 1:length(refs)
+        let i=i
+            @async nsizes[i] = remotecall_fetch(npids[i], r->size(fetch(r)), refs[i])
+        end
+    end
+
+    nindexes = Array(NTuple{length(dimdist),UnitRange{Int}}, dimdist...)
+
+    for i in 1:length(nindexes)
+        subidx = ind2sub(dimdist, i)
+        nindexes[i] = ntuple(length(subidx), x->begin
+            idx_in_dim = subidx[x]
+            startidx = 1
+            for j in 1:(idx_in_dim-1)
+                prevsubidx = ntuple(length(subidx), y -> y == x ? j : subidx[y])
+                prevsize = nsizes[prevsubidx...]
+                startidx += prevsize[x]
+            end
+            startidx:startidx+(nsizes[i][x])-1
+        end)
+    end
+
+    lastidxs = hcat([Int[last(idx_in_d)+1 for idx_in_d in idx] for idx in nindexes]...)
+    ncuts = Array{Int,1}[unshift!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
+    ndims = tuple([sort(unique(lastidxs[x,:]))[end]-1 for x in 1:length(dimdist)]...)
+
+    return construct_darray(ndims, refs, npids, nindexes, ncuts)
+end
+
 
 macro DArray(ex::Expr)
     if ex.head !== :comprehension
@@ -645,58 +686,9 @@ function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
         end
     end
 
-    ddims = size(D.chunks)      # dims of the distribution
+    refs = RemoteRef[remotecall(p, (x,y,z)->mapslices(x,localpart(y),z), f, D, dims) for p in procs(D)]
 
-    nchunks = reshape([remotecall(p,
-        (x,y,z)->mapslices(x,localpart(y),z), f, D, dims) for p in procs(D)], ddims)
-    npids = copy(procs(D))
-
-    nsizes = cell(length(nchunks))
-    @sync for i in 1:length(nchunks)
-        let i=i
-            @async nsizes[i] = remotecall_fetch(npids[i], r->size(fetch(r)), nchunks[i])
-        end
-    end
-
-    ndims = ntuple(length(D.dims), x->begin
-        if x in dims
-            # mapslices could have changed the dimension lengths
-            nsizes[1][x]
-        else
-            # same as original
-            D.dims[x]
-        end
-    end)
-
-    nsizes = reshape(nsizes, ddims)
-    nindexes = Array(NTuple{length(ddims),UnitRange{Int}}, ddims...)
-
-    for i in 1:length(nindexes)
-        subidx = ind2sub(ddims, i)
-        nindexes[i] = ntuple(length(subidx), x->begin
-            idx_in_dim = subidx[x]
-            startidx = 1
-            for j in 1:(idx_in_dim-1)
-                prevsubidx = ntuple(length(subidx), y -> y == x ? j : subidx[y])
-                prevsize = nsizes[prevsubidx...]
-                startidx += prevsize[x]
-            end
-            startidx:startidx+(nsizes[i][x])-1
-        end)
-    end
-
-    ncuts = [begin
-        if i in dims
-            [1, nsizes[1][i]+1]
-        else
-            D.cuts[i]
-        end
-    end for i in 1:length(D.dims)]
-
-    p = max(1, localpartindex(npids))
-    A = remotecall_fetch(npids[p], r->typeof(fetch(r)), nchunks[p])
-
-    return DArray{eltype(A),N,A}(ndims, nchunks, npids, nindexes, ncuts)
+    DArray(reshape(refs, size(D.pids)))
 end
 
 
