@@ -256,6 +256,7 @@ chunk{T,N,A}(d::DArray{T,N,A}, i...) = fetch(d.chunks[i...])::A
 Construct a distributed array of zeros.
 Trailing arguments are the same as those accepted by `DArray`.
 """ ->
+dzeros(dims::Dims, args...) = DArray(I->zeros(map(length,I)), dims, args...)
 dzeros{T}(::Type{T}, dims::Dims, args...) = DArray(I->zeros(T,map(length,I)), dims, args...)
 dzeros{T}(::Type{T}, d1::Integer, drest::Integer...) = dzeros(T, convert(Dims, tuple(d1, drest...)))
 dzeros(d1::Integer, drest::Integer...) = dzeros(Float64, convert(Dims, tuple(d1, drest...)))
@@ -268,6 +269,7 @@ dzeros(d::Dims) = dzeros(Float64, d)
 Construct a distributed array of ones.
 Trailing arguments are the same as those accepted by `DArray`.
 """ ->
+dones(dims::Dims, args...) = DArray(I->ones(map(length,I)), dims, args...)
 dones{T}(::Type{T}, dims::Dims, args...) = DArray(I->ones(T,map(length,I)), dims, args...)
 dones{T}(::Type{T}, d1::Integer, drest::Integer...) = dones(T, convert(Dims, tuple(d1, drest...)))
 dones(d1::Integer, drest::Integer...) = dones(Float64, convert(Dims, tuple(d1, drest...)))
