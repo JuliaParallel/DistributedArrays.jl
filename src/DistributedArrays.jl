@@ -82,6 +82,18 @@ function DArray(init, dims, procs)
 end
 DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(), maximum(dims))])
 
+function DArray(init, dims, procs, dist, distfunc::Function)
+    np = prod(dist)
+    procs = procs[1:np]
+    idxs, cuts = distfunc([dims...], procs)
+
+    chunks = Array(RemoteRef, dist...)
+    for i = 1:np
+        chunks[i] = remotecall(procs[i], init, idxs[i])
+    end
+    return construct_darray(dims, chunks, procs, idxs, cuts)
+end
+
 # new DArray similar to an existing one
 DArray(init, d::DArray) = DArray(init, size(d), procs(d), [size(d.chunks)...])
 
