@@ -3,7 +3,7 @@ module DistributedArrays
 importall Base
 import Base.Callable
 
-export .+, .-, .*, ./, .%, .<<, .>>, div, mod, rem, &, |, $
+export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($)
 export DArray, SubDArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, samedist
 
