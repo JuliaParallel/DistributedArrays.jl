@@ -693,5 +693,48 @@ function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
     DArray(reshape(refs, size(D.pids)))
 end
 
+typealias DVector{T,A} DArray{T,1,A}
+typealias DMatrix{T,A} DArray{T,2,A}
+function (*){T,S}(A::DMatrix, x::DVector{T,S})
+    if size(A, 2) != length(x)
+        throw(DimensionMismatch(""))
+    end
+    rs = RemoteRef[]
+    for j = 1:size(A.chunks, 2)
+        xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
+        rj = RemoteRef[remotecall(A.pids[i,j], () -> localpart(A)*convert(S, xj)) for i = 1:size(A.chunks, 1)]
+        if j == 1
+            rs = rj
+        else
+            for i = 1:size(A.chunks, 1)
+                rsi = rs[i]
+                rji = rj[i]
+                rs[i] = remotecall(rsi.where, () -> fetch(rsi) + fetch(rji))
+            end
+        end
+    end
+    DArray(rs)
+end
+
+function Ac_mul_B{T,S}(A::DMatrix, x::DVector{T,S})
+    if size(A, 1) != length(x)
+        throw(DimensionMismatch(""))
+    end
+    rs = RemoteRef[]
+    for i = 1:size(A.chunks, 1)
+        xi = x[A.cuts[2][i]:A.cuts[2][i + 1] - 1]
+        ri = RemoteRef[remotecall(A.pids[i,j], () -> Ac_mul_B(localpart(A), convert(S, xi))) for j = 1:size(A.chunks, 2)]
+        if i == 1
+            rs = ri
+        else
+            for j = 1:size(A.chunks, 2)
+                rsj = rs[j]
+                rij = ri[j]
+                rs[j] = remotecall(rsj.where, () -> fetch(rsj) + fetch(rij))
+            end
+        end
+    end
+    DArray(rs)
+end
 
 end # module
