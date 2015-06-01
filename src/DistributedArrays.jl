@@ -695,6 +695,24 @@ end
 
 typealias DVector{T,A} DArray{T,1,A}
 typealias DMatrix{T,A} DArray{T,2,A}
+
+# Level 1
+function dot(x::DVector, y::DVector)
+    if length(x) != length(y)
+        throw(DimensionMismatch(""))
+    end
+    if (x.pids != y.pids) || (x.cuts != y.cuts)
+        throw(ArgumentError("vectors don't have the same distribution. Not handled for efficiency reasons."))
+    end
+    r = RemoteRef[]
+    for i = eachindex(x.chunks)
+        cx, cy = x.chunks[i], y.chunks[i]
+        push!(r, remotecall(cx.where, () -> dot(fetch(cx), fetch(cy))))
+    end
+    return mapreduce(fetch, Base.AddFun(), r)
+end
+
+# Level 2
 function (*){T,S}(A::DMatrix, x::DVector{T,S})
     if size(A, 2) != length(x)
         throw(DimensionMismatch(""))
@@ -731,6 +749,29 @@ function Ac_mul_B{T,S}(A::DMatrix, x::DVector{T,S})
                 rsj = rs[j]
                 rij = ri[j]
                 rs[j] = remotecall(rsj.where, () -> fetch(rsj) + fetch(rij))
+            end
+        end
+    end
+    DArray(rs)
+end
+
+# Level 3
+## For now, we assume tall and skinny B
+function (*){T,S}(A::DMatrix, B::DMatrix{T,S})
+    if size(A, 2) != size(B, 1)
+        throw(DimensionMismatch(""))
+    end
+    rs = RemoteRef[]
+    for j = 1:size(A.chunks, 2)
+        Bj = B[A.cuts[2][j]:A.cuts[2][j + 1] - 1, :]
+        rj = RemoteRef[remotecall(A.pids[i,j], () -> localpart(A)*convert(S, Bj)) for i = 1:size(A.chunks, 1)]
+        if j == 1
+            rs = rj
+        else
+            for i = 1:size(A.chunks, 1)
+                rsi = rs[i]
+                rji = rj[i]
+                rs[i] = remotecall(rsi.where, () -> fetch(rsi) + fetch(rji))
             end
         end
     end
