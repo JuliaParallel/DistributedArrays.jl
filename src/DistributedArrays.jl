@@ -101,16 +101,16 @@ function DArray(refs::Array{RemoteRef})
 
     for i in 1:length(nindexes)
         subidx = ind2sub(dimdist, i)
-        nindexes[i] = ntuple(length(subidx), x->begin
+        nindexes[i] = ntuple(length(subidx)) do x
             idx_in_dim = subidx[x]
             startidx = 1
             for j in 1:(idx_in_dim-1)
-                prevsubidx = ntuple(length(subidx), y -> y == x ? j : subidx[y])
+                prevsubidx = ntuple(y -> y == x ? j : subidx[y], length(subidx))
                 prevsize = nsizes[prevsubidx...]
                 startidx += prevsize[x]
             end
             startidx:startidx+(nsizes[i][x])-1
-        end)
+        end
     end
 
     lastidxs = hcat([Int[last(idx_in_d)+1 for idx_in_d in idx] for idx in nindexes]...)
@@ -198,7 +198,7 @@ function chunk_idxs(dims, chunks)
     n = length(dims)
     idxs = Array(NTuple{n,UnitRange{Int}},chunks...)
     cartesianmap(tuple(chunks...)) do cidx...
-        idxs[cidx...] = ntuple(n, i->(cuts[i][cidx[i]]:cuts[i][cidx[i]+1]-1))
+        idxs[cidx...] = ntuple(i -> (cuts[i][cidx[i]]:cuts[i][cidx[i] + 1] - 1), n)
     end
     return (idxs, cuts)
 end
@@ -223,7 +223,7 @@ Returns an empty array if no local part exists on the calling process.
 function localpart{T,N,A}(d::DArray{T,N,A})
     lpidx = localpartindex(d)
     if lpidx == 0
-        return convert(A, Array(T, ntuple(N, i->0)))::A
+        return convert(A, Array(T, ntuple(zero, N)))::A
     end
     return fetch(d.chunks[lpidx])::A
 end
@@ -237,14 +237,14 @@ Returns a tuple with empty ranges if no local part exists on the calling process
 function localindexes(d::DArray)
     lpidx = localpartindex(d)
     if lpidx == 0
-        return ntuple(ndims(d), i->1:0)
+        return ntuple(i -> 1:0, ndims(d))
     end
     return d.indexes[lpidx]
 end
 
 # find which piece holds index (I...)
 locate(d::DArray, I::Int...) =
-    ntuple(ndims(d), i->searchsortedlast(d.cuts[i], I[i]))
+    ntuple(i -> searchsortedlast(d.cuts[i], I[i]), ndims(d))
 
 chunk{T,N,A}(d::DArray{T,N,A}, i...) = fetch(d.chunks[i...])::A
 
@@ -411,7 +411,7 @@ function getindex_tuple{T}(d::DArray{T}, I::Tuple{Vararg{Int}})
     chidx = locate(d, I...)
     chunk = d.chunks[chidx...]
     idxs = d.indexes[chidx...]
-    localidx = ntuple(ndims(d), i->(I[i]-first(idxs[i])+1))
+    localidx = ntuple(i -> (I[i] - first(idxs[i]) + 1), ndims(d))
     return chunk[localidx...]::T
 end
 
