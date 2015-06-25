@@ -55,6 +55,12 @@ typealias SubOrDArray{T,N} Union(DArray{T,N}, SubDArray{T,N})
 
 ## core constructors ##
 
+function construct_darray(dims, chunks, procs, idxs, cuts)
+    p = max(1, localpartindex(procs))
+    A = remotecall_fetch(procs[p], r->typeof(fetch(r)), chunks[p])
+    return DArray{eltype(A),length(dims),A}(dims, chunks, procs, idxs, cuts)
+end
+
 function DArray(init, dims, procs, dist)
     # dist == size(chunks)
     np = prod(dist)
@@ -64,14 +70,7 @@ function DArray(init, dims, procs, dist)
     for i = 1:np
         chunks[i] = remotecall(procs[i], init, idxs[i])
     end
-
     return construct_darray(dims, chunks, procs, idxs, cuts)
-end
-
-function construct_darray(dims, chunks, procs, idxs, cuts)
-    p = max(1, localpartindex(procs))
-    A = remotecall_fetch(procs[p], r->typeof(fetch(r)), chunks[p])
-    return DArray{eltype(A),length(dims),A}(dims, chunks, procs, idxs, cuts)
 end
 
 function DArray(init, dims, procs)
