@@ -501,3 +501,14 @@ facts("test scalar ops") do
         end
     end
 end
+
+facts("test matrix multiplication") do
+    A = drandn(20,20)
+    b = drandn(20)
+    B = drandn(20,20)
+
+    @fact norm(convert(Array, A*b) - convert(Array, A)*convert(Array, b), Inf) < sqrt(eps()) => true
+    @fact norm(convert(Array, A*B) - convert(Array, A)*convert(Array, B), Inf) < sqrt(eps()) => true
+    @fact norm(convert(Array, A'*b) - convert(Array, A)'*convert(Array, b), Inf) < sqrt(eps()) => true
+    @fact norm(convert(Array, A'*B) - convert(Array, A)'*convert(Array, B), Inf) < sqrt(eps()) => true
+end

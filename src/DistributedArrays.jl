@@ -693,5 +693,240 @@ function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
     DArray(reshape(refs, size(D.pids)))
 end
 
+typealias DVector{T,A} DArray{T,1,A}
+typealias DMatrix{T,A} DArray{T,2,A}
+
+# Level 1
+function dot(x::DVector, y::DVector)
+    if length(x) != length(y)
+        throw(DimensionMismatch(""))
+    end
+    if (x.pids != y.pids) || (x.cuts != y.cuts)
+        throw(ArgumentError("vectors don't have the same distribution. Not handled for efficiency reasons."))
+    end
+    r = RemoteRef[]
+    for i = eachindex(x.chunks)
+        cx, cy = x.chunks[i], y.chunks[i]
+        push!(r, remotecall(cx.where, () -> dot(fetch(cx), fetch(cy))))
+    end
+    return mapreduce(fetch, Base.AddFun(), r)
+end
+
+# Level 2
+function add!(dest, src, scale = one(dest[1]))
+    if length(dest) != length(src)
+        throw(DimensionMismatch("source and destination arrays must have same number of elements"))
+    end
+    if scale == one(scale)
+        @simd for i = eachindex(dest)
+            @inbounds dest[i] += src[i]
+        end
+    else
+        @simd for i = eachindex(dest)
+            @inbounds dest[i] += scale*src[i]
+        end
+    end
+    return dest
+end
+
+localtype{T,N,S}(A::DArray{T,N,S}) = S
+localtype(A::AbstractArray) = typeof(A)
+
+function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVector)
+
+    # error checks
+    if size(A, 2) != length(x)
+        throw(DimensionMismatch(""))
+    end
+    if y.cuts[1] != A.cuts[1]
+        throw(ArgumentError("cuts of output vector must match cuts of first dimension of matrix"))
+    end
+
+    # Multiply on each tile of A
+    R = Array(RemoteRef, size(A.chunks)...)
+    for j = 1:size(A.chunks, 2)
+        xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
+        for i = 1:size(A.chunks, 1)
+            R[i,j] = remotecall(A.pids[i,j], () -> localpart(A)*convert(localtype(x), xj))
+        end
+    end
+
+    # Scale y if necessary
+    if β != one(β)
+        @sync for r in y.chunks
+            if β != zero(β)
+                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+            else
+                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+            end
+        end
+    end
+
+    # Update y
+    @sync for i = 1:size(R, 1)
+        rsi = y.chunks[i]
+        for j = 1:size(R, 2)
+            rij = R[i,j]
+            @async remotecall_wait(rsi.where, () -> add!(fetch(rsi), fetch(rij), α))
+        end
+    end
+
+    return y
+end
+
+function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVector)
+
+    # error checks
+    if size(A, 1) != length(x)
+        throw(DimensionMismatch(""))
+    end
+    if y.cuts[1] != A.cuts[2]
+        throw(ArgumentError("cuts of output vector must match cuts of second dimension of matrix"))
+    end
+
+    # Multiply on each tile of A
+    R = Array(RemoteRef, reverse(size(A.chunks))...)
+    for j = 1:size(A.chunks, 1)
+        xj = x[A.cuts[1][j]:A.cuts[1][j + 1] - 1]
+        for i = 1:size(A.chunks, 2)
+            R[i,j] = remotecall(A.pids[j,i], () -> localpart(A)'*convert(localtype(x), xj))
+        end
+    end
+
+    # Scale y if necessary
+    if β != one(β)
+        @sync for r in y.chunks
+            if β != zero(β)
+                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+            else
+                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+            end
+        end
+    end
+
+    # Update y
+    @sync for i = 1:size(R, 1)
+        rsi = y.chunks[i]
+        for j = 1:size(R, 2)
+            rij = R[i,j]
+            @async remotecall_wait(rsi.where, () -> add!(fetch(rsi), fetch(rij), α))
+        end
+    end
+    return y
+end
+
+
+# Level 3
+function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix)
+
+    # error checks
+    if size(A, 2) != size(B, 1)
+        throw(DimensionMismatch(""))
+    end
+    if C.cuts[1] != A.cuts[1]
+        throw(ArgumentError("cuts of the first dimension of the output matrix must match cuts of first dimension of the first input matrix"))
+    end
+
+    # Multiply on each tile of A
+    R = Array(RemoteRef, size(A.pids)..., size(C.pids, 2))
+    for j = 1:size(A.chunks, 2)
+        for k = 1:size(C.chunks, 2)
+            Bjk = B[A.cuts[2][j]:A.cuts[2][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
+            for i = 1:size(A.chunks, 1)
+                R[i,j,k] = remotecall(A.pids[i,j], () -> localpart(A)*convert(localtype(B), Bjk))
+            end
+        end
+    end
+
+    # Scale C if necessary
+    if β != one(β)
+        @sync for r in C.chunks
+            if β != zero(β)
+                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+            else
+                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+            end
+        end
+    end
+
+    # Update C
+    @sync for i = 1:size(R, 1)
+        for k = 1:size(C.chunks, 2)
+            rsik = C.chunks[i,k]
+            for j = 1:size(R, 2)
+                rijk = R[i,j,k]
+                @async remotecall_wait(rsik.where, () -> add!(fetch(rsik), fetch(rijk), α))
+            end
+        end
+    end
+    return C
+end
+
+function (*)(A::DMatrix, x::AbstractVector)
+    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(x)))
+    y = DArray(I -> Array(T, map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
+    return A_mul_B!(one(T), A, x, zero(T), y)
+end
+function (*)(A::DMatrix, B::AbstractMatrix)
+    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(B)))
+    C = DArray(I -> Array(T, map(length, I)), (size(A, 1), size(B, 2)), procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))], (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
+    return A_mul_B!(one(T), A, B, zero(T), C)
+end
+
+function Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix)
+
+    # error checks
+    if size(A, 1) != size(B, 1)
+        throw(DimensionMismatch(""))
+    end
+    if C.cuts[1] != A.cuts[2]
+        throw(ArgumentError("cuts of the first dimension of the output matrix must match cuts of second dimension of the first input matrix"))
+    end
+
+    # Multiply on each tile of A
+    R = Array(RemoteRef, reverse(size(A.pids))..., size(C.pids, 2))
+    for j = 1:size(A.chunks, 1)
+        for k = 1:size(C.chunks, 2)
+            Bjk = B[A.cuts[1][j]:A.cuts[1][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
+            for i = 1:size(A.chunks, 2)
+                R[i,j,k] = remotecall(A.pids[j,i], () -> localpart(A)'*convert(localtype(B), Bjk))
+            end
+        end
+    end
+
+    # Scale C if necessary
+    if β != one(β)
+        @sync for r in C.chunks
+            if β != zero(β)
+                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+            else
+                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+            end
+        end
+    end
+
+    # Update C
+    @sync for i = 1:size(R, 1)
+        for k = 1:size(C.chunks, 2)
+            rsik = C.chunks[i,k]
+            for j = 1:size(R, 2)
+                rijk = R[i,j,k]
+                @async remotecall_wait(rsik.where, () -> add!(fetch(rsik), fetch(rijk), α))
+            end
+        end
+    end
+    return C
+end
+
+function Ac_mul_B(A::DMatrix, x::AbstractVector)
+    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(x)))
+    y = DArray(I -> Array(T, map(length, I)), (size(A, 2),), procs(A)[1,:], (size(procs(A), 2),))
+    return Ac_mul_B!(one(T), A, x, zero(T), y)
+end
+function Ac_mul_B(A::DMatrix, B::AbstractMatrix)
+    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(B)))
+    C = DArray(I -> Array(T, map(length, I)), (size(A, 2), size(B, 2)), procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:], (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
+    return Ac_mul_B!(one(T), A, B, zero(T), C)
+end
 
 end # module
