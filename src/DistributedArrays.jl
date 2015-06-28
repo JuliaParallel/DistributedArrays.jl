@@ -419,7 +419,7 @@ Base.getindex(d::DArray, i::Int) = getindex_tuple(d, ind2sub(size(d), i))
 Base.getindex(d::DArray, i::Int...) = getindex_tuple(d, i)
 
 Base.getindex(d::DArray) = d[1]
-Base.getindex(d::DArray, I::Union(Int,UnitRange{Int})...) = sub(d, I...)
+Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon}...) = sub(d, I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
     if !(dest.dims == src.dims &&
