@@ -6,12 +6,12 @@ facts("test distribute") do
 
     context("test default distribute") do
         DA = distribute(A)
-        @fact length(DA.pids) => nworkers()
+        @fact length(procs(DA)) => nworkers()
     end
 
     context("test distribute with procs arguments") do
         DA = distribute(A, procs=[1,2])
-        @fact length(DA.pids) => 2
+        @fact length(procs(DA)) => 2
     end
 end
 
