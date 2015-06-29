@@ -212,7 +212,7 @@ function localpartindex(pids::Array{Int})
     end
     return 0
 end
-localpartindex(d::DArray) = localpartindex(d.pids)
+localpartindex(d::DArray) = localpartindex(procs(d))
 
 @doc """
 ### localpart(d)
@@ -423,12 +423,12 @@ Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon}...) = sub(d, I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
     if !(dest.dims == src.dims &&
-         dest.pids == src.pids &&
+         procs(dest) == procs(src) &&
          dest.indexes == src.indexes &&
          dest.cuts == src.cuts)
         throw(DimensionMismatch("destination array doesn't fit to source array"))
     end
-    @sync for p in dest.pids
+    @sync for p in procs(dest)
         @spawnat p copy!(localpart(dest), localpart(src))
     end
     return dest
@@ -631,7 +631,7 @@ end
 
 function samedist(A::DArray, B::DArray)
     (size(A) == size(B)) || error(DimensionMismatch())
-    if (A.pids != B.pids) || (A.cuts != B.cuts)
+    if (procs(A) != procs(B)) || (A.cuts != B.cuts)
         B = DArray(x->B[x...], A)
     end
     B
@@ -690,7 +690,7 @@ function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
 
     refs = RemoteRef[remotecall(p, (x,y,z)->mapslices(x,localpart(y),z), f, D, dims) for p in procs(D)]
 
-    DArray(reshape(refs, size(D.pids)))
+    DArray(reshape(refs, size(procs(D))))
 end
 
 typealias DVector{T,A} DArray{T,1,A}
@@ -701,7 +701,7 @@ function dot(x::DVector, y::DVector)
     if length(x) != length(y)
         throw(DimensionMismatch(""))
     end
-    if (x.pids != y.pids) || (x.cuts != y.cuts)
+    if (procs(x) != procs(y)) || (x.cuts != y.cuts)
         throw(ArgumentError("vectors don't have the same distribution. Not handled for efficiency reasons."))
     end
     r = RemoteRef[]
@@ -747,7 +747,7 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
     for j = 1:size(A.chunks, 2)
         xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
         for i = 1:size(A.chunks, 1)
-            R[i,j] = remotecall(A.pids[i,j], () -> localpart(A)*convert(localtype(x), xj))
+            R[i,j] = remotecall(procs(A)[i,j], () -> localpart(A)*convert(localtype(x), xj))
         end
     end
 
@@ -789,7 +789,7 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     for j = 1:size(A.chunks, 1)
         xj = x[A.cuts[1][j]:A.cuts[1][j + 1] - 1]
         for i = 1:size(A.chunks, 2)
-            R[i,j] = remotecall(A.pids[j,i], () -> localpart(A)'*convert(localtype(x), xj))
+            R[i,j] = remotecall(procs(A)[j,i], () -> localpart(A)'*convert(localtype(x), xj))
         end
     end
 
@@ -828,12 +828,12 @@ function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMat
     end
 
     # Multiply on each tile of A
-    R = Array(RemoteRef, size(A.pids)..., size(C.pids, 2))
+    R = Array(RemoteRef, size(procs(A))..., size(procs(C), 2))
     for j = 1:size(A.chunks, 2)
         for k = 1:size(C.chunks, 2)
             Bjk = B[A.cuts[2][j]:A.cuts[2][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
             for i = 1:size(A.chunks, 1)
-                R[i,j,k] = remotecall(A.pids[i,j], () -> localpart(A)*convert(localtype(B), Bjk))
+                R[i,j,k] = remotecall(procs(A)[i,j], () -> localpart(A)*convert(localtype(B), Bjk))
             end
         end
     end
@@ -884,12 +884,12 @@ function Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMa
     end
 
     # Multiply on each tile of A
-    R = Array(RemoteRef, reverse(size(A.pids))..., size(C.pids, 2))
+    R = Array(RemoteRef, reverse(size(procs(A)))..., size(procs(C), 2))
     for j = 1:size(A.chunks, 1)
         for k = 1:size(C.chunks, 2)
             Bjk = B[A.cuts[1][j]:A.cuts[1][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
             for i = 1:size(A.chunks, 2)
-                R[i,j,k] = remotecall(A.pids[j,i], () -> localpart(A)'*convert(localtype(B), Bjk))
+                R[i,j,k] = remotecall(procs(A)[j,i], () -> localpart(A)'*convert(localtype(B), Bjk))
             end
         end
     end
