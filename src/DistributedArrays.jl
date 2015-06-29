@@ -2,6 +2,7 @@ module DistributedArrays
 
 importall Base
 import Base.Callable
+import Base.BLAS: axpy!
 
 export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($)
 export DArray, SubDArray, SubOrDArray, @DArray
@@ -697,6 +698,17 @@ typealias DVector{T,A} DArray{T,1,A}
 typealias DMatrix{T,A} DArray{T,2,A}
 
 # Level 1
+
+function axpy!(α, x::DVector, y::DVector)
+    if length(x) != length(y)
+        throw(DimensionMismatch("vectors must have same length"))
+    end
+    @sync for p in procs(y)
+        @async remotecall_wait(p, () -> Base.axpy!(α, localpart(x), localpart(y)))
+    end
+    return y
+end
+
 function dot(x::DVector, y::DVector)
     if length(x) != length(y)
         throw(DimensionMismatch(""))
@@ -710,6 +722,11 @@ function dot(x::DVector, y::DVector)
         push!(r, remotecall(cx.where, () -> dot(fetch(cx), fetch(cy))))
     end
     return mapreduce(fetch, Base.AddFun(), r)
+end
+
+function norm(x::DVector, p::Number = 2)
+    r = [remotecall(pp, () -> norm(localpart(x), p)) for pp in procs(x)]
+    return norm([fetch(rr) for rr in r], p)
 end
 
 # Level 2
