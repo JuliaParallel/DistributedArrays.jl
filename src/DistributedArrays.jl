@@ -400,13 +400,6 @@ end
 
 ## indexing ##
 
-Base.getindex(r::RemoteRef, args...) = begin
-    if r.where == myid()
-        return getindex(fetch(r), args...)
-    end
-    return remotecall_fetch(r.where, getindex, r, args...)
-end
-
 function getindex_tuple{T}(d::DArray{T}, I::Tuple{Vararg{Int}})
     chidx = locate(d, I...)
     chunk = d.chunks[chidx...]
