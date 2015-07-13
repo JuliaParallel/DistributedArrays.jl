@@ -512,3 +512,20 @@ facts("test matrix multiplication") do
     @fact norm(convert(Array, A'*b) - convert(Array, A)'*convert(Array, b), Inf) < sqrt(eps()) => true
     @fact norm(convert(Array, A'*B) - convert(Array, A)'*convert(Array, B), Inf) < sqrt(eps()) => true
 end
+
+facts("test norm") do
+    x = drandn(20)
+
+    @fact abs(norm(x) - norm(convert(Array, x))) < sqrt(eps()) => true
+    @fact abs(norm(x, 1) - norm(convert(Array, x), 1)) < sqrt(eps()) => true
+    @fact abs(norm(x, 2) - norm(convert(Array, x), 2)) < sqrt(eps()) => true
+    @fact abs(norm(x, Inf) - norm(convert(Array, x), Inf)) < sqrt(eps()) => true
+end
+
+facts("test axpy!") do
+    x = drandn(20)
+    y = drandn(20)
+
+    @fact norm(convert(Array, LinAlg.axpy!(2.0, x, copy(y))) - LinAlg.axpy!(2.0, convert(Array, x), convert(Array, y))) < sqrt(eps()) => true
+    @fact_throws LinAlg.axpy!(2.0, x, zeros(length(x) + 1)) => DimensionMismatch
+end
