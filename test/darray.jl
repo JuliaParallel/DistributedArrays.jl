@@ -529,3 +529,16 @@ facts("test axpy!") do
     @fact norm(convert(Array, LinAlg.axpy!(2.0, x, copy(y))) - LinAlg.axpy!(2.0, convert(Array, x), convert(Array, y))) < sqrt(eps()) => true
     @fact_throws LinAlg.axpy!(2.0, x, zeros(length(x) + 1)) => DimensionMismatch
 end
+
+facts("test ppeval") do
+    A = drandn((10, 10, nworkers()), workers(), [1, 1, nworkers()])
+    B = drandn((10, nworkers()), workers(), [1, nworkers()])
+
+    R = zeros(10, nworkers())
+    for i = 1:nworkers()
+        R[:, i] = convert(Array, A)[:, :, i]*convert(Array, B)[:, i]
+    end
+    @fact convert(Array, ppeval(*, A, B)) => roughly(R)
+    @fact sum(ppeval(eigvals, A)) => roughly(sum(ppeval(eigvals, A, eye(10, 10))))
+end
+
