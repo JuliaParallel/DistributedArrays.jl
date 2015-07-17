@@ -6,7 +6,7 @@ import Base.BLAS: axpy!
 
 export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($)
 export DArray, SubDArray, SubOrDArray, @DArray
-export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, samedist
+export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, ppeval, samedist
 
 @doc """
 ### DArray(init, dims, [procs, dist])
@@ -216,7 +216,7 @@ end
 localpartindex(d::DArray) = localpartindex(procs(d))
 
 @doc """
-### localpart(d)
+### localpart(d::DArray)
 
 Get the local piece of a distributed array.
 Returns an empty array if no local part exists on the calling process.
@@ -228,6 +228,13 @@ function localpart{T,N,A}(d::DArray{T,N,A})
     end
     return fetch(d.chunks[lpidx])::A
 end
+
+"""
+### localpart(A)
+
+The identity when input is not distributed
+"""
+localpart(A) = A
 
 @doc """
 ### localindexes(d)
@@ -685,6 +692,121 @@ function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
     refs = RemoteRef[remotecall(p, (x,y,z)->mapslices(x,localpart(y),z), f, D, dims) for p in procs(D)]
 
     DArray(reshape(refs, size(procs(D))))
+end
+
+function _ppeval(f, A...; dim = map(ndims, A))
+    if length(dim) != length(A)
+        throw(ArgumentError("dim argument has wrong length. length(dim) = $(length(dim)) but should be $(length(A))"))
+    end
+    narg = length(A)
+    dimlength = size(A[1], dim[1])
+    for i = 2:narg
+        if dim[i] > 0 && dimlength != size(A[i], dim[i])
+            throw(ArgumentError("lengths of broadcast dimensions must be the same. size(A[1], $(dim[1])) = $dimlength but size(A[$i], $(dim[i])) = $(size(A[i], dim[i]))"))
+        end
+    end
+    dims = []
+    idx  = []
+    args = []
+    for i = 1:narg
+        push!(dims, ndims(A[i]))
+        push!(idx, Any[1:size(A[i], d) for d in 1:dims[i]])
+        if dim[i] > 0
+            idx[i][dim[i]] = 1
+            push!(args, slice(A[i], idx[i]...))
+        else
+            push!(args, A[i])
+        end
+    end
+    R1 = f(args...)
+    ridx = Any[1:size(R1, d) for d in 1:ndims(R1)]
+    push!(ridx, 1)
+    Rsize = map(last, ridx)
+    Rsize[end] = dimlength
+    R = Array(eltype(R1), Rsize...)
+
+    for i = 1:dimlength
+        for j = 1:narg
+            if dim[j] > 0
+                idx[j][dim[j]] = i
+                args[j] = slice(A[j], idx[j]...)
+            else
+                args[j] = A[j]
+            end
+        end
+        ridx[end] = i
+        R[ridx...] = f(args...)
+    end
+
+    return R
+end
+
+"""
+### `ppeval(f, D...; dim::NTuple)`
+
+Evaluates the callable argument `f` on slices of the elements of the `D` tuple.
+
+#### Arguments
+`f` can be any callable object that accepts sliced or broadcasted elements of `D`.
+The result returned from `f` must be either an array or a scalar.
+
+`D` has any number of elements and the alements can have any type. If an element
+of `D` is a distributed array along the dimension specified by `dim`. If an
+element of `D` is not distributed, the element is by default broadcasted and
+applied on all evaluations of `f`.
+
+`dim` is a tuple of integers specifying the dimension over which the elements
+of `D` is slices. The length of the tuple must therefore be the same as the
+number of arguments `D`. By default distributed arrays are slides along the
+last dimension. If the value is less than or equal to zero the element are
+broadcasted to all evaluations of `f`.
+
+#### Result
+`ppeval` returns a distributed array of dimension `p+1` where the first `p`
+sizes correspond to the sizes of return values of `f`. The last dimention of
+the return array from `ppeval` has the same length as the dimension over which
+the input arrays are sliced.
+
+#### Examples
+```jl
+addprocs(JULIA_CPU_CORES)
+
+using DistributedArrays
+
+A = drandn((10, 10, JULIA_CPU_CORES), workers(), [1, 1, JULIA_CPU_CORES])
+
+ppeval(eigvals, A)
+
+ppeval(eigvals, A, randn(10,10)) # broadcasting second argument
+
+B = drandn((10, JULIA_CPU_CORES), workers(), [1, JULIA_CPU_CORES])
+
+ppeval(*, A, B)
+
+```
+"""
+function ppeval(f, D...; dim::NTuple = map(t -> isa(t, DArray) ? ndims(t) : 0, D))
+    #Ensure that the complete DArray is available on the specified dims on all processors
+    for i = 1:length(D)
+        if isa(D[i], DArray)
+            for idxs in D[i].indexes
+                for d in setdiff(1:ndims(D[i]), dim[i])
+                    if length(idxs[d]) != size(D[i], d)
+                        throw(DimensionMismatch(string("dimension $d is distributed. ",
+                            "mapslices requires dimension $d to be completely available on all processors.")))
+                    end
+                end
+            end
+        end
+    end
+
+    refs = RemoteRef[remotecall(p, (x, y, z) -> _ppeval(x, map(localpart, y)...; dim = z), f, D, dim) for p in procs(D[1])]
+
+    # The array of RemoteRefs has to be reshaped for the DArray constructor to work correctly.
+    # This requires a fetch and the DArray is also fetching so it might be better to modify
+    # the DArray constructor.
+    sd = [size(D[1].pids)...]
+    DArray(reshape(refs, tuple([sd[1:ndims(fetch(refs[1])) - 1], sd[end];]...)))
 end
 
 typealias DVector{T,A} DArray{T,1,A}
