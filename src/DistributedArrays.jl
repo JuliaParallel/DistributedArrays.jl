@@ -631,14 +631,14 @@ for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
 end
 
 function samedist(A::DArray, B::DArray)
-    (size(A) == size(B)) || error(DimensionMismatch())
+    (size(A) == size(B)) || throw(DimensionMismatch())
     if (procs(A) != procs(B)) || (A.cuts != B.cuts)
         B = DArray(x->B[x...], A)
     end
     B
 end
 
-for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
+for f in (:+, :-, :.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
     @eval begin
         function ($f){T}(A::DArray{T}, B::DArray{T})
             B = samedist(A, B)

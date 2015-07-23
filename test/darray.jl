@@ -477,7 +477,7 @@ facts("test scalar ops") do
     c = drand(20,20)
     d = convert(Array, c)
 
-    for f in (:.+, :.-, :.*, :./, :.%, :div, :mod)
+    for f in (:+, :-, :.+, :.-, :.*, :./, :.%, :div, :mod)
         context("$f") do
             x = rand()
             @fact (eval(f))(a, x) => (eval(f))(b, x)
