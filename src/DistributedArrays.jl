@@ -2,10 +2,11 @@ module DistributedArrays
 
 importall Base
 import Base.Callable
+import Base.BLAS: axpy!
 
 export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($)
 export DArray, SubDArray, SubOrDArray, @DArray
-export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, samedist
+export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, ppeval, samedist
 
 @doc """
 ### DArray(init, dims, [procs, dist])
@@ -211,10 +212,10 @@ function localpartindex(pids::Array{Int})
     end
     return 0
 end
-localpartindex(d::DArray) = localpartindex(d.pids)
+localpartindex(d::DArray) = localpartindex(procs(d))
 
 @doc """
-### localpart(d)
+### localpart(d::DArray)
 
 Get the local piece of a distributed array.
 Returns an empty array if no local part exists on the calling process.
@@ -226,6 +227,13 @@ function localpart{T,N,A}(d::DArray{T,N,A})
     end
     return fetch(d.chunks[lpidx])::A
 end
+
+"""
+### localpart(A)
+
+The identity when input is not distributed
+"""
+localpart(A) = A
 
 @doc """
 ### localindexes(d)
@@ -399,13 +407,6 @@ end
 
 ## indexing ##
 
-Base.getindex(r::RemoteRef, args...) = begin
-    if r.where == myid()
-        return getindex(fetch(r), args...)
-    end
-    return remotecall_fetch(r.where, getindex, r, args...)
-end
-
 function getindex_tuple{T}(d::DArray{T}, I::Tuple{Vararg{Int}})
     chidx = locate(d, I...)
     chunk = d.chunks[chidx...]
@@ -418,16 +419,16 @@ Base.getindex(d::DArray, i::Int) = getindex_tuple(d, ind2sub(size(d), i))
 Base.getindex(d::DArray, i::Int...) = getindex_tuple(d, i)
 
 Base.getindex(d::DArray) = d[1]
-Base.getindex(d::DArray, I::Union(Int,UnitRange{Int})...) = sub(d, I...)
+Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon}...) = sub(d, I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
     if !(dest.dims == src.dims &&
-         dest.pids == src.pids &&
+         procs(dest) == procs(src) &&
          dest.indexes == src.indexes &&
          dest.cuts == src.cuts)
         throw(DimensionMismatch("destination array doesn't fit to source array"))
     end
-    @sync for p in dest.pids
+    @sync for p in procs(dest)
         @spawnat p copy!(localpart(dest), localpart(src))
     end
     return dest
@@ -629,14 +630,14 @@ for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
 end
 
 function samedist(A::DArray, B::DArray)
-    (size(A) == size(B)) || error(DimensionMismatch())
-    if (A.pids != B.pids) || (A.cuts != B.cuts)
+    (size(A) == size(B)) || throw(DimensionMismatch())
+    if (procs(A) != procs(B)) || (A.cuts != B.cuts)
         B = DArray(x->B[x...], A)
     end
     B
 end
 
-for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
+for f in (:+, :-, :.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
     @eval begin
         function ($f){T}(A::DArray{T}, B::DArray{T})
             B = samedist(A, B)
@@ -689,8 +690,374 @@ function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
 
     refs = RemoteRef[remotecall(p, (x,y,z)->mapslices(x,localpart(y),z), f, D, dims) for p in procs(D)]
 
-    DArray(reshape(refs, size(D.pids)))
+    DArray(reshape(refs, size(procs(D))))
 end
 
+function _ppeval(f, A...; dim = map(ndims, A))
+    if length(dim) != length(A)
+        throw(ArgumentError("dim argument has wrong length. length(dim) = $(length(dim)) but should be $(length(A))"))
+    end
+    narg = length(A)
+    dimlength = size(A[1], dim[1])
+    for i = 2:narg
+        if dim[i] > 0 && dimlength != size(A[i], dim[i])
+            throw(ArgumentError("lengths of broadcast dimensions must be the same. size(A[1], $(dim[1])) = $dimlength but size(A[$i], $(dim[i])) = $(size(A[i], dim[i]))"))
+        end
+    end
+    dims = []
+    idx  = []
+    args = []
+    for i = 1:narg
+        push!(dims, ndims(A[i]))
+        push!(idx, Any[1:size(A[i], d) for d in 1:dims[i]])
+        if dim[i] > 0
+            idx[i][dim[i]] = 1
+            push!(args, slice(A[i], idx[i]...))
+        else
+            push!(args, A[i])
+        end
+    end
+    R1 = f(args...)
+    ridx = Any[1:size(R1, d) for d in 1:ndims(R1)]
+    push!(ridx, 1)
+    Rsize = map(last, ridx)
+    Rsize[end] = dimlength
+    R = Array(eltype(R1), Rsize...)
+
+    for i = 1:dimlength
+        for j = 1:narg
+            if dim[j] > 0
+                idx[j][dim[j]] = i
+                args[j] = slice(A[j], idx[j]...)
+            else
+                args[j] = A[j]
+            end
+        end
+        ridx[end] = i
+        R[ridx...] = f(args...)
+    end
+
+    return R
+end
+
+"""
+### `ppeval(f, D...; dim::NTuple)`
+
+Evaluates the callable argument `f` on slices of the elements of the `D` tuple.
+
+#### Arguments
+`f` can be any callable object that accepts sliced or broadcasted elements of `D`.
+The result returned from `f` must be either an array or a scalar.
+
+`D` has any number of elements and the alements can have any type. If an element
+of `D` is a distributed array along the dimension specified by `dim`. If an
+element of `D` is not distributed, the element is by default broadcasted and
+applied on all evaluations of `f`.
+
+`dim` is a tuple of integers specifying the dimension over which the elements
+of `D` is slices. The length of the tuple must therefore be the same as the
+number of arguments `D`. By default distributed arrays are slides along the
+last dimension. If the value is less than or equal to zero the element are
+broadcasted to all evaluations of `f`.
+
+#### Result
+`ppeval` returns a distributed array of dimension `p+1` where the first `p`
+sizes correspond to the sizes of return values of `f`. The last dimention of
+the return array from `ppeval` has the same length as the dimension over which
+the input arrays are sliced.
+
+#### Examples
+```jl
+addprocs(JULIA_CPU_CORES)
+
+using DistributedArrays
+
+A = drandn((10, 10, JULIA_CPU_CORES), workers(), [1, 1, JULIA_CPU_CORES])
+
+ppeval(eigvals, A)
+
+ppeval(eigvals, A, randn(10,10)) # broadcasting second argument
+
+B = drandn((10, JULIA_CPU_CORES), workers(), [1, JULIA_CPU_CORES])
+
+ppeval(*, A, B)
+
+```
+"""
+function ppeval(f, D...; dim::NTuple = map(t -> isa(t, DArray) ? ndims(t) : 0, D))
+    #Ensure that the complete DArray is available on the specified dims on all processors
+    for i = 1:length(D)
+        if isa(D[i], DArray)
+            for idxs in D[i].indexes
+                for d in setdiff(1:ndims(D[i]), dim[i])
+                    if length(idxs[d]) != size(D[i], d)
+                        throw(DimensionMismatch(string("dimension $d is distributed. ",
+                            "mapslices requires dimension $d to be completely available on all processors.")))
+                    end
+                end
+            end
+        end
+    end
+
+    refs = RemoteRef[remotecall(p, (x, y, z) -> _ppeval(x, map(localpart, y)...; dim = z), f, D, dim) for p in procs(D[1])]
+
+    # The array of RemoteRefs has to be reshaped for the DArray constructor to work correctly.
+    # This requires a fetch and the DArray is also fetching so it might be better to modify
+    # the DArray constructor.
+    sd = [size(D[1].pids)...]
+    DArray(reshape(refs, tuple([sd[1:ndims(fetch(refs[1])) - 1], sd[end];]...)))
+end
+
+typealias DVector{T,A} DArray{T,1,A}
+typealias DMatrix{T,A} DArray{T,2,A}
+
+# Level 1
+
+function axpy!(α, x::DVector, y::DVector)
+    if length(x) != length(y)
+        throw(DimensionMismatch("vectors must have same length"))
+    end
+    @sync for p in procs(y)
+        @async remotecall_wait(p, () -> Base.axpy!(α, localpart(x), localpart(y)))
+    end
+    return y
+end
+
+function dot(x::DVector, y::DVector)
+    if length(x) != length(y)
+        throw(DimensionMismatch(""))
+    end
+    if (procs(x) != procs(y)) || (x.cuts != y.cuts)
+        throw(ArgumentError("vectors don't have the same distribution. Not handled for efficiency reasons."))
+    end
+    r = RemoteRef[]
+    for i = eachindex(x.chunks)
+        cx, cy = x.chunks[i], y.chunks[i]
+        push!(r, remotecall(cx.where, () -> dot(fetch(cx), fetch(cy))))
+    end
+    return mapreduce(fetch, Base.AddFun(), r)
+end
+
+function norm(x::DVector, p::Number = 2)
+    r = [remotecall(pp, () -> norm(localpart(x), p)) for pp in procs(x)]
+    return norm([fetch(rr) for rr in r], p)
+end
+
+# Level 2
+function add!(dest, src, scale = one(dest[1]))
+    if length(dest) != length(src)
+        throw(DimensionMismatch("source and destination arrays must have same number of elements"))
+    end
+    if scale == one(scale)
+        @simd for i = eachindex(dest)
+            @inbounds dest[i] += src[i]
+        end
+    else
+        @simd for i = eachindex(dest)
+            @inbounds dest[i] += scale*src[i]
+        end
+    end
+    return dest
+end
+
+localtype{T,N,S}(A::DArray{T,N,S}) = S
+localtype(A::AbstractArray) = typeof(A)
+
+function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVector)
+
+    # error checks
+    if size(A, 2) != length(x)
+        throw(DimensionMismatch(""))
+    end
+    if y.cuts[1] != A.cuts[1]
+        throw(ArgumentError("cuts of output vector must match cuts of first dimension of matrix"))
+    end
+
+    # Multiply on each tile of A
+    R = Array(RemoteRef, size(A.chunks)...)
+    for j = 1:size(A.chunks, 2)
+        xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
+        for i = 1:size(A.chunks, 1)
+            R[i,j] = remotecall(procs(A)[i,j], () -> localpart(A)*convert(localtype(x), xj))
+        end
+    end
+
+    # Scale y if necessary
+    if β != one(β)
+        @sync for r in y.chunks
+            if β != zero(β)
+                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+            else
+                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+            end
+        end
+    end
+
+    # Update y
+    @sync for i = 1:size(R, 1)
+        rsi = y.chunks[i]
+        for j = 1:size(R, 2)
+            rij = R[i,j]
+            @async remotecall_wait(rsi.where, () -> add!(fetch(rsi), fetch(rij), α))
+        end
+    end
+
+    return y
+end
+
+function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVector)
+
+    # error checks
+    if size(A, 1) != length(x)
+        throw(DimensionMismatch(""))
+    end
+    if y.cuts[1] != A.cuts[2]
+        throw(ArgumentError("cuts of output vector must match cuts of second dimension of matrix"))
+    end
+
+    # Multiply on each tile of A
+    R = Array(RemoteRef, reverse(size(A.chunks))...)
+    for j = 1:size(A.chunks, 1)
+        xj = x[A.cuts[1][j]:A.cuts[1][j + 1] - 1]
+        for i = 1:size(A.chunks, 2)
+            R[i,j] = remotecall(procs(A)[j,i], () -> localpart(A)'*convert(localtype(x), xj))
+        end
+    end
+
+    # Scale y if necessary
+    if β != one(β)
+        @sync for r in y.chunks
+            if β != zero(β)
+                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+            else
+                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+            end
+        end
+    end
+
+    # Update y
+    @sync for i = 1:size(R, 1)
+        rsi = y.chunks[i]
+        for j = 1:size(R, 2)
+            rij = R[i,j]
+            @async remotecall_wait(rsi.where, () -> add!(fetch(rsi), fetch(rij), α))
+        end
+    end
+    return y
+end
+
+
+# Level 3
+function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix)
+
+    # error checks
+    if size(A, 2) != size(B, 1)
+        throw(DimensionMismatch(""))
+    end
+    if C.cuts[1] != A.cuts[1]
+        throw(ArgumentError("cuts of the first dimension of the output matrix must match cuts of first dimension of the first input matrix"))
+    end
+
+    # Multiply on each tile of A
+    R = Array(RemoteRef, size(procs(A))..., size(procs(C), 2))
+    for j = 1:size(A.chunks, 2)
+        for k = 1:size(C.chunks, 2)
+            Bjk = B[A.cuts[2][j]:A.cuts[2][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
+            for i = 1:size(A.chunks, 1)
+                R[i,j,k] = remotecall(procs(A)[i,j], () -> localpart(A)*convert(localtype(B), Bjk))
+            end
+        end
+    end
+
+    # Scale C if necessary
+    if β != one(β)
+        @sync for r in C.chunks
+            if β != zero(β)
+                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+            else
+                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+            end
+        end
+    end
+
+    # Update C
+    @sync for i = 1:size(R, 1)
+        for k = 1:size(C.chunks, 2)
+            rsik = C.chunks[i,k]
+            for j = 1:size(R, 2)
+                rijk = R[i,j,k]
+                @async remotecall_wait(rsik.where, () -> add!(fetch(rsik), fetch(rijk), α))
+            end
+        end
+    end
+    return C
+end
+
+function (*)(A::DMatrix, x::AbstractVector)
+    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(x)))
+    y = DArray(I -> Array(T, map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
+    return A_mul_B!(one(T), A, x, zero(T), y)
+end
+function (*)(A::DMatrix, B::AbstractMatrix)
+    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(B)))
+    C = DArray(I -> Array(T, map(length, I)), (size(A, 1), size(B, 2)), procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))], (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
+    return A_mul_B!(one(T), A, B, zero(T), C)
+end
+
+function Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix)
+
+    # error checks
+    if size(A, 1) != size(B, 1)
+        throw(DimensionMismatch(""))
+    end
+    if C.cuts[1] != A.cuts[2]
+        throw(ArgumentError("cuts of the first dimension of the output matrix must match cuts of second dimension of the first input matrix"))
+    end
+
+    # Multiply on each tile of A
+    R = Array(RemoteRef, reverse(size(procs(A)))..., size(procs(C), 2))
+    for j = 1:size(A.chunks, 1)
+        for k = 1:size(C.chunks, 2)
+            Bjk = B[A.cuts[1][j]:A.cuts[1][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
+            for i = 1:size(A.chunks, 2)
+                R[i,j,k] = remotecall(procs(A)[j,i], () -> localpart(A)'*convert(localtype(B), Bjk))
+            end
+        end
+    end
+
+    # Scale C if necessary
+    if β != one(β)
+        @sync for r in C.chunks
+            if β != zero(β)
+                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+            else
+                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+            end
+        end
+    end
+
+    # Update C
+    @sync for i = 1:size(R, 1)
+        for k = 1:size(C.chunks, 2)
+            rsik = C.chunks[i,k]
+            for j = 1:size(R, 2)
+                rijk = R[i,j,k]
+                @async remotecall_wait(rsik.where, () -> add!(fetch(rsik), fetch(rijk), α))
+            end
+        end
+    end
+    return C
+end
+
+function Ac_mul_B(A::DMatrix, x::AbstractVector)
+    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(x)))
+    y = DArray(I -> Array(T, map(length, I)), (size(A, 2),), procs(A)[1,:], (size(procs(A), 2),))
+    return Ac_mul_B!(one(T), A, x, zero(T), y)
+end
+function Ac_mul_B(A::DMatrix, B::AbstractMatrix)
+    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(B)))
+    C = DArray(I -> Array(T, map(length, I)), (size(A, 2), size(B, 2)), procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:], (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
+    return Ac_mul_B!(one(T), A, B, zero(T), C)
+end
 
 end # module

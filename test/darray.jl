@@ -6,12 +6,12 @@ facts("test distribute") do
 
     context("test default distribute") do
         DA = distribute(A)
-        @fact length(DA.pids) => nworkers()
+        @fact length(procs(DA)) => nworkers()
     end
 
     context("test distribute with procs arguments") do
         DA = distribute(A, procs=[1,2])
-        @fact length(DA.pids) => 2
+        @fact length(procs(DA)) => 2
     end
 end
 
@@ -477,7 +477,7 @@ facts("test scalar ops") do
     c = drand(20,20)
     d = convert(Array, c)
 
-    for f in (:.+, :.-, :.*, :./, :.%, :div, :mod)
+    for f in (:+, :-, :.+, :.-, :.*, :./, :.%, :div, :mod)
         context("$f") do
             x = rand()
             @fact (eval(f))(a, x) => (eval(f))(b, x)
@@ -501,3 +501,44 @@ facts("test scalar ops") do
         end
     end
 end
+
+facts("test matrix multiplication") do
+    A = drandn(20,20)
+    b = drandn(20)
+    B = drandn(20,20)
+
+    @fact norm(convert(Array, A*b) - convert(Array, A)*convert(Array, b), Inf) < sqrt(eps()) => true
+    @fact norm(convert(Array, A*B) - convert(Array, A)*convert(Array, B), Inf) < sqrt(eps()) => true
+    @fact norm(convert(Array, A'*b) - convert(Array, A)'*convert(Array, b), Inf) < sqrt(eps()) => true
+    @fact norm(convert(Array, A'*B) - convert(Array, A)'*convert(Array, B), Inf) < sqrt(eps()) => true
+end
+
+facts("test norm") do
+    x = drandn(20)
+
+    @fact abs(norm(x) - norm(convert(Array, x))) < sqrt(eps()) => true
+    @fact abs(norm(x, 1) - norm(convert(Array, x), 1)) < sqrt(eps()) => true
+    @fact abs(norm(x, 2) - norm(convert(Array, x), 2)) < sqrt(eps()) => true
+    @fact abs(norm(x, Inf) - norm(convert(Array, x), Inf)) < sqrt(eps()) => true
+end
+
+facts("test axpy!") do
+    x = drandn(20)
+    y = drandn(20)
+
+    @fact norm(convert(Array, LinAlg.axpy!(2.0, x, copy(y))) - LinAlg.axpy!(2.0, convert(Array, x), convert(Array, y))) < sqrt(eps()) => true
+    @fact_throws LinAlg.axpy!(2.0, x, zeros(length(x) + 1)) => DimensionMismatch
+end
+
+facts("test ppeval") do
+    A = drandn((10, 10, nworkers()), workers(), [1, 1, nworkers()])
+    B = drandn((10, nworkers()), workers(), [1, nworkers()])
+
+    R = zeros(10, nworkers())
+    for i = 1:nworkers()
+        R[:, i] = convert(Array, A)[:, :, i]*convert(Array, B)[:, i]
+    end
+    @fact convert(Array, ppeval(*, A, B)) => roughly(R)
+    @fact sum(ppeval(eigvals, A)) => roughly(sum(ppeval(eigvals, A, eye(10, 10))))
+end
+
