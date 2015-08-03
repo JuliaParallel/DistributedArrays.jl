@@ -496,13 +496,15 @@ Base.reduce(f, d::DArray) =
     mapreduce(fetch, f,
               Any[ @spawnat p reduce(f, localpart(d)) for p in procs(d) ])
 
-Base.mapreduce(f, opt::Function, d::DArray) = mapreduce(f, Base.specialized_binary(opt), d)
-
-Base.mapreduce(f, opt, d::DArray) =
+function _mapreduce(f, opt, d::DArray)
     mapreduce(fetch, opt,
               Any[ @spawnat p mapreduce(f, opt, localpart(d)) for p in procs(d) ])
+end
+Base.mapreduce(f, opt::Union{Base.OrFun,Base.AndFun}, d::DArray) = _mapreduce(f, opt, d)
+Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, Base.specialized_binary(opt), d)
+Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
 
-Base.map!(f, d::DArray) = begin
+ Base.map!(f, d::DArray) = begin
     @sync for p in procs(d)
         @spawnat p map!(f, localpart(d))
     end
@@ -579,9 +581,7 @@ for (fn, fr) in ((:sum, :AddFun),
                  (:minimum, :MinFun),
                  (:any, :OrFun),
                  (:all, :AndFun))
-    @eval begin
-        (Base.$fn)(d::DArray) = reduce((Base.$fr)(), d)
-    end
+    @eval (Base.$fn)(d::DArray) = reduce((Base.$fr)(), d)
 end
 
 # mapreduce like
@@ -589,9 +589,7 @@ for (fn, fr1, fr2) in ((:maxabs, :AbsFun, :MaxFun),
                        (:minabs, :AbsFun, :MinFun),
                        (:sumabs, :AbsFun, :AddFun),
                        (:sumabs2, :Abs2Fun, :AddFun))
-    @eval begin
-        (Base.$fn)(d::DArray) = mapreduce((Base.$fr1)(), (Base.$fr2)(), d)
-    end
+    @eval (Base.$fn)(d::DArray) = mapreduce((Base.$fr1)(), (Base.$fr2)(), d)
 end
 
 # semi mapreduce
@@ -599,7 +597,10 @@ for (fn, fr) in ((:any, :OrFun),
                  (:all, :AndFun),
                  (:count, :AddFun))
     @eval begin
-        (Base.$fn)(f::Union(Base.Callable,Base.Func{1}), d::DArray) = mapreduce(f, (Base.$fr)(), d)
+        (Base.$fn)(f::Base.IdFun, d::DArray) = mapreduce(f, (Base.$fr)(), d)
+        (Base.$fn)(f::Base.Predicate, d::DArray) = mapreduce(r, (Base.$fr)(), d)
+        (Base.$fn)(f::Base.Func{1}, d::DArray) = mapreduce(f, (Base.$fr)(), d)
+        (Base.$fn)(f::Callable, d::DArray) = mapreduce(f, (Base.$fr)(), d)
     end
 end
 
