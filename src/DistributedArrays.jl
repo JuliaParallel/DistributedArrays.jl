@@ -197,8 +197,8 @@ function chunk_idxs(dims, chunks)
     cuts = map(defaultdist, dims, chunks)
     n = length(dims)
     idxs = Array(NTuple{n,UnitRange{Int}},chunks...)
-    cartesianmap(tuple(chunks...)) do cidx...
-        idxs[cidx...] = ntuple(i -> (cuts[i][cidx[i]]:cuts[i][cidx[i] + 1] - 1), n)
+    for cidx in CartesianRange(tuple(chunks...))
+        idxs[cidx.I...] = ntuple(i -> (cuts[i][cidx[i]]:cuts[i][cidx[i] + 1] - 1), n)
     end
     return (idxs, cuts)
 end
