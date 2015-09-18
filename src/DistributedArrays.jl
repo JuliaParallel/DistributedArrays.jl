@@ -52,7 +52,7 @@ type DArray{T,N,A} <: AbstractArray{T,N}
 end
 
 typealias SubDArray{T,N,D<:DArray} SubArray{T,N,D}
-typealias SubOrDArray{T,N} Union(DArray{T,N}, SubDArray{T,N})
+typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
 
 ## core constructors ##
 
@@ -419,7 +419,7 @@ Base.getindex(d::DArray, i::Int) = getindex_tuple(d, ind2sub(size(d), i))
 Base.getindex(d::DArray, i::Int...) = getindex_tuple(d, i)
 
 Base.getindex(d::DArray) = d[1]
-Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon}...) = sub(d, I...)
+Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = sub(d, I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
     if !(dest.dims == src.dims &&
@@ -478,7 +478,7 @@ end
 
 # to disambiguate
 Base.setindex!(a::Array{Any}, d::SubOrDArray, i::Int) = Base.arrayset(a, d, i)
-Base.setindex!(a::Array, d::SubOrDArray, I::Union(Int,UnitRange{Int})...) =
+Base.setindex!(a::Array, d::SubOrDArray, I::Union{Int,UnitRange{Int}}...) =
     setindex!(a, d, [isa(i, Int) ? (i:i) : i for i in I ]...)
 
 Base.fill!(A::DArray, x) = begin
