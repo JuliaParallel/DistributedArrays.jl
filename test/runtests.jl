@@ -8,7 +8,7 @@ end
 @assert nprocs() > 3
 @assert nworkers() >= 3
 
-@everywhere using DistributedArrays
+using DistributedArrays
 @everywhere blas_set_num_threads(1)
 @everywhere srand(123 + myid())
 
