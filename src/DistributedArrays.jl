@@ -8,8 +8,8 @@ export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($)
 export DArray, SubDArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, ppeval, samedist
 
-@doc """
-### DArray(init, dims, [procs, dist])
+"""
+    DArray(init, dims, [procs, dist])
 
 Construct a distributed array.
 
@@ -27,10 +27,11 @@ interactive julia prompt.
 
 For example, the `dfill` function that creates a distributed array and fills it with a value `v` is implemented as:
 
-```julia
+### Example
+```jl
 dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 ```
-""" ->
+"""
 type DArray{T,N,A} <: AbstractArray{T,N}
     dims::NTuple{N,Int}
     chunks::Array{RemoteRef,N}
@@ -143,11 +144,11 @@ Base.similar{T}(d::DArray{T}) = similar(d, T, size(d))
 
 Base.size(d::DArray) = d.dims
 
-@doc """
-### procs(d::DArray)
+"""
+    procs(d::DArray)
 
 Get the vector of processes storing pieces of DArray `d`.
-""" ->
+"""
 Base.procs(d::DArray) = d.pids
 
 chunktype{T,N,A}(d::DArray{T,N,A}) = A
@@ -214,12 +215,12 @@ function localpartindex(pids::Array{Int})
 end
 localpartindex(d::DArray) = localpartindex(procs(d))
 
-@doc """
-### localpart(d::DArray)
+"""
+    localpart(d::DArray)
 
 Get the local piece of a distributed array.
 Returns an empty array if no local part exists on the calling process.
-""" ->
+"""
 function localpart{T,N,A}(d::DArray{T,N,A})
     lpidx = localpartindex(d)
     if lpidx == 0
@@ -229,18 +230,18 @@ function localpart{T,N,A}(d::DArray{T,N,A})
 end
 
 """
-### localpart(A)
+    localpart(A)
 
 The identity when input is not distributed
 """
 localpart(A) = A
 
-@doc """
-### localindexes(d)
+"""
+    localindexes(d)
 
 A tuple describing the indexes owned by the local process.
 Returns a tuple with empty ranges if no local part exists on the calling process.
-""" ->
+"""
 function localindexes(d::DArray)
     lpidx = localpartindex(d)
     if lpidx == 0
@@ -257,12 +258,12 @@ chunk{T,N,A}(d::DArray{T,N,A}, i...) = fetch(d.chunks[i...])::A
 
 ## convenience constructors ##
 
-@doc """
-### dzeros(dims, ...)
+"""
+     dzeros(dims, ...)
 
 Construct a distributed array of zeros.
 Trailing arguments are the same as those accepted by `DArray`.
-""" ->
+"""
 dzeros(dims::Dims, args...) = DArray(I->zeros(map(length,I)), dims, args...)
 dzeros{T}(::Type{T}, dims::Dims, args...) = DArray(I->zeros(T,map(length,I)), dims, args...)
 dzeros{T}(::Type{T}, d1::Integer, drest::Integer...) = dzeros(T, convert(Dims, tuple(d1, drest...)))
@@ -270,56 +271,56 @@ dzeros(d1::Integer, drest::Integer...) = dzeros(Float64, convert(Dims, tuple(d1,
 dzeros(d::Dims) = dzeros(Float64, d)
 
 
-@doc """
-### dzeros(dims, ...)
+"""
+    dones(dims, ...)
 
 Construct a distributed array of ones.
 Trailing arguments are the same as those accepted by `DArray`.
-""" ->
+"""
 dones(dims::Dims, args...) = DArray(I->ones(map(length,I)), dims, args...)
 dones{T}(::Type{T}, dims::Dims, args...) = DArray(I->ones(T,map(length,I)), dims, args...)
 dones{T}(::Type{T}, d1::Integer, drest::Integer...) = dones(T, convert(Dims, tuple(d1, drest...)))
 dones(d1::Integer, drest::Integer...) = dones(Float64, convert(Dims, tuple(d1, drest...)))
 dones(d::Dims) = dones(Float64, d)
 
-@doc """
-### dfill(x, dims, ...)
+"""
+     dfill(x, dims, ...)
 
 Construct a distributed array filled with value `x`.
 Trailing arguments are the same as those accepted by `DArray`.
-""" ->
+"""
 dfill(v, dims::Dims, args...) = DArray(I->fill(v, map(length,I)), dims, args...)
 dfill(v, d1::Integer, drest::Integer...) = dfill(v, convert(Dims, tuple(d1, drest...)))
 
-@doc """
-### drand(dims, ...)
+"""
+     drand(dims, ...)
 
 Construct a distributed uniform random array.
 Trailing arguments are the same as those accepted by `DArray`.
-""" ->
+"""
 drand{T}(::Type{T}, dims::Dims, args...) = DArray(I->rand(T,map(length,I)), dims, args...)
 drand{T}(::Type{T}, d1::Integer, drest::Integer...) = drand(T, convert(Dims, tuple(d1, drest...)))
 drand(d1::Integer, drest::Integer...) = drand(Float64, convert(Dims, tuple(d1, drest...)))
 drand(d::Dims, args...)  = drand(Float64, d, args...)
 
-@doc """
-### drandn(dims, ...)
+"""
+     drandn(dims, ...)
 
 Construct a distributed normal random array.
 Trailing arguments are the same as those accepted by `DArray`.
-""" ->
+"""
 drandn(dims::Dims, args...) = DArray(I->randn(map(length,I)), dims, args...)
 drandn(d1::Integer, drest::Integer...) = drandn(convert(Dims, tuple(d1, drest...)))
 
 ## conversions ##
 
-@doc """
-### distribute(A[, procs])
+"""
+     distribute(A[, procs])
 
 Convert a local array to distributed.
 
 `procs` optionally specifies a vector of process IDs to use. (defaults to all workers)
-""" ->
+"""
 function distribute(A::AbstractArray;
                     procs=workers()[1:min(nworkers(), maximum(size(A)))])
     owner = myid()
@@ -742,7 +743,7 @@ function _ppeval(f, A...; dim = map(ndims, A))
 end
 
 """
-### `ppeval(f, D...; dim::NTuple)`
+     ppeval(f, D...; dim::NTuple)
 
 Evaluates the callable argument `f` on slices of the elements of the `D` tuple.
 
@@ -782,7 +783,6 @@ ppeval(eigvals, A, randn(10,10)) # broadcasting second argument
 B = drandn((10, JULIA_CPU_CORES), workers(), [1, JULIA_CPU_CORES])
 
 ppeval(*, A, B)
-
 ```
 """
 function ppeval(f, D...; dim::NTuple = map(t -> isa(t, DArray) ? ndims(t) : 0, D))
