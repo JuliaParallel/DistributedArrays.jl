@@ -1,5 +1,7 @@
 module DistributedArrays
 
+using Compat
+
 importall Base
 import Base.Callable
 import Base.BLAS: axpy!
@@ -59,7 +61,7 @@ typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
 
 function construct_darray(dims, chunks, procs, idxs, cuts)
     p = max(1, localpartindex(procs))
-    A = remotecall_fetch(procs[p], r->typeof(fetch(r)), chunks[p])
+    A = remotecall_fetch(r->typeof(fetch(r)), procs[p], chunks[p])
     return DArray{eltype(A),length(dims),A}(dims, chunks, procs, idxs, cuts)
 end
 
@@ -70,7 +72,7 @@ function DArray(init, dims, procs, dist)
     idxs, cuts = chunk_idxs([dims...], dist)
     chunks = Array(RemoteRef, dist...)
     for i = 1:np
-        chunks[i] = remotecall(procs[i], init, idxs[i])
+        chunks[i] = remotecall(init, procs[i], idxs[i])
     end
     return construct_darray(dims, chunks, procs, idxs, cuts)
 end
@@ -94,7 +96,7 @@ function DArray(refs::Array{RemoteRef})
     nsizes = Array(Tuple, dimdist)
     @sync for i in 1:length(refs)
         let i=i
-            @async nsizes[i] = remotecall_fetch(npids[i], r->size(fetch(r)), refs[i])
+            @async nsizes[i] = remotecall_fetch(r->size(fetch(r)), npids[i], refs[i])
         end
     end
 
@@ -327,7 +329,7 @@ function distribute(A::AbstractArray;
     rr = RemoteRef()
     put!(rr, A)
     d = DArray(size(A), procs) do I
-        remotecall_fetch(owner, ()->fetch(rr)[I...])
+        remotecall_fetch(()->fetch(rr)[I...], owner)
     end
     # Ensure that all workers have fetched their localparts.
     # Else a gc in between can recover the RemoteRef rr
@@ -468,9 +470,9 @@ Base.setindex!(a::Array, s::SubDArray, I::UnitRange{Int}...) = begin
                 # partial chunk
                 ch = d.chunks[i]
                 @async a[idxs...] =
-                    remotecall_fetch(ch.where,
-                                     ()->sub(fetch(ch),
-                                     [K[j]-first(K_c[j])+1 for j=1:n]...))
+                    remotecall_fetch(ch.where) do
+                        sub(fetch(ch), [K[j]-first(K_c[j])+1 for j=1:n]...)
+                    end
             end
         end
     end
@@ -690,7 +692,7 @@ function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
         end
     end
 
-    refs = RemoteRef[remotecall(p, (x,y,z)->mapslices(x,localpart(y),z), f, D, dims) for p in procs(D)]
+    refs = RemoteRef[remotecall((x,y,z)->mapslices(x,localpart(y),z), p, f, D, dims) for p in procs(D)]
 
     DArray(reshape(refs, size(procs(D))))
 end
@@ -800,7 +802,7 @@ function ppeval(f, D...; dim::NTuple = map(t -> isa(t, DArray) ? ndims(t) : 0, D
         end
     end
 
-    refs = RemoteRef[remotecall(p, (x, y, z) -> _ppeval(x, map(localpart, y)...; dim = z), f, D, dim) for p in procs(D[1])]
+    refs = RemoteRef[remotecall((x, y, z) -> _ppeval(x, map(localpart, y)...; dim = z), p, f, D, dim) for p in procs(D[1])]
 
     # The array of RemoteRefs has to be reshaped for the DArray constructor to work correctly.
     # This requires a fetch and the DArray is also fetching so it might be better to modify
@@ -819,7 +821,7 @@ function axpy!(α, x::DVector, y::DVector)
         throw(DimensionMismatch("vectors must have same length"))
     end
     @sync for p in procs(y)
-        @async remotecall_wait(p, () -> Base.axpy!(α, localpart(x), localpart(y)))
+        @async remotecall_wait(() -> Base.axpy!(α, localpart(x), localpart(y)), p)
     end
     return y
 end
@@ -834,13 +836,13 @@ function dot(x::DVector, y::DVector)
     r = RemoteRef[]
     for i = eachindex(x.chunks)
         cx, cy = x.chunks[i], y.chunks[i]
-        push!(r, remotecall(cx.where, () -> dot(fetch(cx), fetch(cy))))
+        push!(r, remotecall(() -> dot(fetch(cx), fetch(cy)), cx.where))
     end
     return mapreduce(fetch, Base.AddFun(), r)
 end
 
 function norm(x::DVector, p::Number = 2)
-    r = [remotecall(pp, () -> norm(localpart(x), p)) for pp in procs(x)]
+    r = [remotecall(() -> norm(localpart(x), p), pp) for pp in procs(x)]
     return norm([fetch(rr) for rr in r], p)
 end
 
@@ -879,7 +881,9 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
     for j = 1:size(A.chunks, 2)
         xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
         for i = 1:size(A.chunks, 1)
-            R[i,j] = remotecall(procs(A)[i,j], () -> localpart(A)*convert(localtype(x), xj))
+            R[i,j] = remotecall(procs(A)[i,j]) do
+                localpart(A)*convert(localtype(x), xj)
+            end
         end
     end
 
@@ -887,9 +891,9 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
     if β != one(β)
         @sync for r in y.chunks
             if β != zero(β)
-                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+                @async remotecall_wait(() -> scale!(fetch(r), β), r.where)
             else
-                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+                @async remotecall_wait(() -> fill!(fetch(r), 0), r.where)
             end
         end
     end
@@ -899,7 +903,7 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
         rsi = y.chunks[i]
         for j = 1:size(R, 2)
             rij = R[i,j]
-            @async remotecall_wait(rsi.where, () -> add!(fetch(rsi), fetch(rij), α))
+            @async remotecall_wait(() -> add!(fetch(rsi), fetch(rij), α), rsi.where)
         end
     end
 
@@ -921,7 +925,7 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     for j = 1:size(A.chunks, 1)
         xj = x[A.cuts[1][j]:A.cuts[1][j + 1] - 1]
         for i = 1:size(A.chunks, 2)
-            R[i,j] = remotecall(procs(A)[j,i], () -> localpart(A)'*convert(localtype(x), xj))
+            R[i,j] = remotecall(() -> localpart(A)'*convert(localtype(x), xj), procs(A)[j,i])
         end
     end
 
@@ -929,9 +933,9 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     if β != one(β)
         @sync for r in y.chunks
             if β != zero(β)
-                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+                @async remotecall_wait(() -> scale!(fetch(r), β), r.where)
             else
-                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+                @async remotecall_wait(() -> fill!(fetch(r), 0), r.where)
             end
         end
     end
@@ -941,7 +945,7 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
         rsi = y.chunks[i]
         for j = 1:size(R, 2)
             rij = R[i,j]
-            @async remotecall_wait(rsi.where, () -> add!(fetch(rsi), fetch(rij), α))
+            @async remotecall_wait(() -> add!(fetch(rsi), fetch(rij), α), rsi.where)
         end
     end
     return y
@@ -965,7 +969,9 @@ function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMat
         for k = 1:size(C.chunks, 2)
             Bjk = B[A.cuts[2][j]:A.cuts[2][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
             for i = 1:size(A.chunks, 1)
-                R[i,j,k] = remotecall(procs(A)[i,j], () -> localpart(A)*convert(localtype(B), Bjk))
+                R[i,j,k] = remotecall(procs(A)[i,j]) do
+                    localpart(A)*convert(localtype(B), Bjk)
+                end
             end
         end
     end
@@ -974,9 +980,9 @@ function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMat
     if β != one(β)
         @sync for r in C.chunks
             if β != zero(β)
-                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+                @async remotecall_wait(() -> scale!(fetch(r), β), r.where)
             else
-                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+                @async remotecall_wait(() -> fill!(fetch(r), 0), r.where)
             end
         end
     end
@@ -987,7 +993,7 @@ function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMat
             rsik = C.chunks[i,k]
             for j = 1:size(R, 2)
                 rijk = R[i,j,k]
-                @async remotecall_wait(rsik.where, () -> add!(fetch(rsik), fetch(rijk), α))
+                @async remotecall_wait(() -> add!(fetch(rsik), fetch(rijk), α), rsik.where)
             end
         end
     end
@@ -1021,7 +1027,9 @@ function Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMa
         for k = 1:size(C.chunks, 2)
             Bjk = B[A.cuts[1][j]:A.cuts[1][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
             for i = 1:size(A.chunks, 2)
-                R[i,j,k] = remotecall(procs(A)[j,i], () -> localpart(A)'*convert(localtype(B), Bjk))
+                R[i,j,k] = remotecall(procs(A)[j,i]) do
+                    localpart(A)'*convert(localtype(B), Bjk)
+                end
             end
         end
     end
@@ -1030,9 +1038,9 @@ function Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMa
     if β != one(β)
         @sync for r in C.chunks
             if β != zero(β)
-                @async remotecall_wait(r.where, () -> scale!(fetch(r), β))
+                @async remotecall_wait(() -> scale!(fetch(r), β), r.where)
             else
-                @async remotecall_wait(r.where, () -> fill!(fetch(r), 0))
+                @async remotecall_wait(() -> fill!(fetch(r), 0), r.where)
             end
         end
     end
@@ -1043,7 +1051,7 @@ function Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMa
             rsik = C.chunks[i,k]
             for j = 1:size(R, 2)
                 rijk = R[i,j,k]
-                @async remotecall_wait(rsik.where, () -> add!(fetch(rsik), fetch(rijk), α))
+                @async remotecall_wait(() -> add!(fetch(rsik), fetch(rijk), α), rsik.where)
             end
         end
     end
