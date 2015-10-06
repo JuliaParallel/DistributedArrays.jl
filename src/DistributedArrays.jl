@@ -795,7 +795,7 @@ function ppeval(f, D...; dim::NTuple = map(t -> isa(t, DArray) ? ndims(t) : 0, D
                 for d in setdiff(1:ndims(D[i]), dim[i])
                     if length(idxs[d]) != size(D[i], d)
                         throw(DimensionMismatch(string("dimension $d is distributed. ",
-                            "mapslices requires dimension $d to be completely available on all processors.")))
+                            "ppeval requires dimension $d to be completely available on all processors.")))
                     end
                 end
             end
