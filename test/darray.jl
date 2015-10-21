@@ -1,24 +1,36 @@
 const MYID = myid()
 const OTHERIDS = filter(id-> id != MYID, procs())[rand(1:(nprocs()-1))]
 
+function check_leaks()
+    if length(DistributedArrays.refs) > 0
+        sleep(0.1)  # allow time for any cleanup to complete and test again
+        length(DistributedArrays.refs) > 0 && warn("Probable leak of ", length(DistributedArrays.refs), " darrays")
+    end
+end
+
 facts("test distribute") do
     A = randn(100,100)
 
     context("test default distribute") do
         DA = distribute(A)
         @fact length(procs(DA)) --> nworkers()
+        close(DA)
     end
 
     context("test distribute with procs arguments") do
         DA = distribute(A, procs = [1, 2])
         @fact length(procs(DA)) --> 2
+        close(DA)
     end
 
     context("test distribute with procs and dist arguments") do
         DA = distribute(A, procs = [1, 2], dist = [1,2])
         @fact size(procs(DA)) --> (1,2)
+        close(DA)
     end
 end
+
+check_leaks()
 
 facts("test DArray equality") do
     D = drand((200,200), [MYID, OTHERIDS])
@@ -32,18 +44,27 @@ facts("test DArray equality") do
         @spawnat OTHERIDS localpart(DC)[1] = 0
         @fact fetch(@spawnat OTHERIDS localpart(D)[1] != 0) --> true
     end
+
+    close(D)
+    close(DC)
 end
+
+check_leaks()
 
 facts("test @DArray comprehension constructor") do
 
     context("test valid use of @DArray") do
-        @fact (@DArray [i+j for i=1:10, j=1:10]) --> [i+j for i=1:10, j=1:10]
+        D = @DArray [i+j for i=1:10, j=1:10]
+        @fact D --> [i+j for i=1:10, j=1:10]
+        close(D)
     end
 
     context("test invalid use of @DArray") do
         @fact_throws ArgumentError eval(:((@DArray [1,2,3,4])))
     end
 end
+
+check_leaks()
 
 facts("test DArray / Array conversion") do
     D = drand((200,200), [MYID, OTHERIDS])
@@ -53,11 +74,16 @@ facts("test DArray / Array conversion") do
         A = convert(Matrix{Float64}, D)
 
         @fact A[1:150,1:150] --> S
-        @fact convert(DArray{Float64,2,Matrix{Float64}}, A) --> D
+        D2 = convert(DArray{Float64,2,Matrix{Float64}}, A)
+        @fact D2 --> D
         @fact fetch(@spawnat MYID localpart(D)[1,1]) --> D[1,1]
         @fact fetch(@spawnat OTHERIDS localpart(D)[1,1]) --> D[1,101]
+        close(D2)
     end
+    close(D)
 end
+
+check_leaks()
 
 facts("test DArray reduce") do
     D = DArray(id->fill(myid(), map(length,id)), (10,10), [MYID, OTHERIDS])
@@ -69,27 +95,37 @@ facts("test DArray reduce") do
     context("test map / reduce") do
         D2 = map(x->1, D)
         @fact reduce(+, D2) --> 100
+        close(D2)
     end
 
     context("test map! / reduce") do
         map!(x->1, D)
         @fact reduce(+, D) --> 100
     end
+    close(D)
 end
+
+check_leaks()
 
 facts("test scale") do
     A = randn(100,100)
     DA = distribute(A)
     @fact scale!(DA, 2) --> scale!(A, 2)
+    close(DA)
 end
+
+check_leaks()
 
 facts("test mapreduce on DArrays") do
     for _ = 1:25, f = [x -> Int128(2x), x -> Int128(x^2), x -> Int128(x^2 + 2x - 1)], opt = [+, *]
         A = rand(1:5, rand(2:30))
         DA = distribute(A)
         @fact mapreduce(f, opt, A) - mapreduce(f, opt, DA) == 0 --> true
+        close(DA)
     end
 end
+
+check_leaks()
 
 facts("test mapreducedim on DArrays") do
     D = DArray(I->fill(myid(), map(length,I)), (73,73), [MYID, OTHERIDS])
@@ -97,7 +133,13 @@ facts("test mapreducedim on DArrays") do
     @fact mapreducedim(t -> t*t, +, D2, 1) --> mapreducedim(t -> t*t, +, convert(Array, D2), 1)
     @fact mapreducedim(t -> t*t, +, D2, 2) --> mapreducedim(t -> t*t, +, convert(Array, D2), 2)
     @fact mapreducedim(t -> t*t, +, D2, (1,2)) --> mapreducedim(t -> t*t, +, convert(Array, D2), (1,2))
+
+    close(D)
+    close(D2)
+    darray_closeall()   # temp created by the mapreduce above
 end
+
+check_leaks()
 
 facts("test mapreducdim, reducedim on DArrays") do
     dims = (20,20,20)
@@ -107,11 +149,14 @@ facts("test mapreducdim, reducedim on DArrays") do
     for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
         @fact mapreducedim(t -> t*t, +, DA, dms) --> roughly(mapreducedim(t -> t*t, +, A, dms))
         @fact mapreducedim(t -> t*t, +, DA, dms, 1.0) --> roughly(mapreducedim(t -> t*t, +, A, dms, 1.0))
-
         @fact reducedim(*, DA, dms) --> roughly(reducedim(*, A, dms))
         @fact reducedim(*, DA, dms, 2.0) --> roughly(reducedim(*, A, dms, 2.0))
     end
+    close(DA)
+    darray_closeall()   # temp created by the mapreduce above
 end
+
+check_leaks()
 
 facts("test statistical functions on DArrays") do
     dims = (20,20,20)
@@ -129,7 +174,11 @@ facts("test statistical functions on DArrays") do
             @pending std(DA,dms) --> roughly(std(A,dms), atol=1e-12)
         end
     end
+    close(DA)
+    darray_closeall()   # temporaries created above
 end
+
+check_leaks()
 
 facts("test sum on DArrays") do
     A = randn(100,100)
@@ -142,7 +191,11 @@ facts("test sum on DArrays") do
     @fact sum(DA,1) --> roughly(sum(A,1), atol=1e-12)
     @fact sum(DA,2) --> roughly(sum(A,2), atol=1e-12)
     @fact sum(DA,3) --> roughly(sum(A,3), atol=1e-12)
+    close(DA)
+    darray_closeall()   # temporaries created above
 end
+
+check_leaks()
 
 facts("test size on DArrays") do
     A = randn(100,100)
@@ -152,7 +205,10 @@ facts("test size on DArrays") do
     @fact size(DA,1) --> size(A,1)
     @fact size(DA,2) --> size(A,2)
     @fact size(DA,3) --> size(A,3)
+    close(DA)
 end
+
+check_leaks()
 
 # test length / endof
 facts("test collections API") do
@@ -166,7 +222,10 @@ facts("test collections API") do
     context("test endof") do
         @fact endof(DA) --> endof(A)
     end
+    close(DA)
 end
+
+check_leaks()
 
 facts("test max / min / sum") do
     a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
@@ -179,7 +238,10 @@ facts("test max / min / sum") do
     @fact minabs(d) --> minabs(a)
     @fact sumabs(d) --> sumabs(a)
     @fact sumabs2(d) --> sumabs2(a)
+    close(d)
 end
+
+check_leaks()
 
 facts("test all / any") do
     a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
@@ -189,19 +251,27 @@ facts("test all / any") do
     @fact all(d) --> true
     @fact any(d) --> true
 
+    close(d)
+
     a[50] = false
     d = distribute(a)
     @fact all(d) --> false
     @fact any(d) --> true
+
+    close(d)
 
     a = [false for i in 1:100]
     d = distribute(a)
     @fact all(d) --> false
     @fact any(d) --> false
 
+    close(d)
+
     d = dones(10,10)
     @fact all(x-> x>1.0, d) --> false
     @fact all(x-> x>0.0, d) --> true
+
+    close(d)
 
     a = ones(10,10)
     a[10] = 2.0
@@ -209,7 +279,11 @@ facts("test all / any") do
     @fact any(x-> x == 1.0, d) --> true
     @fact any(x-> x == 2.0, d) --> true
     @fact any(x-> x == 3.0, d) --> false
+
+    close(d)
 end
+
+check_leaks()
 
 facts("test count" ) do
     a = ones(10,10)
@@ -219,13 +293,21 @@ facts("test count" ) do
     @fact count(x-> x == 2.0, d) --> 1
     @fact count(x-> x == 1.0, d) --> 99
     @fact count(x-> x == 0.0, d) --> 0
+
+    close(d)
 end
+
+check_leaks()
 
 facts("test prod") do
     a = fill(2, 10);
     d = distribute(a);
     @fact prod(d) --> 2^10
+
+    close(d)
 end
+
+check_leaks()
 
 facts("test zeros") do
     context("1D dzeros default element type") do
@@ -233,6 +315,7 @@ facts("test zeros") do
         @fact A --> zeros(10)
         @fact eltype(A) --> Float64
         @fact size(A) --> (10,)
+        close(A)
     end
 
     context("1D dzeros with specified element type") do
@@ -240,6 +323,7 @@ facts("test zeros") do
         @fact A --> zeros(10)
         @fact eltype(A) --> Int
         @fact size(A) --> (10,)
+        close(A)
     end
 
     context("2D dzeros default element type, Dims constuctor") do
@@ -247,6 +331,7 @@ facts("test zeros") do
         @fact A --> zeros((10,10))
         @fact eltype(A) --> Float64
         @fact size(A) --> (10,10)
+        close(A)
     end
 
     context("2D dzeros specified element type, Dims constructor") do
@@ -254,6 +339,7 @@ facts("test zeros") do
         @fact A --> zeros(Int, (10,10))
         @fact eltype(A) --> Int
         @fact size(A) --> (10,10)
+        close(A)
     end
 
     context("2D dzeros, default element type") do
@@ -261,6 +347,7 @@ facts("test zeros") do
         @fact A --> zeros(10,10)
         @fact eltype(A) --> Float64
         @fact size(A) --> (10,10)
+        close(A)
     end
 
     context("2D dzeros, specified element type") do
@@ -268,9 +355,11 @@ facts("test zeros") do
         @fact A --> zeros(Int, 10, 10)
         @fact eltype(A) --> Int
         @fact size(A) --> (10,10)
+        close(A)
     end
 end
 
+check_leaks()
 
 facts("test dones") do
     context("1D dones default element type") do
@@ -278,12 +367,14 @@ facts("test dones") do
         @fact A --> ones(10)
         @fact eltype(A) --> Float64
         @fact size(A) --> (10,)
+        close(A)
     end
 
     context("1D dones with specified element type") do
         A = dones(Int, 10)
         @fact eltype(A) --> Int
         @fact size(A) --> (10,)
+        close(A)
     end
 
     context("2D dones default element type, Dims constuctor") do
@@ -291,6 +382,7 @@ facts("test dones") do
         @fact A --> ones((10,10))
         @fact eltype(A) --> Float64
         @fact size(A) --> (10,10)
+        close(A)
     end
 
     context("2D dones specified element type, Dims constructor") do
@@ -298,6 +390,7 @@ facts("test dones") do
         @fact A --> ones(Int, (10,10))
         @fact eltype(A) --> Int
         @fact size(A) --> (10,10)
+        close(A)
     end
 
     context("2D dones, default element type") do
@@ -305,6 +398,7 @@ facts("test dones") do
         @fact A --> ones(10,10)
         @fact eltype(A) --> Float64
         @fact size(A) --> (10,10)
+        close(A)
     end
 
     context("2D dones, specified element type") do
@@ -312,8 +406,11 @@ facts("test dones") do
         @fact A --> ones(Int, 10, 10)
         @fact eltype(A) --> Int
         @fact size(A) --> (10,10)
+        close(A)
     end
 end
+
+check_leaks()
 
 facts("test drand") do
     context("1D drand") do
@@ -321,12 +418,14 @@ facts("test drand") do
         @fact eltype(A) --> Float64
         @fact size(A) --> (100,)
         @fact all(x-> x >= 0.0 && x <= 1.0, A) --> true
+        close(A)
     end
 
     context("1D drand, specified element type") do
         A = drand(Int, 100)
         @fact eltype(A) --> Int
         @fact size(A) --> (100,)
+        close(A)
     end
 
     context("2D drand, Dims constructor") do
@@ -334,6 +433,7 @@ facts("test drand") do
         @fact eltype(A) --> Float64
         @fact size(A) --> (50,50)
         @fact all(x-> x >= 0.0 && x <= 1.0, A) --> true
+        close(A)
     end
 
     context("2D drand") do
@@ -341,59 +441,77 @@ facts("test drand") do
         @fact eltype(A) --> Float64
         @fact size(A) --> (100,100)
         @fact all(x-> x >= 0.0 && x <= 1.0, A) --> true
+        close(A)
     end
 
     context("2D drand, Dims constructor, specified element type") do
         A = drand(Int, (100,100))
         @fact eltype(A) --> Int
         @fact size(A) --> (100,100)
+        close(A)
     end
 
     context("2D drand, specified element type") do
         A = drand(Int, 100, 100)
         @fact eltype(A) --> Int
         @fact size(A) --> (100,100)
+        close(A)
     end
 end
+
+check_leaks()
 
 facts("test randn") do
     context("1D drandn") do
         A = drandn(100)
         @fact eltype(A) --> Float64
         @fact size(A) --> (100,)
+        close(A)
     end
 
     context("2D drandn, Dims constructor") do
         A = drandn((50,50))
         @fact eltype(A) --> Float64
         @fact size(A) --> (50,50)
+        close(A)
     end
 
     context("2D drandn") do
         A = drandn(100,100)
         @fact eltype(A) --> Float64
         @fact size(A) --> (100,100)
+        close(A)
     end
 end
+
+check_leaks()
 
 facts("test c/transpose") do
     context("test ctranspose real") do
         A = drand(Float64, 100, 200)
         @fact A' --> Array(A)'
+        close(A)
     end
     context("test ctranspose complex") do
         A = drand(Complex128, 200, 100)
         @fact A' --> Array(A)'
+        close(A)
     end
     context("test transpose real") do
         A = drand(Float64, 200, 100)
         @fact A.' --> Array(A).'
+        close(A)
     end
     context("test ctranspose complex") do
         A = drand(Complex128, 100, 200)
         @fact A.' --> Array(A).'
+        close(A)
     end
+
+    darray_closeall()  # close the temporaries created above
 end
+
+check_leaks()
 
 facts("test convert from subdarray") do
     a = drand(20, 20);
@@ -405,7 +523,11 @@ facts("test convert from subdarray") do
     s = sub(a, 6:5, 5:8)
     @fact isa(s, SubDArray) --> true
     @fact s --> convert(DArray, s)
+    close(a)
+    darray_closeall()  # close the temporaries created above
 end
+
+check_leaks()
 
 facts("test scalar math") do
     a = drand(20, 20);
@@ -434,7 +556,11 @@ facts("test scalar math") do
             @fact (eval(f))(a) --> (eval(f))(b)
         end
     end
+    close(a)
+    darray_closeall()  # close the temporaries created above
 end
+
+check_leaks()
 
 # The mapslices tests have been taken from Base.
 # Commented out tests that need to be enabled in due course when DArray support is more complete
@@ -476,7 +602,12 @@ facts("test mapslices") do
     n3a = mapslices(x-> ones(1,6), c, [2,3])
     @fact (size(n1a) == (1,6,4,5) && size(n2a) == (1,3,6,5) && size(n3a) == (2,1,6,5)) --> true
     @fact (size(n1) == (6,1,4,5) && size(n2) == (6,3,1,5) && size(n3) == (2,6,1,5)) --> true
+    close(a)
+    close(c)
+    darray_closeall()  # close the temporaries created above
 end
+
+check_leaks()
 
 facts("test scalar ops") do
     a = drand(20,20)
@@ -491,6 +622,9 @@ facts("test scalar ops") do
             @fact (eval(f))(a, c) --> (eval(f))(b, d)
         end
     end
+
+    close(a)
+    close(c)
 
     a = dones(Int, 20, 20)
     b = convert(Array, a)
@@ -507,7 +641,12 @@ facts("test scalar ops") do
             @fact (eval(f))(a, x) --> (eval(f))(b, x)
         end
     end
+    close(a)
+    close(c)
+    darray_closeall()  # close the temporaries created above
 end
+
+check_leaks()
 
 facts("test matrix multiplication") do
     A = drandn(20,20)
@@ -518,7 +657,13 @@ facts("test matrix multiplication") do
     @fact norm(convert(Array, A*B) - convert(Array, A)*convert(Array, B), Inf) -->  less_than(sqrt(eps()))
     @fact norm(convert(Array, A'*b) - convert(Array, A)'*convert(Array, b), Inf) --> less_than(sqrt(eps()))
     @fact norm(convert(Array, A'*B) - convert(Array, A)'*convert(Array, B), Inf) --> less_than(sqrt(eps()))
+    close(A)
+    close(b)
+    close(B)
+    darray_closeall()  # close the temporaries created above
 end
+
+check_leaks()
 
 facts("test norm") do
     x = drandn(20)
@@ -527,7 +672,10 @@ facts("test norm") do
     @fact abs(norm(x, 1) - norm(convert(Array, x), 1)) --> less_than(sqrt(eps()))
     @fact abs(norm(x, 2) - norm(convert(Array, x), 2)) --> less_than(sqrt(eps()))
     @fact abs(norm(x, Inf) - norm(convert(Array, x), Inf)) --> less_than(sqrt(eps()))
+    close(x)
 end
+
+check_leaks()
 
 facts("test axpy!") do
     x = drandn(20)
@@ -535,7 +683,12 @@ facts("test axpy!") do
 
     @fact norm(convert(Array, LinAlg.axpy!(2.0, x, copy(y))) - LinAlg.axpy!(2.0, convert(Array, x), convert(Array, y))) --> less_than(sqrt(eps()))
     @fact_throws LinAlg.axpy!(2.0, x, zeros(length(x) + 1)) DimensionMismatch
+    close(x)
+    close(y)
+    darray_closeall()  # close the temporaries created above
 end
+
+check_leaks()
 
 facts("test ppeval") do
     A = drandn((10, 10, nworkers()), workers(), [1, 1, nworkers()])
@@ -547,10 +700,29 @@ facts("test ppeval") do
     end
     @fact convert(Array, ppeval(*, A, B)) --> roughly(R)
     @fact sum(ppeval(eigvals, A)) --> roughly(sum(ppeval(eigvals, A, eye(10, 10))))
+    close(A)
+    close(B)
+    darray_closeall()  # close the temporaries created above
 end
 
+check_leaks()
 
 facts("test nnz") do
     A = sprandn(10, 10, 0.5)
     @fact nnz(distribute(A)) --> nnz(A)
 end
+
+darray_closeall()
+
+facts("test for any leaks") do
+    sleep(1.0)     # allow time for any cleanup to complete
+    allrefszero = Bool[remotecall_fetch(()->length(DistributedArrays.refs) == 0, p) for p in procs()]
+    @fact all(allrefszero) --> true
+
+    allregistrieszero = Bool[remotecall_fetch(()->length(DistributedArrays.registry) == 0, p) for p in procs()]
+    @fact all(allregistrieszero) --> true
+end
+
+
+
+
