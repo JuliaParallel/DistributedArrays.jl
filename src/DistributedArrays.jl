@@ -498,12 +498,16 @@ end
 Base.map(f, d::DArray) = DArray(I->map(f, localpart(d)), d)
 
 Base.reduce(f, d::DArray) =
+# TODO Change to an @async remotecall_fetch - will reduce one extra network hop -
+# once bug in master is fixed.
     mapreduce(fetch, f,
-              Any[ @spawnat p reduce(f, localpart(d)) for p in procs(d) ])
+              Any[ remotecall((f,d)->reduce(f, localpart(d)), p, f, d) for p in procs(d) ])
 
 function _mapreduce(f, opt, d::DArray)
+# TODO Change to an @async remotecall_fetch - will reduce one extra network hop -
+# once bug in master is fixed.
     mapreduce(fetch, opt,
-              Any[ @spawnat p mapreduce(f, opt, localpart(d)) for p in procs(d) ])
+              Any[ remotecall((f,opt,d)->mapreduce(f, opt, localpart(d)), p, f, opt, d)  for p in procs(d) ])
 end
 Base.mapreduce(f, opt::Union{Base.OrFun,Base.AndFun}, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, Base.specialized_binary(opt), d)
@@ -544,7 +548,7 @@ end
 
 function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
     @sync for p in procs(R)
-        @spawnat p begin
+        @async remotecall_wait(p, f, op, R, A, region) do f, op, R, A, region
             localind = [r for r = localindexes(A)]
             localind[[region...]] = [1:n for n = size(A)[[region...]]]
             B = convert(Array, A[localind...])
