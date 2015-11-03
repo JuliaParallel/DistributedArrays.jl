@@ -78,10 +78,10 @@ facts("test scale") do
 end
 
 facts("test mapreduce on DArrays") do
-    for _ = 1:25, f = [x -> 2x, x -> x^2, x -> x^2 + 2x - 1], opt = [+, *]
-        A = rand(1:100, rand(2:50))
+    for _ = 1:25, f = [x -> Int128(2x), x -> Int128(x^2), x -> Int128(x^2 + 2x - 1)], opt = [+, *]
+        A = rand(1:5, rand(2:30))
         DA = distribute(A)
-        @fact abs(mapreduce(f, opt, A) - mapreduce(f, opt, DA)) < 1e-12 --> true
+        @fact mapreduce(f, opt, A) - mapreduce(f, opt, DA) == 0 --> true
     end
 end
 
