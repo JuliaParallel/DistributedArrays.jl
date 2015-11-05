@@ -575,6 +575,8 @@ Base.mapreducedim(f, op, R::DArray, A::DArray) = begin
     Base.mapreducedim!(f, op, Base.reducedim_initarray(A, region, v0), A)
 end
 
+nnz(A::DArray) = mapreduce(t -> nnz(fetch(t)), +, A.chunks)
+
 # LinAlg
 Base.scale!(A::DArray, x::Number) = begin
     @sync for p in procs(A)

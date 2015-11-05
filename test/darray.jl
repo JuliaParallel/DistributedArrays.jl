@@ -543,3 +543,8 @@ facts("test ppeval") do
     @fact sum(ppeval(eigvals, A)) --> roughly(sum(ppeval(eigvals, A, eye(10, 10))))
 end
 
+
+facts("test nnz") do
+    A = sprandn(10, 10, 0.5)
+    @fact nnz(distribute(A)) --> nnz(A)
+end
