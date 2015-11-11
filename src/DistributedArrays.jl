@@ -483,8 +483,6 @@ end
 
 # to disambiguate
 Base.setindex!(a::Array{Any}, d::SubOrDArray, i::Int) = Base.arrayset(a, d, i)
-Base.setindex!(a::Array, d::SubOrDArray, I::Union{Int,UnitRange{Int}}...) =
-    setindex!(a, d, [isa(i, Int) ? (i:i) : i for i in I ]...)
 
 Base.fill!(A::DArray, x) = begin
     @sync for p in procs(A)
@@ -575,7 +573,13 @@ Base.mapreducedim(f, op, R::DArray, A::DArray) = begin
     Base.mapreducedim!(f, op, Base.reducedim_initarray(A, region, v0), A)
 end
 
-nnz(A::DArray) = mapreduce(t -> nnz(fetch(t)), +, A.chunks)
+function nnz(A::DArray)
+    B = Array(Any, size(A.chunks))
+    for i in eachindex(A.chunks)
+        B[i...] = remotecall(t -> nnz(fetch(t)), A.pids[i...], A.chunks[i...])
+    end
+    return mapreduce(t -> nnz(fetch(t)), +, A.chunks)
+end
 
 # LinAlg
 Base.scale!(A::DArray, x::Number) = begin
@@ -609,7 +613,7 @@ for (fn, fr) in ((:any, :OrFun),
                  (:count, :AddFun))
     @eval begin
         (Base.$fn)(f::Base.IdFun, d::DArray) = mapreduce(f, (Base.$fr)(), d)
-        (Base.$fn)(f::Base.Predicate, d::DArray) = mapreduce(r, (Base.$fr)(), d)
+        (Base.$fn)(f::Base.Predicate, d::DArray) = mapreduce(f, (Base.$fr)(), d)
         (Base.$fn)(f::Base.Func{1}, d::DArray) = mapreduce(f, (Base.$fr)(), d)
         (Base.$fn)(f::Callable, d::DArray) = mapreduce(f, (Base.$fr)(), d)
     end
