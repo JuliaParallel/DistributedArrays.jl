@@ -319,11 +319,12 @@ drandn(d1::Integer, drest::Integer...) = drandn(convert(Dims, tuple(d1, drest...
 ## conversions ##
 
 """
-     distribute(A[, procs])
+     distribute(A[; procs, dist])
 
 Convert a local array to distributed.
 
-`procs` optionally specifies a vector of process IDs to use. (defaults to all workers)
+`procs` optionally specifies an array of process IDs to use. (defaults to all workers)
+`dist` optionally specifies a vector or tuple of the number of partitions in each dimension
 """
 function distribute(A::AbstractArray;
     procs = workers()[1:min(nworkers(), maximum(size(A)))],
