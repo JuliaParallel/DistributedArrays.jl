@@ -326,12 +326,14 @@ Convert a local array to distributed.
 `procs` optionally specifies a vector of process IDs to use. (defaults to all workers)
 """
 function distribute(A::AbstractArray;
-                    procs=workers()[1:min(nworkers(), maximum(size(A)))])
+    procs = workers()[1:min(nworkers(), maximum(size(A)))],
+    dist = defaultdist(size(A), procs))
+
     owner = myid()
     rr = RemoteRef()
     put!(rr, A)
-    d = DArray(size(A), procs) do I
-        remotecall_fetch(()->fetch(rr)[I...], owner)
+    d = DArray(size(A), procs, dist) do I
+        remotecall_fetch(() -> fetch(rr)[I...], owner)
     end
     # Ensure that all workers have fetched their localparts.
     # Else a gc in between can recover the RemoteRef rr
@@ -340,6 +342,8 @@ function distribute(A::AbstractArray;
     end
     return d
 end
+
+Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
 
 Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
     a = Array(S, size(d))
