@@ -10,8 +10,13 @@ facts("test distribute") do
     end
 
     context("test distribute with procs arguments") do
-        DA = distribute(A, procs=[1,2])
+        DA = distribute(A, procs = [1, 2])
         @fact length(procs(DA)) --> 2
+    end
+
+    context("test distribute with procs and dist arguments") do
+        DA = distribute(A, procs = [1, 2], dist = [1,2])
+        @fact size(procs(DA)) --> (1,2)
     end
 end
 
