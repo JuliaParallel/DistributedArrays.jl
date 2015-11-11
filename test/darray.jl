@@ -53,6 +53,7 @@ facts("test DArray / Array conversion") do
         A = convert(Matrix{Float64}, D)
 
         @fact A[1:150,1:150] --> S
+        @fact convert(DArray{Float64,2,Matrix{Float64}}, A) --> D
         @fact fetch(@spawnat MYID localpart(D)[1,1]) --> D[1,1]
         @fact fetch(@spawnat OTHERIDS localpart(D)[1,1]) --> D[1,101]
     end

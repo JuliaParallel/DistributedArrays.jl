@@ -343,6 +343,8 @@ function distribute(A::AbstractArray;
     return d
 end
 
+Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
+
 Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
     a = Array(S, size(d))
     @sync begin
