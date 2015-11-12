@@ -583,7 +583,7 @@ function nnz(A::DArray)
     for i in eachindex(A.chunks)
         B[i...] = remotecall(t -> nnz(fetch(t)), A.pids[i...], A.chunks[i...])
     end
-    return mapreduce(t -> nnz(fetch(t)), +, A.chunks)
+    return mapreduce(t -> fetch(t), +, B)
 end
 
 # LinAlg
