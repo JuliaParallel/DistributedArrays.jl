@@ -1,5 +1,9 @@
 VERSION >= v"0.4.0-dev+6521" && __precompile__(true)
 
+# TODO
+# - avoid temporary darrays being created by sum, mean, std, etc when called along specific dimensions
+
+
 module DistributedArrays
 
 using Compat
@@ -11,6 +15,11 @@ import Base.BLAS: axpy!
 export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($)
 export DArray, SubDArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, ppeval, samedist
+export close, darray_closeall
+
+const registry=Dict{Tuple, Any}()
+const refs=Set()  # Collection of darray identities created on this node
+
 
 """
     DArray(init, dims, [procs, dist])
@@ -37,23 +46,36 @@ dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 ```
 """
 type DArray{T,N,A} <: AbstractArray{T,N}
+    identity::Tuple
     dims::NTuple{N,Int}
-    chunks::Array{RemoteRef,N}
     pids::Array{Int,N}                          # pids[i]==p ⇒ processor p has piece i
     indexes::Array{NTuple{N,UnitRange{Int}},N}  # indexes held by piece i
     cuts::Vector{Vector{Int}}                   # cuts[d][i] = first index of chunk i in dimension d
 
-    function DArray(dims, chunks, pids, indexes, cuts)
+    release::Bool
+
+    function DArray(identity, dims, pids, indexes, cuts)
         # check invariants
-        if size(chunks) != size(indexes)
-            throw(ArgumentError("size(chunks) != size(indexes), $(repr(chunks)) != $(repr(indexes))"))
-        elseif length(chunks) != length(pids)
-            throw(ArgumentError("length(chunks) != length(pids), $(length(chunks)) != $(length(pids))"))
-        elseif dims != map(last, last(indexes))
+        if dims != map(last, last(indexes))
             throw(ArgumentError("dimension of DArray (dim) and indexes do not match"))
         end
-        return new(dims, chunks, reshape(pids, size(chunks)), indexes, cuts)
+        release = (myid() == identity[1])
+
+        global registry
+        haskey(registry, (identity, :DARRAY)) && return registry[(identity, :DARRAY)]
+
+        d = new(identity, dims, pids, indexes, cuts, release)
+        if release
+            push!(refs, identity)
+            registry[(identity, :DARRAY)] = d
+
+#            println("Installing finalizer for : ", d.identity, ", : ", object_id(d), ", isbits: ", isbits(d))
+            finalizer(d, close)
+        end
+        d
     end
+
+    DArray() = new()
 end
 
 typealias SubDArray{T,N,D<:DArray} SubArray{T,N,D}
@@ -61,22 +83,13 @@ typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
 
 ## core constructors ##
 
-function construct_darray(dims, chunks, procs, idxs, cuts)
-    p = max(1, localpartindex(procs))
-    A = remotecall_fetch(r->typeof(fetch(r)), procs[p], chunks[p])
-    return DArray{eltype(A),length(dims),A}(dims, chunks, procs, idxs, cuts)
-end
-
 function DArray(init, dims, procs, dist)
-    # dist == size(chunks)
     np = prod(dist)
-    procs = procs[1:np]
+    procs = reshape(procs[1:np], ntuple(i->dist[i], length(dist)))
     idxs, cuts = chunk_idxs([dims...], dist)
-    chunks = Array(RemoteRef, dist...)
-    for i = 1:np
-        chunks[i] = remotecall(init, procs[i], idxs[i])
-    end
-    return construct_darray(dims, chunks, procs, idxs, cuts)
+    identity = next_did()
+
+    return construct_darray(identity, init, dims, procs, idxs, cuts)
 end
 
 function DArray(init, dims, procs)
@@ -87,18 +100,16 @@ function DArray(init, dims, procs)
 end
 DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(), maximum(dims))])
 
-# new DArray similar to an existing one
-DArray(init, d::DArray) = DArray(init, size(d), procs(d), [size(d.chunks)...])
-
 # Create a DArray from a collection of references
 function DArray(refs::Array{RemoteRef})
     dimdist = size(refs)
+    identity = next_did()
 
     npids = [r.where for r in refs]
     nsizes = Array(Tuple, dimdist)
     @sync for i in 1:length(refs)
         let i=i
-            @async nsizes[i] = remotecall_fetch(r->size(fetch(r)), npids[i], refs[i])
+            @async nsizes[i] = remotecall_fetch(rr_localpart, npids[i], refs[i], identity)
         end
     end
 
@@ -122,9 +133,8 @@ function DArray(refs::Array{RemoteRef})
     ncuts = Array{Int,1}[unshift!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
     ndims = tuple([sort(unique(lastidxs[x,:]))[end]-1 for x in 1:length(dimdist)]...)
 
-    return construct_darray(ndims, refs, npids, nindexes, ncuts)
+    construct_darray(identity, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
 end
-
 
 macro DArray(ex::Expr)
     if ex.head !== :comprehension
@@ -141,12 +151,150 @@ macro DArray(ex::Expr)
                 tuple($(map(r->:(length($r)), ranges)...))) )
 end
 
+# new DArray similar to an existing one
+DArray(init, d::DArray) = DArray(init, size(d), procs(d), [size(d.pids)...])
+
+function construct_darray(identity, init, dims, pids, idxs, cuts)
+    r=Channel(1)
+    @sync begin
+        for i = 1:length(pids)
+            @async begin
+                local typA
+                if isa(init, Function)
+                    typA=remotecall_fetch(construct_localparts, pids[i], init, identity, dims, pids, idxs, cuts)
+                else
+                    # constructing from an array of remote refs.
+                    typA=remotecall_fetch(construct_localparts, pids[i], init[i], identity, dims, pids, idxs, cuts)
+                end
+                !isready(r) && put!(r, typA)
+            end
+        end
+    end
+
+    typA = take!(r)
+    if myid() in pids
+        d = registry[(identity, :DARRAY)]
+    else
+        d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
+    end
+    d
+end
+
+function construct_localparts(init, identity, dims, pids, idxs, cuts)
+    A = isa(init, Function) ? init(idxs[localpartindex(pids)]) : fetch(init)
+    global registry
+    registry[(identity, :LOCALPART)] = A
+    typA = typeof(A)
+    d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
+    registry[(identity, :DARRAY)] = d
+    typA
+end
+
+let DID::Int = 1
+    global next_did
+    next_did() = (id = DID; DID += 1; (myid(), id))
+end
+
+function release_localpart(identity)
+    global registry
+    delete!(registry, (identity, :DARRAY))
+    delete!(registry, (identity, :LOCALPART))
+    nothing
+end
+release_localpart(d::DArray) = release_localpart(d.identity)
+
+function close_by_identity(identity, pids)
+#   @schedule println("Finalizer for : ", identity)
+    global refs
+    @sync begin
+        for p in pids
+            @async remotecall_fetch(release_localpart, p, identity)
+        end
+        if !(myid() in pids)
+            release_localpart(identity)
+        end
+    end
+    delete!(refs, identity)
+    nothing
+end
+
+function close(d::DArray)
+#    @schedule println("close : ", d.identity, ", object_id : ", object_id(d), ", myid : ", myid() )
+    if (myid() == d.identity[1]) && d.release
+        @schedule close_by_identity(d.identity, d.pids)
+        d.release = false
+    end
+    nothing
+end
+
+function darray_closeall()
+    global registry
+    global refs
+    crefs = copy(refs)
+    for identity in crefs
+        if identity[1] ==  myid() # sanity check
+            haskey(registry, (identity, :DARRAY)) && close(registry[(identity, :DARRAY)])
+            yield()
+        end
+    end
+end
+
+function rr_localpart(r::RemoteRef, identity)
+    global registry
+    lp = fetch(r)
+    registry[(identity, :LOCALPART)] = lp
+    return size(lp)
+end
+
+function Base.serialize(S::SerializationState, d::DArray)
+    # Only send the ident for participating workers - we expect the DArray to exist in the
+    # remote registry
+    destpid = Base.worker_id_from_socket(S.io)
+    Serializer.serialize_type(S, typeof(d))
+    if (destpid in d.pids) || (destpid == d.identity[1])
+        serialize(S, (true, d.identity))    # (identity_only, identity)
+    else
+        serialize(S, (false, d.identity))
+        for n in [:dims, :pids, :indexes, :cuts]
+            serialize(S, getfield(d, n))
+        end
+    end
+end
+
+function Base.deserialize{T<:DArray}(S::SerializationState, t::Type{T})
+    what = deserialize(S)
+    identity_only = what[1]
+    identity = what[2]
+
+    if identity_only
+        global registry
+        if haskey(registry, (identity, :DARRAY))
+            return registry[(identity, :DARRAY)]
+        else
+            # access to fields will throw an error, at least the deserialization process will not
+            # result in worker death
+            d = T()
+            d.identity = identity
+            return d
+        end
+    else
+        # We are not a participating worker, deser fields and instantiate locally.
+        dims = deserialize(S)
+        pids = deserialize(S)
+        indexes = deserialize(S)
+        cuts = deserialize(S)
+        return T(identity, dims, pids, indexes, cuts)
+    end
+end
+
+
 Base.similar(d::DArray, T, dims::Dims) = DArray(I->Array(T, map(length,I)), dims, procs(d))
 Base.similar(d::DArray, T) = similar(d, T, size(d))
 Base.similar{T}(d::DArray{T}, dims::Dims) = similar(d, T, dims)
 Base.similar{T}(d::DArray{T}) = similar(d, T, size(d))
 
 Base.size(d::DArray) = d.dims
+
 
 """
     procs(d::DArray)
@@ -161,10 +309,10 @@ chunktype{T,N,A}(d::DArray{T,N,A}) = A
 
 # decide how to divide each dimension
 # returns size of chunks array
-function defaultdist(dims, procs)
+function defaultdist(dims, pids)
     dims = [dims...]
     chunks = ones(Int, length(dims))
-    np = length(procs)
+    np = length(pids)
     f = sort!(collect(keys(factor(np))), rev=true)
     k = 1
     while np > 1
@@ -230,8 +378,15 @@ function localpart{T,N,A}(d::DArray{T,N,A})
     if lpidx == 0
         return convert(A, Array(T, ntuple(zero, N)))::A
     end
-    return fetch(d.chunks[lpidx])::A
+
+    global registry
+    return registry[(d.identity, :LOCALPART)]::A
 end
+
+localpart(d::DArray, localidx...) = localpart(d)[localidx...]
+
+# fetch localpart of d at pids[i]
+fetch{T,N,A}(d::DArray{T,N,A}, i) = remotecall_fetch(localpart, d.pids[i], d)
 
 """
     localpart(A)
@@ -258,7 +413,7 @@ end
 locate(d::DArray, I::Int...) =
     ntuple(i -> searchsortedlast(d.cuts[i], I[i]), ndims(d))
 
-chunk{T,N,A}(d::DArray{T,N,A}, i...) = fetch(d.chunks[i...])::A
+chunk{T,N,A}(d::DArray{T,N,A}, i...) = remotecall_fetch(localpart, d.pids[i...], d)::A
 
 ## convenience constructors ##
 
@@ -336,11 +491,6 @@ function distribute(A::AbstractArray;
     d = DArray(size(A), procs, dist) do I
         remotecall_fetch(() -> fetch(rr)[I...], owner)
     end
-    # Ensure that all workers have fetched their localparts.
-    # Else a gc in between can recover the RemoteRef rr
-    for chunk in d.chunks
-        wait(chunk)
-    end
     return d
 end
 
@@ -349,7 +499,7 @@ Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(con
 Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
     a = Array(S, size(d))
     @sync begin
-        for i = 1:length(d.chunks)
+        for i = 1:length(d.pids)
             @async a[d.indexes[i]...] = chunk(d, i)
         end
     end
@@ -417,12 +567,13 @@ end
 
 ## indexing ##
 
+getlocalindex(d::DArray, idx...) = localpart(d)[idx...]
 function getindex_tuple{T}(d::DArray{T}, I::Tuple{Vararg{Int}})
     chidx = locate(d, I...)
-    chunk = d.chunks[chidx...]
     idxs = d.indexes[chidx...]
     localidx = ntuple(i -> (I[i] - first(idxs[i]) + 1), ndims(d))
-    return chunk[localidx...]::T
+    pid = d.pids[chidx...]
+    return remotecall_fetch(getlocalindex, pid, d, localidx...)::T
 end
 
 Base.getindex(d::DArray, i::Int) = getindex_tuple(d, ind2sub(size(d), i))
@@ -449,7 +600,7 @@ end
 
 Base.setindex!(a::Array, d::DArray, I::UnitRange{Int}...) = begin
     n = length(I)
-    @sync for i = 1:length(d.chunks)
+    @sync for i = 1:length(d.pids)
         K = d.indexes[i]
         @async a[[I[j][K[j]] for j=1:n]...] = chunk(d, i)
     end
@@ -465,7 +616,7 @@ Base.setindex!(a::Array, s::SubDArray, I::UnitRange{Int}...) = begin
         return a
     end
     offs = [isa(J[i],Int) ? J[i]-1 : first(J[i])-1 for i=1:n]
-    @sync for i = 1:length(d.chunks)
+    @sync for i = 1:length(d.pids)
         K_c = Any[d.indexes[i]...]
         K = [ intersect(J[j],K_c[j]) for j=1:n ]
         if !any(isempty, K)
@@ -475,10 +626,9 @@ Base.setindex!(a::Array, s::SubDArray, I::UnitRange{Int}...) = begin
                 @async a[idxs...] = chunk(d, i)
             else
                 # partial chunk
-                ch = d.chunks[i]
                 @async a[idxs...] =
-                    remotecall_fetch(ch.where) do
-                        sub(fetch(ch), [K[j]-first(K_c[j])+1 for j=1:n]...)
+                    remotecall_fetch(d.pids[i]) do
+                        sub(localpart(d), [K[j]-first(K_c[j])+1 for j=1:n]...)
                     end
             end
         end
@@ -500,17 +650,26 @@ end
 
 Base.map(f, d::DArray) = DArray(I->map(f, localpart(d)), d)
 
-Base.reduce(f, d::DArray) =
-# TODO Change to an @async remotecall_fetch - will reduce one extra network hop -
-# once bug in master is fixed.
-    mapreduce(fetch, f,
-              Any[ remotecall((f,d)->reduce(f, localpart(d)), p, f, d) for p in procs(d) ])
+function Base.reduce(f, d::DArray)
+    results=[]
+    @sync begin
+        for p in procs(d)
+            @async push!(results, remotecall_fetch((f,d)->reduce(f, localpart(d)), p, f, d))
+        end
+    end
+    reduce(f, results)
+end
 
 function _mapreduce(f, opt, d::DArray)
 # TODO Change to an @async remotecall_fetch - will reduce one extra network hop -
 # once bug in master is fixed.
-    mapreduce(fetch, opt,
-              Any[ remotecall((f,opt,d)->mapreduce(f, opt, localpart(d)), p, f, opt, d)  for p in procs(d) ])
+    results=[]
+    @sync begin
+        for p in procs(d)
+            @async push!(results, remotecall_fetch((f,opt,d)->mapreduce(f, opt, localpart(d)), p, f, opt, d))
+        end
+    end
+    reduce(opt, results)
 end
 Base.mapreduce(f, opt::Union{Base.OrFun,Base.AndFun}, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, Base.specialized_binary(opt), d)
@@ -579,11 +738,13 @@ Base.mapreducedim(f, op, R::DArray, A::DArray) = begin
 end
 
 function nnz(A::DArray)
-    B = Array(Any, size(A.chunks))
-    for i in eachindex(A.chunks)
-        B[i...] = remotecall(t -> nnz(fetch(t)), A.pids[i...], A.chunks[i...])
+    B = Array(Any, size(A.pids))
+    @sync begin
+        for i in eachindex(A.pids)
+            @async B[i...] = remotecall_fetch(x -> nnz(localpart(x)), A.pids[i...], A)
+        end
     end
-    return mapreduce(t -> fetch(t), +, B)
+    return reduce(+, B)
 end
 
 # LinAlg
@@ -851,9 +1012,9 @@ function dot(x::DVector, y::DVector)
         throw(ArgumentError("vectors don't have the same distribution. Not handled for efficiency reasons."))
     end
     r = RemoteRef[]
-    for i = eachindex(x.chunks)
-        cx, cy = x.chunks[i], y.chunks[i]
-        push!(r, remotecall(() -> dot(fetch(cx), fetch(cy)), cx.where))
+    for i = eachindex(x.pids)
+        px, py = x.pids[i], y.pids[i]
+        push!(r, remotecall((x, y, i) -> dot(localpart(x), fetch(y, i)), px, x, y, i))
     end
     return mapreduce(fetch, Base.AddFun(), r)
 end
@@ -894,10 +1055,10 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
     end
 
     # Multiply on each tile of A
-    R = Array(RemoteRef, size(A.chunks)...)
-    for j = 1:size(A.chunks, 2)
+    R = Array(RemoteRef, size(A.pids)...)
+    for j = 1:size(A.pids, 2)
         xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
-        for i = 1:size(A.chunks, 1)
+        for i = 1:size(A.pids, 1)
             R[i,j] = remotecall(procs(A)[i,j]) do
                 localpart(A)*convert(localtype(x), xj)
             end
@@ -906,21 +1067,21 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
 
     # Scale y if necessary
     if β != one(β)
-        @sync for r in y.chunks
+        @sync for p in y.pids
             if β != zero(β)
-                @async remotecall_wait(() -> scale!(fetch(r), β), r.where)
+                @async remotecall_wait(y -> scale!(localpart(y), β), p, y)
             else
-                @async remotecall_wait(() -> fill!(fetch(r), 0), r.where)
+                @async remotecall_wait(y -> fill!(localpart(y), 0), p, y)
             end
         end
     end
 
     # Update y
     @sync for i = 1:size(R, 1)
-        rsi = y.chunks[i]
+        p = y.pids[i]
         for j = 1:size(R, 2)
             rij = R[i,j]
-            @async remotecall_wait(() -> add!(fetch(rsi), fetch(rij), α), rsi.where)
+            @async remotecall_wait(() -> add!(localpart(y), fetch(rij), α), p)
         end
     end
 
@@ -938,31 +1099,31 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     end
 
     # Multiply on each tile of A
-    R = Array(RemoteRef, reverse(size(A.chunks))...)
-    for j = 1:size(A.chunks, 1)
+    R = Array(RemoteRef, reverse(size(A.pids))...)
+    for j = 1:size(A.pids, 1)
         xj = x[A.cuts[1][j]:A.cuts[1][j + 1] - 1]
-        for i = 1:size(A.chunks, 2)
+        for i = 1:size(A.pids, 2)
             R[i,j] = remotecall(() -> localpart(A)'*convert(localtype(x), xj), procs(A)[j,i])
         end
     end
 
     # Scale y if necessary
     if β != one(β)
-        @sync for r in y.chunks
+        @sync for p in y.pids
             if β != zero(β)
-                @async remotecall_wait(() -> scale!(fetch(r), β), r.where)
+                @async remotecall_wait(() -> scale!(localpart(y), β), p)
             else
-                @async remotecall_wait(() -> fill!(fetch(r), 0), r.where)
+                @async remotecall_wait(() -> fill!(localpart(y), 0), p)
             end
         end
     end
 
     # Update y
     @sync for i = 1:size(R, 1)
-        rsi = y.chunks[i]
+        p = y.pids[i]
         for j = 1:size(R, 2)
             rij = R[i,j]
-            @async remotecall_wait(() -> add!(fetch(rsi), fetch(rij), α), rsi.where)
+            @async remotecall_wait(() -> add!(localpart(y), fetch(rij), α), p)
         end
     end
     return y
@@ -982,10 +1143,10 @@ function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMat
 
     # Multiply on each tile of A
     R = Array(RemoteRef, size(procs(A))..., size(procs(C), 2))
-    for j = 1:size(A.chunks, 2)
-        for k = 1:size(C.chunks, 2)
+    for j = 1:size(A.pids, 2)
+        for k = 1:size(C.pids, 2)
             Bjk = B[A.cuts[2][j]:A.cuts[2][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
-            for i = 1:size(A.chunks, 1)
+            for i = 1:size(A.pids, 1)
                 R[i,j,k] = remotecall(procs(A)[i,j]) do
                     localpart(A)*convert(localtype(B), Bjk)
                 end
@@ -995,22 +1156,22 @@ function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMat
 
     # Scale C if necessary
     if β != one(β)
-        @sync for r in C.chunks
+        @sync for p in C.pids
             if β != zero(β)
-                @async remotecall_wait(() -> scale!(fetch(r), β), r.where)
+                @async remotecall_wait(() -> scale!(localpart(C), β), p)
             else
-                @async remotecall_wait(() -> fill!(fetch(r), 0), r.where)
+                @async remotecall_wait(() -> fill!(localpart(C), 0), p)
             end
         end
     end
 
     # Update C
     @sync for i = 1:size(R, 1)
-        for k = 1:size(C.chunks, 2)
-            rsik = C.chunks[i,k]
+        for k = 1:size(C.pids, 2)
+            p = C.pids[i,k]
             for j = 1:size(R, 2)
                 rijk = R[i,j,k]
-                @async remotecall_wait(() -> add!(fetch(rsik), fetch(rijk), α), rsik.where)
+                @async remotecall_wait(() -> add!(localpart(C), fetch(rijk), α), p)
             end
         end
     end
@@ -1040,10 +1201,10 @@ function Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMa
 
     # Multiply on each tile of A
     R = Array(RemoteRef, reverse(size(procs(A)))..., size(procs(C), 2))
-    for j = 1:size(A.chunks, 1)
-        for k = 1:size(C.chunks, 2)
+    for j = 1:size(A.pids, 1)
+        for k = 1:size(C.pids, 2)
             Bjk = B[A.cuts[1][j]:A.cuts[1][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
-            for i = 1:size(A.chunks, 2)
+            for i = 1:size(A.pids, 2)
                 R[i,j,k] = remotecall(procs(A)[j,i]) do
                     localpart(A)'*convert(localtype(B), Bjk)
                 end
@@ -1053,22 +1214,22 @@ function Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMa
 
     # Scale C if necessary
     if β != one(β)
-        @sync for r in C.chunks
+        @sync for p in C.pids
             if β != zero(β)
-                @async remotecall_wait(() -> scale!(fetch(r), β), r.where)
+                @async remotecall_wait(() -> scale!(localpart(C), β), p)
             else
-                @async remotecall_wait(() -> fill!(fetch(r), 0), r.where)
+                @async remotecall_wait(() -> fill!(localpart(C), 0), p)
             end
         end
     end
 
     # Update C
     @sync for i = 1:size(R, 1)
-        for k = 1:size(C.chunks, 2)
-            rsik = C.chunks[i,k]
+        for k = 1:size(C.pids, 2)
+            rsik = C.pids[i,k]
             for j = 1:size(R, 2)
                 rijk = R[i,j,k]
-                @async remotecall_wait(() -> add!(fetch(rsik), fetch(rijk), α), rsik.where)
+                @async remotecall_wait(d -> add!(localpart(d), fetch(rijk), α), rsik, C)
             end
         end
     end

@@ -215,3 +215,24 @@ false
 ```
 
 The ultimate ordering of operations will be dependent on how the Array is distributed.
+
+Garbage Collection and DArrays
+------------------------------
+
+When a DArray is constructed (typically on the master process), the returned DArray objects stores information on how the
+array is distributed, which procesor holds which indexes and so on. When the DArray object
+on the master process is garbage collected, all particpating workers are notified and
+localparts of the DArray freed on each worker.
+
+Since the size of the DArray object itself is small, a problem arises as `gc` on the master faces no memory pressure to
+collect the DArray immediately. This results in a delay of the memory being released on the participating workers.
+
+Therefore it is highly recommended to explcitly call `close(d::DArray)` as soon as user code
+has finished working with the distributed array.
+
+It is also important to note that the localparts of the DArray is collected from all particpating workers
+when the DArray object on the process creating the DArray is collected. It is therefore important to maintain
+a reference to a DArray object on the creating process for as long as it is being computed upon.
+
+`darray_closeall()` is another useful function to manage distributed memory. It releases all darrays created from
+the calling process, including any temporaries created during computation.
