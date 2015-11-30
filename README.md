@@ -5,7 +5,7 @@
 Distributed Arrays for Julia
 
 ***NOTE***
-Distributed Arrays will only work on the latest development version of Julia (v0.4.0-dev).
+Distributed Arrays will only work on Julia v0.4.0 or later.
 
 `DArray`s have been removed from Julia Base library in v0.4 so it is now necessary to import the `DistributedArrays` package on all spawned processes.
 

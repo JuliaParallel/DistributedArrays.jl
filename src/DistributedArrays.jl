@@ -8,6 +8,10 @@ module DistributedArrays
 
 using Compat
 
+if VERSION < v"0.5.0-"
+typealias Future RemoteRef
+end
+
 importall Base
 import Base.Callable
 import Base.BLAS: axpy!
@@ -101,7 +105,7 @@ end
 DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(), maximum(dims))])
 
 # Create a DArray from a collection of references
-function DArray(refs::Array{RemoteRef})
+function DArray(refs::Array{Future})
     dimdist = size(refs)
     identity = next_did()
 
@@ -239,7 +243,7 @@ function darray_closeall()
     end
 end
 
-function rr_localpart(r::RemoteRef, identity)
+function rr_localpart(r::Future, identity)
     global registry
     lp = fetch(r)
     registry[(identity, :LOCALPART)] = lp
@@ -486,7 +490,7 @@ function distribute(A::AbstractArray;
     dist = defaultdist(size(A), procs))
 
     owner = myid()
-    rr = RemoteRef()
+    rr = Future()
     put!(rr, A)
     d = DArray(size(A), procs, dist) do I
         remotecall_fetch(() -> fetch(rr)[I...], owner)
@@ -870,7 +874,7 @@ function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
         end
     end
 
-    refs = RemoteRef[remotecall((x,y,z)->mapslices(x,localpart(y),z), p, f, D, dims) for p in procs(D)]
+    refs = Future[remotecall((x,y,z)->mapslices(x,localpart(y),z), p, f, D, dims) for p in procs(D)]
 
     DArray(reshape(refs, size(procs(D))))
 end
@@ -980,13 +984,14 @@ function ppeval(f, D...; dim::NTuple = map(t -> isa(t, DArray) ? ndims(t) : 0, D
         end
     end
 
-    refs = RemoteRef[remotecall((x, y, z) -> _ppeval(x, map(localpart, y)...; dim = z), p, f, D, dim) for p in procs(D[1])]
+    refs = Future[remotecall((x, y, z) -> _ppeval(x, map(localpart, y)...; dim = z), p, f, D, dim) for p in procs(D[1])]
 
-    # The array of RemoteRefs has to be reshaped for the DArray constructor to work correctly.
+    # The array of Futures has to be reshaped for the DArray constructor to work correctly.
     # This requires a fetch and the DArray is also fetching so it might be better to modify
     # the DArray constructor.
     sd = [size(D[1].pids)...]
-    DArray(reshape(refs, tuple([sd[1:ndims(fetch(refs[1])) - 1], sd[end];]...)))
+    nd = remotecall_fetch((r)->ndims(fetch(r)), refs[1].where, refs[1])
+    DArray(reshape(refs, tuple([sd[1:nd - 1], sd[end];]...)))
 end
 
 typealias DVector{T,A} DArray{T,1,A}
@@ -1011,7 +1016,7 @@ function dot(x::DVector, y::DVector)
     if (procs(x) != procs(y)) || (x.cuts != y.cuts)
         throw(ArgumentError("vectors don't have the same distribution. Not handled for efficiency reasons."))
     end
-    r = RemoteRef[]
+    r = Future[]
     for i = eachindex(x.pids)
         px, py = x.pids[i], y.pids[i]
         push!(r, remotecall((x, y, i) -> dot(localpart(x), fetch(y, i)), px, x, y, i))
@@ -1055,7 +1060,7 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
     end
 
     # Multiply on each tile of A
-    R = Array(RemoteRef, size(A.pids)...)
+    R = Array(Future, size(A.pids)...)
     for j = 1:size(A.pids, 2)
         xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
         for i = 1:size(A.pids, 1)
@@ -1099,7 +1104,7 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     end
 
     # Multiply on each tile of A
-    R = Array(RemoteRef, reverse(size(A.pids))...)
+    R = Array(Future, reverse(size(A.pids))...)
     for j = 1:size(A.pids, 1)
         xj = x[A.cuts[1][j]:A.cuts[1][j + 1] - 1]
         for i = 1:size(A.pids, 2)
@@ -1142,7 +1147,7 @@ function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMat
     end
 
     # Multiply on each tile of A
-    R = Array(RemoteRef, size(procs(A))..., size(procs(C), 2))
+    R = Array(Future, size(procs(A))..., size(procs(C), 2))
     for j = 1:size(A.pids, 2)
         for k = 1:size(C.pids, 2)
             Bjk = B[A.cuts[2][j]:A.cuts[2][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
@@ -1200,7 +1205,7 @@ function Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMa
     end
 
     # Multiply on each tile of A
-    R = Array(RemoteRef, reverse(size(procs(A)))..., size(procs(C), 2))
+    R = Array(Future, reverse(size(procs(A)))..., size(procs(C), 2))
     for j = 1:size(A.pids, 1)
         for k = 1:size(C.pids, 2)
             Bjk = B[A.cuts[1][j]:A.cuts[1][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
