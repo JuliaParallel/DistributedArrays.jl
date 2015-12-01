@@ -648,6 +648,21 @@ end
 
 check_leaks()
 
+facts("test broadcast ops") do
+    wrkrs = workers()
+    nwrkrs = length(wrkrs)
+    nrows = 20 * nwrkrs
+    ncols = 10 * nwrkrs
+    a = drand((nrows,ncols), wrkrs, (1, nwrkrs))
+    m = mean(a, 1)
+    c = a .- m
+    d = convert(Array, a) .- convert(Array, m)
+    @fact c --> d
+    darray_closeall()
+end
+
+check_leaks()
+
 facts("test matrix multiplication") do
     A = drandn(20,20)
     b = drandn(20)

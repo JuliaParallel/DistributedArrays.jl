@@ -156,7 +156,7 @@ macro DArray(ex::Expr)
 end
 
 # new DArray similar to an existing one
-DArray(init, d::DArray) = DArray(init, size(d), procs(d), [size(d.pids)...])
+DArray(init, d::DArray) = construct_darray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
 
 function construct_darray(identity, init, dims, pids, idxs, cuts)
     r=Channel(1)
@@ -679,7 +679,7 @@ Base.mapreduce(f, opt::Union{Base.OrFun,Base.AndFun}, d::DArray) = _mapreduce(f,
 Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, Base.specialized_binary(opt), d)
 Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
 
- Base.map!(f, d::DArray) = begin
+Base.map!(f, d::DArray) = begin
     @sync for p in procs(d)
         @spawnat p map!(f, localpart(d))
     end
@@ -800,7 +800,7 @@ end
 (-)(x::Number, A::DArray) = x .- A
 
 mappart(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
-mappart(f::Callable, d1::DArray, d2::DArray) = DArray(d1.dims, procs(d1)) do I
+mappart(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
     f(localpart(d1), localpart(d2))
 end
 
@@ -823,10 +823,17 @@ function samedist(A::DArray, B::DArray)
     B
 end
 
-for f in (:+, :-, :.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
+for f in (:+, :-, :div, :mod, :rem, :&, :|, :$)
     @eval begin
         function ($f){T}(A::DArray{T}, B::DArray{T})
             B = samedist(A, B)
+            mappart($f, A, B)
+        end
+    end
+end
+for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
+    @eval begin
+        function ($f){T}(A::DArray{T}, B::DArray{T})
             mappart($f, A, B)
         end
     end
