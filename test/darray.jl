@@ -727,6 +727,28 @@ facts("test nnz") do
     @fact nnz(distribute(A)) --> nnz(A)
 end
 
+facts("test matmatmul") do
+    A = drandn(30, 30)
+    B = drandn(30, 20)
+    a = convert(Array, A)
+    b = convert(Array, B)
+
+    AB = A * B
+    AtB = A.' * B
+    AcB = A' * B
+
+    ab = a * b
+    atb = a.' * b
+    acb = a' * b
+
+    @fact AB --> roughly(ab)
+    @fact AtB --> roughly(atb)
+    @fact AcB --> roughly(acb)
+    darray_closeall()  # close the temporaries created above
+end
+
+check_leaks()
+
 darray_closeall()
 
 facts("test for any leaks") do

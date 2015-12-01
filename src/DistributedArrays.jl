@@ -1143,24 +1143,42 @@ end
 
 
 # Level 3
-function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix)
-
+function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix, tA)
     # error checks
-    if size(A, 2) != size(B, 1)
-        throw(DimensionMismatch(""))
+    Ad1, Ad2 = (tA == 'N') ? (1,2) : (2,1)
+    mA, nA = size(A, Ad1, Ad2)
+    mB, nB = size(B)
+    if mB != nA
+        throw(DimensionMismatch("matrix A has dimensions ($mA, $nA), matrix B has dimensions ($mB, $nB)"))
     end
-    if C.cuts[1] != A.cuts[1]
-        throw(ArgumentError("cuts of the first dimension of the output matrix must match cuts of first dimension of the first input matrix"))
+    if size(C,1) != mA || size(C,2) != nB
+        throw(DimensionMismatch("result C has dimensions $(size(C)), needs ($mA, $nB)"))
+    end
+    if C.cuts[1] != A.cuts[Ad1]
+        throw(ArgumentError("cuts of the first dimension of the output matrix must match cuts of dimension $Ad1 of the first input matrix"))
     end
 
     # Multiply on each tile of A
-    R = Array(Future, size(procs(A))..., size(procs(C), 2))
-    for j = 1:size(A.pids, 2)
+    if tA == 'N'
+        R = Array(Future, size(procs(A))..., size(procs(C), 2))
+    else
+        R = Array(Future, reverse(size(procs(A)))..., size(procs(C), 2))
+    end
+    for j = 1:size(A.pids, Ad2)
         for k = 1:size(C.pids, 2)
-            Bjk = B[A.cuts[2][j]:A.cuts[2][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
-            for i = 1:size(A.pids, 1)
-                R[i,j,k] = remotecall(procs(A)[i,j]) do
-                    localpart(A)*convert(localtype(B), Bjk)
+            Acuts = A.cuts[Ad2]
+            Ccuts = C.cuts[2]
+            Bjk = B[Acuts[j]:Acuts[j + 1] - 1, Ccuts[k]:Ccuts[k + 1] - 1]
+            for i = 1:size(A.pids, Ad1)
+                p = (tA == 'N') ? procs(A)[i,j] : procs(A)[j,i]
+                R[i,j,k] = remotecall(p) do
+                    if tA == 'T'
+                        return localpart(A).'*convert(localtype(B), Bjk)
+                    elseif tA == 'C'
+                        return localpart(A)'*convert(localtype(B), Bjk)
+                    else
+                        return localpart(A)*convert(localtype(B), Bjk)
+                    end
                 end
             end
         end
@@ -1183,12 +1201,17 @@ function A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMat
             p = C.pids[i,k]
             for j = 1:size(R, 2)
                 rijk = R[i,j,k]
-                @async remotecall_wait(() -> add!(localpart(C), fetch(rijk), α), p)
+                @async remotecall_wait(d -> add!(localpart(d), fetch(rijk), α), p, C)
             end
         end
     end
     return C
 end
+
+A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix) = _matmatmul!(α, A, B, β, C, 'N')
+Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix) = _matmatmul!(α, A, B, β, C, 'C')
+At_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix) = _matmatmul!(α, A, B, β, C, 'T')
+At_mul_B!(A::DMatrix, B::AbstractMatrix, C::DMatrix) = At_mul_B!(one(eltype(C)), A, B, zero(eltype(C)), C)
 
 function (*)(A::DMatrix, x::AbstractVector)
     T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(x)))
@@ -1199,53 +1222,6 @@ function (*)(A::DMatrix, B::AbstractMatrix)
     T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(B)))
     C = DArray(I -> Array(T, map(length, I)), (size(A, 1), size(B, 2)), procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))], (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
     return A_mul_B!(one(T), A, B, zero(T), C)
-end
-
-function Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix)
-
-    # error checks
-    if size(A, 1) != size(B, 1)
-        throw(DimensionMismatch(""))
-    end
-    if C.cuts[1] != A.cuts[2]
-        throw(ArgumentError("cuts of the first dimension of the output matrix must match cuts of second dimension of the first input matrix"))
-    end
-
-    # Multiply on each tile of A
-    R = Array(Future, reverse(size(procs(A)))..., size(procs(C), 2))
-    for j = 1:size(A.pids, 1)
-        for k = 1:size(C.pids, 2)
-            Bjk = B[A.cuts[1][j]:A.cuts[1][j + 1] - 1, C.cuts[2][k]:C.cuts[2][k + 1] - 1]
-            for i = 1:size(A.pids, 2)
-                R[i,j,k] = remotecall(procs(A)[j,i]) do
-                    localpart(A)'*convert(localtype(B), Bjk)
-                end
-            end
-        end
-    end
-
-    # Scale C if necessary
-    if β != one(β)
-        @sync for p in C.pids
-            if β != zero(β)
-                @async remotecall_wait(() -> scale!(localpart(C), β), p)
-            else
-                @async remotecall_wait(() -> fill!(localpart(C), 0), p)
-            end
-        end
-    end
-
-    # Update C
-    @sync for i = 1:size(R, 1)
-        for k = 1:size(C.pids, 2)
-            rsik = C.pids[i,k]
-            for j = 1:size(R, 2)
-                rijk = R[i,j,k]
-                @async remotecall_wait(d -> add!(localpart(d), fetch(rijk), α), rsik, C)
-            end
-        end
-    end
-    return C
 end
 
 function Ac_mul_B(A::DMatrix, x::AbstractVector)
