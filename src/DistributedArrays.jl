@@ -803,6 +803,12 @@ mappart(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
 mappart(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
     f(localpart(d1), localpart(d2))
 end
+function mappart!(f::Callable, d::DArray)
+    @sync for p in procs(d)
+        @spawnat p f(localpart(d))
+    end
+    return d
+end
 
 # Here we assume all the DArrays have
 # the same size and distribution
