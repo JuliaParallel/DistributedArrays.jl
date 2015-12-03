@@ -799,11 +799,11 @@ end
 (-)(A::DArray, x::Number) = A .- x
 (-)(x::Number, A::DArray) = x .- A
 
-mappart(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
-mappart(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
+map_localparts(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
+map_localparts(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
     f(localpart(d1), localpart(d2))
 end
-function mappart!(f::Callable, d::DArray)
+function map_localparts!(f::Callable, d::DArray)
     @sync for p in procs(d)
         @async remotecall_wait((f,d)->f(localpart(d)), p, f, d)
     end
@@ -812,12 +812,12 @@ end
 
 # Here we assume all the DArrays have
 # the same size and distribution
-mappart(f::Callable, As::DArray...) = DArray(I->f(map(localpart, As)...), As[1])
+map_localparts(f::Callable, As::DArray...) = DArray(I->f(map(localpart, As)...), As[1])
 
 for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
     @eval begin
-        ($f){T}(A::DArray{T}, B::Number) = mappart(r->($f)(r, B), A)
-        ($f){T}(A::Number, B::DArray{T}) = mappart(r->($f)(r, A), B)
+        ($f){T}(A::DArray{T}, B::Number) = map_localparts(r->($f)(r, B), A)
+        ($f){T}(A::Number, B::DArray{T}) = map_localparts(r->($f)(r, A), B)
     end
 end
 
@@ -833,14 +833,14 @@ for f in (:+, :-, :div, :mod, :rem, :&, :|, :$)
     @eval begin
         function ($f){T}(A::DArray{T}, B::DArray{T})
             B = samedist(A, B)
-            mappart($f, A, B)
+            map_localparts($f, A, B)
         end
     end
 end
 for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
     @eval begin
         function ($f){T}(A::DArray{T}, B::DArray{T})
-            mappart($f, A, B)
+            map_localparts($f, A, B)
         end
     end
 end
