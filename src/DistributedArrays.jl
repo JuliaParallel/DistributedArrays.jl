@@ -594,7 +594,7 @@ Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
         throw(DimensionMismatch("destination array doesn't fit to source array"))
     end
     @sync for p in procs(dest)
-        @spawnat p copy!(localpart(dest), localpart(src))
+        @async remotecall_wait((dest,src)->copy!(localpart(dest), localpart(src)), p, dest, src)
     end
     return dest
 end
@@ -645,7 +645,7 @@ Base.setindex!(a::Array{Any}, d::SubOrDArray, i::Int) = Base.arrayset(a, d, i)
 
 Base.fill!(A::DArray, x) = begin
     @sync for p in procs(A)
-        @spawnat p fill!(localpart(A), x)
+        @async remotecall_wait((A,x)->fill!(localpart(A), x), p, A, x)
     end
     return A
 end
@@ -681,7 +681,7 @@ Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
 
 Base.map!(f, d::DArray) = begin
     @sync for p in procs(d)
-        @spawnat p map!(f, localpart(d))
+        @async remotecall_wait((f,d)->map!(f, localpart(d)), p, f, d)
     end
     return d
 end
@@ -754,7 +754,7 @@ end
 # LinAlg
 Base.scale!(A::DArray, x::Number) = begin
     @sync for p in procs(A)
-        @spawnat p scale!(localpart(A), x)
+        @async remotecall_wait((A,x)->scale!(localpart(A), x), p, A, x)
     end
     return A
 end
@@ -805,7 +805,7 @@ mappart(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
 end
 function mappart!(f::Callable, d::DArray)
     @sync for p in procs(d)
-        @spawnat p f(localpart(d))
+        @async remotecall_wait((f,d)->f(localpart(d)), p, f, d)
     end
     return d
 end
