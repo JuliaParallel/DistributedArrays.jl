@@ -594,7 +594,7 @@ Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
         throw(DimensionMismatch("destination array doesn't fit to source array"))
     end
     @sync for p in procs(dest)
-        @spawnat p copy!(localpart(dest), localpart(src))
+        @async remotecall_wait((dest,src)->copy!(localpart(dest), localpart(src)), p, dest, src)
     end
     return dest
 end
@@ -645,7 +645,7 @@ Base.setindex!(a::Array{Any}, d::SubOrDArray, i::Int) = Base.arrayset(a, d, i)
 
 Base.fill!(A::DArray, x) = begin
     @sync for p in procs(A)
-        @spawnat p fill!(localpart(A), x)
+        @async remotecall_wait((A,x)->fill!(localpart(A), x), p, A, x)
     end
     return A
 end
@@ -681,7 +681,7 @@ Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
 
 Base.map!(f, d::DArray) = begin
     @sync for p in procs(d)
-        @spawnat p map!(f, localpart(d))
+        @async remotecall_wait((f,d)->map!(f, localpart(d)), p, f, d)
     end
     return d
 end
@@ -754,7 +754,7 @@ end
 # LinAlg
 Base.scale!(A::DArray, x::Number) = begin
     @sync for p in procs(A)
-        @spawnat p scale!(localpart(A), x)
+        @async remotecall_wait((A,x)->scale!(localpart(A), x), p, A, x)
     end
     return A
 end
@@ -799,19 +799,25 @@ end
 (-)(A::DArray, x::Number) = A .- x
 (-)(x::Number, A::DArray) = x .- A
 
-mappart(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
-mappart(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
+map_localparts(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
+map_localparts(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
     f(localpart(d1), localpart(d2))
+end
+function map_localparts!(f::Callable, d::DArray)
+    @sync for p in procs(d)
+        @async remotecall_wait((f,d)->f(localpart(d)), p, f, d)
+    end
+    return d
 end
 
 # Here we assume all the DArrays have
 # the same size and distribution
-mappart(f::Callable, As::DArray...) = DArray(I->f(map(localpart, As)...), As[1])
+map_localparts(f::Callable, As::DArray...) = DArray(I->f(map(localpart, As)...), As[1])
 
 for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
     @eval begin
-        ($f){T}(A::DArray{T}, B::Number) = mappart(r->($f)(r, B), A)
-        ($f){T}(A::Number, B::DArray{T}) = mappart(r->($f)(r, A), B)
+        ($f){T}(A::DArray{T}, B::Number) = map_localparts(r->($f)(r, B), A)
+        ($f){T}(A::Number, B::DArray{T}) = map_localparts(r->($f)(r, A), B)
     end
 end
 
@@ -827,14 +833,14 @@ for f in (:+, :-, :div, :mod, :rem, :&, :|, :$)
     @eval begin
         function ($f){T}(A::DArray{T}, B::DArray{T})
             B = samedist(A, B)
-            mappart($f, A, B)
+            map_localparts($f, A, B)
         end
     end
 end
 for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
     @eval begin
         function ($f){T}(A::DArray{T}, B::DArray{T})
-            mappart($f, A, B)
+            map_localparts($f, A, B)
         end
     end
 end
