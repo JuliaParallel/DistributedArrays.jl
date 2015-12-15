@@ -16,7 +16,7 @@ importall Base
 import Base.Callable
 import Base.BLAS: axpy!
 
-export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($)
+export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($), min, max
 export DArray, SubDArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, ppeval, samedist
 export close, darray_closeall
@@ -830,7 +830,7 @@ function samedist(A::DArray, B::DArray)
     B
 end
 
-for f in (:+, :-, :div, :mod, :rem, :&, :|, :$)
+for f in (:+, :-, :div, :mod, :rem, :&, :|, :$, :min, :max)
     @eval begin
         function ($f){T}(A::DArray{T}, B::DArray{T})
             B = samedist(A, B)
