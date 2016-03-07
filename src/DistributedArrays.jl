@@ -7,6 +7,13 @@ VERSION >= v"0.4.0-dev+6521" && __precompile__(true)
 module DistributedArrays
 
 using Compat
+using Blobs
+
+function __init__()
+    global const blobstore = ProcessGlobalBlob(2)
+    global const registry=Dict{Tuple, Any}()
+    global const refs=Set()  # Collection of darray identities created on this node
+end
 
 if VERSION < v"0.5.0-"
 typealias Future RemoteRef
@@ -20,10 +27,6 @@ export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($)
 export DArray, SubDArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, ppeval, samedist
 export close, darray_closeall
-
-const registry=Dict{Tuple, Any}()
-const refs=Set()  # Collection of darray identities created on this node
-
 
 """
     DArray(init, dims, [procs, dist])
@@ -159,6 +162,7 @@ end
 DArray(init, d::DArray) = construct_darray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
 
 function construct_darray(identity, init, dims, pids, idxs, cuts)
+    println("construct_darray")
     r=Channel(1)
     @sync begin
         for i = 1:length(pids)
@@ -185,9 +189,12 @@ function construct_darray(identity, init, dims, pids, idxs, cuts)
 end
 
 function construct_localparts(init, identity, dims, pids, idxs, cuts)
+    println("construct_localpart")
     A = isa(init, Function) ? init(idxs[localpartindex(pids)]) : fetch(init)
     global registry
-    registry[(identity, :LOCALPART)] = A
+    blobid = append!(blobstore, A)
+    println("got blobid: $blobid")
+    registry[(identity, :LOCALPART)] = blobid
     typA = typeof(A)
     d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
     registry[(identity, :DARRAY)] = d
@@ -202,7 +209,9 @@ end
 function release_localpart(identity)
     global registry
     delete!(registry, (identity, :DARRAY))
+    blobid = registry[identity, :LOCALPART]
     delete!(registry, (identity, :LOCALPART))
+    flush(blobstore, blobid)
     nothing
 end
 release_localpart(d::DArray) = release_localpart(d.identity)
@@ -246,7 +255,8 @@ end
 function rr_localpart(r::Future, identity)
     global registry
     lp = fetch(r)
-    registry[(identity, :LOCALPART)] = lp
+    blobid = append!(blobstore, lp)
+    registry[(identity, :LOCALPART)] = blobid
     return size(lp)
 end
 
@@ -384,7 +394,8 @@ function localpart{T,N,A}(d::DArray{T,N,A})
     end
 
     global registry
-    return registry[(d.identity, :LOCALPART)]::A
+    blobid = registry[(d.identity, :LOCALPART)]
+    return load(blobstore, blobid)::A
 end
 
 localpart(d::DArray, localidx...) = localpart(d)[localidx...]
@@ -1248,5 +1259,4 @@ function Ac_mul_B(A::DMatrix, B::AbstractMatrix)
     C = DArray(I -> Array(T, map(length, I)), (size(A, 2), size(B, 2)), procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:], (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
     return Ac_mul_B!(one(T), A, B, zero(T), C)
 end
-
 end # module
