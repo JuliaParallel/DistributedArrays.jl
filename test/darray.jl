@@ -624,8 +624,8 @@ facts("test scalar ops") do
         end
     end
 
-    #close(a)
-    #close(c)
+    close(a)
+    close(c)
 
     a = dones(Int, 20, 20)
     b = convert(Array, a)
@@ -643,9 +643,9 @@ facts("test scalar ops") do
             @fact (eval(f))(a, x) --> (eval(f))(b, x)
         end
     end
-    # close(a)
-    # close(c)
-    # darray_closeall()  # close the temporaries created above
+    close(a)
+    close(c)
+    darray_closeall()  # close the temporaries created above
 end
 
 check_leaks()
