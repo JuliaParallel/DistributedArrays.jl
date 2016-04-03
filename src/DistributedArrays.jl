@@ -818,7 +818,7 @@ map_localparts(f::Callable, As::DArray...) = DArray(I->f(map(localpart, As)...),
 for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
     @eval begin
         ($f){T}(A::DArray{T}, B::Number) = map_localparts(r->($f)(r, B), A)
-        ($f){T}(A::Number, B::DArray{T}) = map_localparts(r->($f)(r, A), B)
+        ($f){T}(A::Number, B::DArray{T}) = map_localparts(r->($f)(A, r), B)
     end
 end
 
