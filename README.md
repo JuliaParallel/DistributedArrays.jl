@@ -1,6 +1,7 @@
 # DistributedArrays.jl
 
 [![Build Status](https://travis-ci.org/JuliaParallel/DistributedArrays.jl.svg?branch=master)](https://travis-ci.org/JuliaParallel/DistributedArrays.jl)
+[![Coverage Status](https://coveralls.io/repos/github/JuliaParallel/DistributedArrays.jl/badge.svg?branch=master)](https://coveralls.io/github/JuliaParallel/DistributedArrays.jl?branch=master)
 
 Distributed Arrays for Julia
 
