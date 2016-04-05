@@ -621,6 +621,7 @@ facts("test scalar ops") do
         context("$f") do
             x = rand()
             @fact (eval(f))(a, x) --> (eval(f))(b, x)
+            @fact (eval(f))(x, a) --> (eval(f))(x, b)
             @fact (eval(f))(a, c) --> (eval(f))(b, d)
         end
     end
@@ -633,6 +634,7 @@ facts("test scalar ops") do
     for f in (:.<<, :.>>)
         context("$f") do
             @fact (eval(f))(a, 2) --> (eval(f))(b, 2)
+            @fact (eval(f))(2, a) --> (eval(f))(2, b)
             @fact (eval(f))(a, a) --> (eval(f))(b, b)
         end
     end
@@ -761,7 +763,3 @@ facts("test for any leaks") do
     allregistrieszero = Bool[remotecall_fetch(()->length(DistributedArrays.registry) == 0, p) for p in procs()]
     @fact all(allregistrieszero) --> true
 end
-
-
-
-
