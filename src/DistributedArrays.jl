@@ -675,8 +675,8 @@ function _mapreduce(f, opt, d::DArray)
     end
     reduce(opt, results)
 end
-Base.mapreduce(f, opt::Union{Base.OrFun,Base.AndFun}, d::DArray) = _mapreduce(f, opt, d)
-Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, Base.specialized_binary(opt), d)
+Base.mapreduce(f, opt::Union{typeof(@functorize |), typeof(@functorize &)}, d::DArray) = _mapreduce(f, opt, d)
+Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
 
 Base.map!(f, d::DArray) = begin
@@ -761,32 +761,32 @@ Base.scale!(A::DArray, x::Number) = begin
 end
 
 # reduce like
-for (fn, fr) in ((:sum, :AddFun),
-                 (:prod, :MulFun),
-                 (:maximum, :MaxFun),
-                 (:minimum, :MinFun),
-                 (:any, :OrFun),
-                 (:all, :AndFun))
-    @eval (Base.$fn)(d::DArray) = reduce((Base.$fr)(), d)
+for (fn, fr) in ((:sum, :+),
+                 (:prod, :*),
+                 (:maximum, :max),
+                 (:minimum, :min),
+                 (:any, :|),
+                 (:all, :&))
+    @eval (Base.$fn)(d::DArray) = reduce(@functorize($fr), d)
 end
 
 # mapreduce like
-for (fn, fr1, fr2) in ((:maxabs, :AbsFun, :MaxFun),
-                       (:minabs, :AbsFun, :MinFun),
-                       (:sumabs, :AbsFun, :AddFun),
-                       (:sumabs2, :Abs2Fun, :AddFun))
-    @eval (Base.$fn)(d::DArray) = mapreduce((Base.$fr1)(), (Base.$fr2)(), d)
+for (fn, fr1, fr2) in ((:maxabs, :abs, :max),
+                       (:minabs, :abs, :min),
+                       (:sumabs, :abs, :+),
+                       (:sumabs2, :abs2, :+))
+    @eval (Base.$fn)(d::DArray) = mapreduce(@functorize($fr1), @functorize($fr2), d)
 end
 
 # semi mapreduce
-for (fn, fr) in ((:any, :OrFun),
-                 (:all, :AndFun),
-                 (:count, :AddFun))
+for (fn, fr) in ((:any, :|),
+                 (:all, :&),
+                 (:count, :+))
     @eval begin
-        (Base.$fn)(f::Base.IdFun, d::DArray) = mapreduce(f, (Base.$fr)(), d)
-        (Base.$fn)(f::Base.Predicate, d::DArray) = mapreduce(f, (Base.$fr)(), d)
-        (Base.$fn)(f::Base.Func{1}, d::DArray) = mapreduce(f, (Base.$fr)(), d)
-        (Base.$fn)(f::Callable, d::DArray) = mapreduce(f, (Base.$fr)(), d)
+        (Base.$fn)(f::typeof(@functorize identity), d::DArray) = mapreduce(f, @functorize($fr), d)
+        (Base.$fn)(f::Base.Predicate, d::DArray) = mapreduce(f, @functorize($fr), d)
+        # (Base.$fn)(f::Base.Func{1}, d::DArray) = mapreduce(f, @functorize $fr, d)
+        (Base.$fn)(f::Callable, d::DArray) = mapreduce(f, @functorize($fr), d)
     end
 end
 
@@ -1037,7 +1037,7 @@ function dot(x::DVector, y::DVector)
             @async push!(results, remotecall_fetch((x, y, i) -> dot(localpart(x), fetch(y, i)), x.pids[i], x, y, i))
         end
     end
-    return reduce(Base.AddFun(), results)
+    return reduce(@functorize +, results)
 end
 
 function norm(x::DVector, p::Number = 2)
