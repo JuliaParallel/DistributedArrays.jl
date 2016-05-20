@@ -292,8 +292,8 @@ function Base.deserialize{T<:DArray}(S::SerializationState, t::Type{T})
 end
 
 
-Base.similar(d::DArray, T, dims::Dims) = DArray(I->Array(T, map(length,I)), dims, procs(d))
-Base.similar(d::DArray, T) = similar(d, T, size(d))
+Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array(T, map(length,I)), dims, procs(d))
+Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
 Base.similar{T}(d::DArray{T}, dims::Dims) = similar(d, T, dims)
 Base.similar{T}(d::DArray{T}) = similar(d, T, size(d))
 
@@ -679,7 +679,7 @@ Base.mapreduce(f, opt::Union{typeof(@functorize |), typeof(@functorize &)}, d::D
 Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
 
-Base.map!(f, d::DArray) = begin
+Base.map!{F}(f::F, d::DArray) = begin
     @sync for p in procs(d)
         @async remotecall_fetch((f,d)->(map!(f, localpart(d)); nothing), p, f, d)
     end
@@ -1040,7 +1040,7 @@ function dot(x::DVector, y::DVector)
     return reduce(@functorize +, results)
 end
 
-function norm(x::DVector, p::Number = 2)
+function norm(x::DVector, p::Real = 2)
     results = []
     @sync begin
         for pp in procs(x)
