@@ -568,12 +568,20 @@ check_leaks()
 # Commented out tests that need to be enabled in due course when DArray support is more complete
 facts("test mapslices") do
     a = drand((5,5), workers(), [1, min(nworkers(), 5)])
-    h = mapslices(v -> hist(v,0:0.1:1)[2], a, 1)
+    if VERSION < v"0.5.0-dev+4361"
+        h = mapslices(v -> hist(v,0:0.1:1)[2], a, 1)
+    else
+        h = mapslices(v -> fit(Histogram,v,0:0.1:1).weights, a, 1)
+    end
 #    H = mapslices(v -> hist(v,0:0.1:1)[2], a, 2)
 #    s = mapslices(sort, a, [1])
 #    S = mapslices(sort, a, [2])
     for i = 1:5
-        @fact h[:,i] --> hist(a[:,i],0:0.1:1)[2]
+        if VERSION < v"0.5.0-dev+4361"
+            @fact h[:,i] --> hist(a[:,i],0:0.1:1)[2]
+        else
+            @fact h[:,i] --> fit(Histogram, a[:,i],0:0.1:1).weights
+        end
 #        @fact vec(H[i,:]) => hist(vec(a[i,:]),0:0.1:1)[2]
 #        @fact s[:,i] => sort(a[:,i])
 #        @fact vec(S[i,:]) => sort(vec(a[i,:]))

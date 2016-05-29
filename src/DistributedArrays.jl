@@ -1,15 +1,16 @@
-VERSION >= v"0.4.0-dev+6521" && __precompile__(true)
-
-# TODO
-# - avoid temporary darrays being created by sum, mean, std, etc when called along specific dimensions
-
+__precompile__(true)
 
 module DistributedArrays
 
 using Compat
 
+if VERSION >= v"0.5.0-dev+4340"
+    using Primes
+    using Primes: factor
+end
+
 if VERSION < v"0.5.0-"
-typealias Future RemoteRef
+    typealias Future RemoteRef
 end
 
 importall Base
@@ -675,7 +676,7 @@ function _mapreduce(f, opt, d::DArray)
     end
     reduce(opt, results)
 end
-Base.mapreduce(f, opt::Union{typeof(@functorize |), typeof(@functorize &)}, d::DArray) = _mapreduce(f, opt, d)
+Base.mapreduce(f, opt::Union{typeof(@functorize(|)), typeof(@functorize(&))}, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
 
@@ -760,6 +761,9 @@ Base.scale!(A::DArray, x::Number) = begin
     return A
 end
 
+# TODO
+# - avoid temporary darrays being created by sum, mean, std, etc when called along specific dimensions
+
 # reduce like
 for (fn, fr) in ((:sum, :+),
                  (:prod, :*),
@@ -783,7 +787,7 @@ for (fn, fr) in ((:any, :|),
                  (:all, :&),
                  (:count, :+))
     @eval begin
-        (Base.$fn)(f::typeof(@functorize identity), d::DArray) = mapreduce(f, @functorize($fr), d)
+        (Base.$fn)(f::typeof(@functorize(identity)), d::DArray) = mapreduce(f, @functorize($fr), d)
         (Base.$fn)(f::Base.Predicate, d::DArray) = mapreduce(f, @functorize($fr), d)
         # (Base.$fn)(f::Base.Func{1}, d::DArray) = mapreduce(f, @functorize $fr, d)
         (Base.$fn)(f::Callable, d::DArray) = mapreduce(f, @functorize($fr), d)
@@ -1037,7 +1041,7 @@ function dot(x::DVector, y::DVector)
             @async push!(results, remotecall_fetch((x, y, i) -> dot(localpart(x), fetch(y, i)), x.pids[i], x, y, i))
         end
     end
-    return reduce(@functorize +, results)
+    return reduce(@functorize(+), results)
 end
 
 function norm(x::DVector, p::Real = 2)
