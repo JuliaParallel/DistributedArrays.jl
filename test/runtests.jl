@@ -1,6 +1,6 @@
 # add at least 3 worker processes
 if nworkers() < 3
-    n = max(3, min(8, CPU_CORES))
+    n = max(3, min(8, Sys.CPU_CORES))
     addprocs(n; exeflags=`--check-bounds=yes`)
 end
 @assert nprocs() > 3
@@ -10,8 +10,9 @@ end
 # https://github.com/JuliaLang/julia/issues/15766. Move back to top when bug is fixed.
 using FactCheck
 using DistributedArrays
+using StatsBase # for fit(Histogram, ...)
+@everywhere using StatsBase # because exported functions are not exported on workers with using
 
-@everywhere blas_set_num_threads(1)
 @everywhere srand(123 + myid())
 
 include("darray.jl")
