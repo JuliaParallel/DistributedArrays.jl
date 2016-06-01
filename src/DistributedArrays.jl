@@ -603,7 +603,8 @@ end
 # local copies are obtained by convert(Array, ) or assigning from
 # a SubDArray to a local Array.
 
-Base.setindex!(a::Array, d::DArray, I::UnitRange{Int}...) = begin
+function Base.setindex!(a::Array, d::DArray,
+        I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
     n = length(I)
     @sync for i = 1:length(d.pids)
         K = d.indexes[i]
@@ -612,7 +613,8 @@ Base.setindex!(a::Array, d::DArray, I::UnitRange{Int}...) = begin
     return a
 end
 
-Base.setindex!(a::Array, s::SubDArray, I::UnitRange{Int}...) = begin
+function Base.setindex!(a::Array, s::SubDArray,
+        I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
     n = length(I)
     d = s.parent
     J = s.indexes
@@ -640,9 +642,6 @@ Base.setindex!(a::Array, s::SubDArray, I::UnitRange{Int}...) = begin
     end
     return a
 end
-
-# to disambiguate
-Base.setindex!(a::Array{Any}, d::SubOrDArray, i::Int) = Base.arrayset(a, d, i)
 
 Base.fill!(A::DArray, x) = begin
     @sync for p in procs(A)
