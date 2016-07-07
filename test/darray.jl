@@ -99,6 +99,22 @@ check_leaks()
         @test fetch(@spawnat MYID localpart(D)[1,1]) == D[1,1]
         @test fetch(@spawnat OTHERIDS localpart(D)[1,1]) == D[1,101]
         close(D2)
+
+        S2 = convert(Vector{Float64}, D[4, 23:176])
+        @fact A[4, 23:176] --> S2
+
+        S3 = convert(Vector{Float64}, D[23:176, 197])
+        @fact A[23:176, 197] --> S3
+
+        S4 = zeros(4)
+        setindex!(S4, D[3:4, 99:100], :)
+        @fact S4 --> vec(D[3:4, 99:100])
+        @fact S4 --> vec(A[3:4, 99:100])
+        
+        S5 = zeros(2,2)
+        setindex!(S5, D[1,1:4], :, 1:2)
+        @fact vec(S5) --> D[1, 1:4]
+        @fact vec(S5) --> A[1, 1:4]
     end
     close(D)
 end
