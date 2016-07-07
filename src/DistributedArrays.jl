@@ -11,6 +11,7 @@ end
 
 if VERSION < v"0.5.0-"
     typealias Future RemoteRef
+    typealias RemoteChannel RemoteRef
 end
 
 importall Base
@@ -491,7 +492,7 @@ function distribute(A::AbstractArray;
     dist = defaultdist(size(A), procs))
 
     owner = myid()
-    rr = Future()
+    rr = RemoteChannel()
     put!(rr, A)
     d = DArray(size(A), procs, dist) do I
         remotecall_fetch(() -> fetch(rr)[I...], owner)
