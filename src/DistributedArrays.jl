@@ -740,12 +740,6 @@ function Base.setindex!(a::Array, s::SubDArray,
     n = length(I)
     d = s.parent
     J = Base.decolon(d, s.indexes...)
-    if length(J) < n
-        # TODO: this failsafe only works sometimes; the proper solution is to
-        # implement `restrict_indices` to merge the indices above.
-        a[I...] = convert(Array,s)
-        return a
-    end
     @sync for i = 1:length(d.pids)
         K_c = d.indexes[i]
         K = map(intersect, J, K_c)
