@@ -635,113 +635,117 @@ function Base.setindex!(a::Array, d::DArray,
     return a
 end
 
-# Similar to Base.indexin, but just create a logical mask
-indexin_mask(a, b::Number) = a .== b
-indexin_mask(a, r::Range{Int}) = [i in r for i in a]
-indexin_mask(a, b::AbstractArray{Int}) = indexin_mask(a, IntSet(b))
-indexin_mask(a, b::AbstractArray) = indexin_mask(a, Set(b))
-indexin_mask(a, b) = [i in b for i in a]
+# We also want to optimize setindex! with a SubDArray source, but this is hard
+# and only works on 0.5.
+if VERSION > v"0.5.0-dev+5230"
+    # Similar to Base.indexin, but just create a logical mask
+    indexin_mask(a, b::Number) = a .== b
+    indexin_mask(a, r::Range{Int}) = [i in r for i in a]
+    indexin_mask(a, b::AbstractArray{Int}) = indexin_mask(a, IntSet(b))
+    indexin_mask(a, b::AbstractArray) = indexin_mask(a, Set(b))
+    indexin_mask(a, b) = [i in b for i in a]
 
-import Base: tail
-# Given a tuple of indices and a tuple of masks, restrict the indices to the
-# valid regions. This is, effectively, reversing Base.setindex_shape_check.
-# We can't just use indexing into MergedIndices here because getindex is much 
-# pickier about singleton dimensions than setindex! is.
-restrict_indices(::Tuple{}, ::Tuple{}) = ()
-function restrict_indices(a::Tuple{Any, Vararg{Any}}, b::Tuple{Any, Vararg{Any}})
-    if (length(a[1]) == length(b[1]) == 1) || (length(a[1]) > 1 && length(b[1]) > 1)
-        (vec(a[1])[vec(b[1])], restrict_indices(tail(a), tail(b))...)
-    elseif length(a[1]) == 1
-        (a[1], restrict_indices(tail(a), b))
-    elseif length(b[1]) == 1 && b[1][1]
-        restrict_indices(a, tail(b))
-    else
-        throw(DimensionMismatch("this should be caught by setindex_shape_check; please submit an issue"))
-    end
-end
-# The final indices are funky - they're allowed to accumulate together.
-# Too many masks is an easy fix -- just use the outer product to merge them:
-function restrict_indices(a::Tuple{Any}, b::Tuple{Any, Any, Vararg{Any}})
-    restrict_indices(a, (map(Bool, vec(vec(b[1])*vec(b[2])')), tail(tail(b))...))
-end
-# But too many indices is much harder; this will require merging the indices
-# in `a` before applying the final mask in `b`.
-function restrict_indices(a::Tuple{Any, Any, Vararg{Any}}, b::Tuple{Any})
-    if length(a[1]) == 1
-        (a[1], restrict_indices(tail(a), b))
-    else
-        # When one mask spans multiple indices, we need to merge the indices
-        # together. At this point, we can just use indexing to merge them since
-        # there's no longer special handling of singleton dimensions
-        (view(MergedIndices(a, map(length, a)), b[1]),)
-    end
-end
-
-immutable MergedIndices{T,N} <: AbstractArray{CartesianIndex{N}, N}
-    indices::T
-    sz::NTuple{N,Int}
-end
-Base.size(M::MergedIndices) = M.sz
-Base.getindex{_,N}(M::MergedIndices{_,N}, I::Vararg{Int, N}) = CartesianIndex(map(getindex, M.indices, I))
-# Boundschecking for using MergedIndices as an array index. This is overly
-# strict -- even for SubArrays of ReshapedIndices, we require that the entire
-# parent array's indices are valid. In this usage, it is just fine... and is a
-# huge optimization over exact bounds checking.
-typealias ReshapedMergedIndices{T,N,M<:MergedIndices} Base.ReshapedArray{T,N,M}
-typealias SubMergedIndices{T,N,M<:Union{MergedIndices, ReshapedMergedIndices}} SubArray{T,N,M}
-typealias MergedIndicesOrSub Union{MergedIndices, SubMergedIndices}
-import Base: _chkbnds
-# Ambiguity with linear indexing:
-@inline _chkbnds(A::AbstractVector, checked::NTuple{1,Bool}, I::MergedIndicesOrSub) = _chkbnds(A, checked, parent(parent(I)).indices...)
-@inline _chkbnds(A::AbstractArray, checked::NTuple{1,Bool}, I::MergedIndicesOrSub) = _chkbnds(A, checked, parent(parent(I)).indices...)
-# Generic bounds checking
-@inline _chkbnds{T,N}(A::AbstractArray{T,N}, checked::NTuple{N,Bool}, I1::MergedIndicesOrSub, I...) = _chkbnds(A, checked, parent(parent(I1)).indices..., I...)
-@inline _chkbnds{T,N,M}(A::AbstractArray{T,N}, checked::NTuple{M,Bool}, I1::MergedIndicesOrSub, I...) = _chkbnds(A, checked, parent(parent(I1)).indices..., I...)
-import Base: checkbounds_indices
-@inline checkbounds_indices(::Tuple{},   I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices((),   (parent(parent(I[1])).indices..., tail(I)...))
-@inline checkbounds_indices(inds::Tuple{Any}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices(inds, (parent(parent(I[1])).indices..., tail(I)...))
-@inline checkbounds_indices(inds::Tuple, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices(inds, (parent(parent(I[1])).indices..., tail(I)...))
-
-# The tricky thing here is that we want to optimize the accesses into the
-# distributed array, but in doing so, we lose track of which indices in I we
-# should be using.
-#
-# I’ve come to the conclusion that the function is utterly insane.
-# There are *6* flavors of indices with four different reference points:
-# 1. Find the indices of each portion of the DArray.
-# 2. Find the valid subset of indices for the SubArray into that portion.
-# 3. Find the portion of the `I` indices that should be used when you access the
-#    `K` indices in the subarray.  This guy is nasty.  It’s totally backwards
-#    from all other arrays, wherein we simply iterate over the source array’s
-#    elements.  You need to *both* know which elements in `J` were skipped
-#    (`indexin_mask`) and which dimensions should match up (`restrict_indices`)
-# 4. If `K` doesn’t correspond to an entire chunk, reinterpret `K` in terms of
-#    the local portion of the source array
-function Base.setindex!(a::Array, s::SubDArray,
-        I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
-    Base.setindex_shape_check(s, Base.index_lengths(a, I...)...)
-    n = length(I)
-    d = s.parent
-    J = Base.decolon(d, s.indexes...)
-    @sync for i = 1:length(d.pids)
-        K_c = d.indexes[i]
-        K = map(intersect, J, K_c)
-        if !any(isempty, K)
-            K_mask = map(indexin_mask, J, K_c)
-            idxs = restrict_indices(Base.decolon(a, I...), K_mask)
-            if isequal(K, K_c)
-                # whole chunk
-                @async a[idxs...] = chunk(d, i)
-            else
-                # partial chunk
-                @async a[idxs...] =
-                    remotecall_fetch(d.pids[i]) do
-                        view(localpart(d), [K[j]-first(K_c[j])+1 for j=1:length(J)]...)
-                    end
-            end
+    import Base: tail
+    # Given a tuple of indices and a tuple of masks, restrict the indices to the
+    # valid regions. This is, effectively, reversing Base.setindex_shape_check.
+    # We can't just use indexing into MergedIndices here because getindex is much 
+    # pickier about singleton dimensions than setindex! is.
+    restrict_indices(::Tuple{}, ::Tuple{}) = ()
+    function restrict_indices(a::Tuple{Any, Vararg{Any}}, b::Tuple{Any, Vararg{Any}})
+        if (length(a[1]) == length(b[1]) == 1) || (length(a[1]) > 1 && length(b[1]) > 1)
+            (vec(a[1])[vec(b[1])], restrict_indices(tail(a), tail(b))...)
+        elseif length(a[1]) == 1
+            (a[1], restrict_indices(tail(a), b))
+        elseif length(b[1]) == 1 && b[1][1]
+            restrict_indices(a, tail(b))
+        else
+            throw(DimensionMismatch("this should be caught by setindex_shape_check; please submit an issue"))
         end
     end
-    return a
+    # The final indices are funky - they're allowed to accumulate together.
+    # Too many masks is an easy fix -- just use the outer product to merge them:
+    function restrict_indices(a::Tuple{Any}, b::Tuple{Any, Any, Vararg{Any}})
+        restrict_indices(a, (map(Bool, vec(vec(b[1])*vec(b[2])')), tail(tail(b))...))
+    end
+    # But too many indices is much harder; this will require merging the indices
+    # in `a` before applying the final mask in `b`.
+    function restrict_indices(a::Tuple{Any, Any, Vararg{Any}}, b::Tuple{Any})
+        if length(a[1]) == 1
+            (a[1], restrict_indices(tail(a), b))
+        else
+            # When one mask spans multiple indices, we need to merge the indices
+            # together. At this point, we can just use indexing to merge them since
+            # there's no longer special handling of singleton dimensions
+            (view(MergedIndices(a, map(length, a)), b[1]),)
+        end
+    end
+
+    immutable MergedIndices{T,N} <: AbstractArray{CartesianIndex{N}, N}
+        indices::T
+        sz::NTuple{N,Int}
+    end
+    Base.size(M::MergedIndices) = M.sz
+    Base.getindex{_,N}(M::MergedIndices{_,N}, I::Vararg{Int, N}) = CartesianIndex(map(getindex, M.indices, I))
+    # Boundschecking for using MergedIndices as an array index. This is overly
+    # strict -- even for SubArrays of ReshapedIndices, we require that the entire
+    # parent array's indices are valid. In this usage, it is just fine... and is a
+    # huge optimization over exact bounds checking.
+    typealias ReshapedMergedIndices{T,N,M<:MergedIndices} Base.ReshapedArray{T,N,M}
+    typealias SubMergedIndices{T,N,M<:Union{MergedIndices, ReshapedMergedIndices}} SubArray{T,N,M}
+    typealias MergedIndicesOrSub Union{MergedIndices, SubMergedIndices}
+    import Base: _chkbnds
+    # Ambiguity with linear indexing:
+    @inline _chkbnds(A::AbstractVector, checked::NTuple{1,Bool}, I::MergedIndicesOrSub) = _chkbnds(A, checked, parent(parent(I)).indices...)
+    @inline _chkbnds(A::AbstractArray, checked::NTuple{1,Bool}, I::MergedIndicesOrSub) = _chkbnds(A, checked, parent(parent(I)).indices...)
+    # Generic bounds checking
+    @inline _chkbnds{T,N}(A::AbstractArray{T,N}, checked::NTuple{N,Bool}, I1::MergedIndicesOrSub, I...) = _chkbnds(A, checked, parent(parent(I1)).indices..., I...)
+    @inline _chkbnds{T,N,M}(A::AbstractArray{T,N}, checked::NTuple{M,Bool}, I1::MergedIndicesOrSub, I...) = _chkbnds(A, checked, parent(parent(I1)).indices..., I...)
+    import Base: checkbounds_indices
+    @inline checkbounds_indices(::Tuple{},   I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices((),   (parent(parent(I[1])).indices..., tail(I)...))
+    @inline checkbounds_indices(inds::Tuple{Any}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices(inds, (parent(parent(I[1])).indices..., tail(I)...))
+    @inline checkbounds_indices(inds::Tuple, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices(inds, (parent(parent(I[1])).indices..., tail(I)...))
+
+    # The tricky thing here is that we want to optimize the accesses into the
+    # distributed array, but in doing so, we lose track of which indices in I we
+    # should be using.
+    #
+    # I’ve come to the conclusion that the function is utterly insane.
+    # There are *6* flavors of indices with four different reference points:
+    # 1. Find the indices of each portion of the DArray.
+    # 2. Find the valid subset of indices for the SubArray into that portion.
+    # 3. Find the portion of the `I` indices that should be used when you access the
+    #    `K` indices in the subarray.  This guy is nasty.  It’s totally backwards
+    #    from all other arrays, wherein we simply iterate over the source array’s
+    #    elements.  You need to *both* know which elements in `J` were skipped
+    #    (`indexin_mask`) and which dimensions should match up (`restrict_indices`)
+    # 4. If `K` doesn’t correspond to an entire chunk, reinterpret `K` in terms of
+    #    the local portion of the source array
+    function Base.setindex!(a::Array, s::SubDArray,
+            I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
+        Base.setindex_shape_check(s, Base.index_lengths(a, I...)...)
+        n = length(I)
+        d = s.parent
+        J = Base.decolon(d, s.indexes...)
+        @sync for i = 1:length(d.pids)
+            K_c = d.indexes[i]
+            K = map(intersect, J, K_c)
+            if !any(isempty, K)
+                K_mask = map(indexin_mask, J, K_c)
+                idxs = restrict_indices(Base.decolon(a, I...), K_mask)
+                if isequal(K, K_c)
+                    # whole chunk
+                    @async a[idxs...] = chunk(d, i)
+                else
+                    # partial chunk
+                    @async a[idxs...] =
+                        remotecall_fetch(d.pids[i]) do
+                            view(localpart(d), [K[j]-first(K_c[j])+1 for j=1:length(J)]...)
+                        end
+                end
+            end
+        end
+        return a
+    end
 end
 
 Base.fill!(A::DArray, x) = begin
