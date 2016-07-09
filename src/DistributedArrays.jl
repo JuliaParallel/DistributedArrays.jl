@@ -697,6 +697,10 @@ import Base: _chkbnds
 # Generic bounds checking
 @inline _chkbnds{T,N}(A::AbstractArray{T,N}, checked::NTuple{N,Bool}, I1::MergedIndicesOrSub, I...) = _chkbnds(A, checked, parent(parent(I1)).indices..., I...)
 @inline _chkbnds{T,N,M}(A::AbstractArray{T,N}, checked::NTuple{M,Bool}, I1::MergedIndicesOrSub, I...) = _chkbnds(A, checked, parent(parent(I1)).indices..., I...)
+import Base: checkbounds_indices
+@inline checkbounds_indices(::Tuple{},   I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices((),   (parent(parent(I[1])).indices..., tail(I)...))
+@inline checkbounds_indices(inds::Tuple{Any}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices(inds, (parent(parent(I[1])).indices..., tail(I)...))
+@inline checkbounds_indices(inds::Tuple, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices(inds, (parent(parent(I[1])).indices..., tail(I)...))
 
 # The tricky thing here is that we want to optimize the accesses into the
 # distributed array, but in doing so, we lose track of which indices in I we
