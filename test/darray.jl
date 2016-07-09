@@ -518,11 +518,11 @@ check_leaks()
 facts("test convert from subdarray") do
     a = drand(20, 20);
 
-    s = sub(a, 1:5, 5:8)
+    s = view(a, 1:5, 5:8)
     @fact isa(s, SubDArray) --> true
     @fact s --> convert(DArray, s)
 
-    s = sub(a, 6:5, 5:8)
+    s = view(a, 6:5, 5:8)
     @fact isa(s, SubDArray) --> true
     @fact s --> convert(DArray, s)
     close(a)
