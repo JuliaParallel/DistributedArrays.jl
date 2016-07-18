@@ -108,7 +108,10 @@ end
 DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(), maximum(dims))])
 
 # Create a DArray from a collection of references
-function DArray(refs::Array{Future})
+DArray(refs::Array{Future}) = darray_from_refs(refs)
+DArray(refs::Array{RemoteChannel}) = darray_from_refs(refs)
+
+function darray_from_refs(refs)
     dimdist = size(refs)
     identity = next_did()
 
@@ -266,9 +269,9 @@ function darray_closeall()
     end
 end
 
-function rr_localpart(r::Future, identity)
+function rr_localpart(ref, identity)
     global registry
-    lp = fetch(r)
+    lp = fetch(ref)
     registry[(identity, :LOCALPART)] = lp
     return size(lp)
 end
@@ -1273,5 +1276,85 @@ function Ac_mul_B(A::DMatrix, B::AbstractMatrix)
     C = DArray(I -> Array(T, map(length, I)), (size(A, 2), size(B, 2)), procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:], (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
     return Ac_mul_B!(one(T), A, B, zero(T), C)
 end
+
+
+# Sorting a DVector using samplesort
+
+function sample_n_setup_ref(d::DVector, sample_size)
+    lp = localpart(d)
+    llp = length(lp)
+    sample_size = llp > sample_size ? sample_size : llp
+    sample = lp[rand(1:llp, sample_size)]
+    ref = RemoteChannel(()->Channel(length(procs(d))))             # To collect parts to be sorted locally later.
+    return (sample, ref)
+end
+
+
+function scatter_n_sort_localparts{T}(d::DVector{T}, refs::Array{RemoteChannel}, boundaries::Array{T})
+    # send respective parts to correct workers
+    lp=localpart(d)
+    for (i,p) in enumerate(procs(d))
+        part_on_worker_i=lp[find(x-> (x >= boundaries[i]) && (x < boundaries[i+1]), lp)]
+        @async put!(refs[i], part_on_worker_i)
+    end
+
+    myidx = findfirst(procs(d), myid())
+
+    # wait to receive all of my parts from all other workers
+    lp_sorting=T[]
+    for _ in procs(d)
+        append!(lp_sorting, take!(refs[myidx]))
+    end
+
+    sorted_ref=RemoteChannel()
+    put!(sorted_ref, sort!(lp_sorting))
+
+    return sorted_ref
+end
+
+
+function samplesort{T}(d::DVector{T})
+    pids = procs(d)
+    nparts = length(pids)
+    sample_sz_on_wrkr=512
+
+    if VERSION < v"0.5.0-"
+        results=Array(Any,nparts)
+        @sync begin
+            for (i,p) in enumerate(pids)
+                @async results[i] = remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr)
+            end
+        end
+    else
+        results = asyncmap(p -> remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr), pids)
+    end
+
+    samples = Array(T,0)
+    for x in results
+        append!(samples, x[1])
+    end
+    sort!(samples)
+    samples[1] = typemin(T)
+
+    refs=RemoteChannel[x[2] for x in results]
+
+    boundaries = samples[[1+(x-1)*div(length(samples), nparts) for x in 1:nparts]]
+    push!(boundaries, typemax(T))
+
+    sorted_refs = Array(RemoteChannel, nparts)
+    if VERSION < v"0.5.0-"
+        @sync begin
+            for (i,p) in enumerate(pids)
+                @async sorted_refs[i] = remotecall_fetch(scatter_n_sort_localparts, p, d, refs, boundaries)
+            end
+        end
+    else
+        Base.asyncmap!(p -> remotecall_fetch(scatter_n_sort_localparts, p, d, refs, boundaries), sorted_refs, pids)
+    end
+
+    # Construct a new DArray from the sorted refs
+    return DArray(sorted_refs)
+end
+
 
 end # module

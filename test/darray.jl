@@ -759,6 +759,19 @@ facts("test matmatmul") do
     darray_closeall()  # close the temporaries created above
 end
 
+facts("samplesort") do
+    for i in 1:6
+        for T in [Int, Float64]
+            d=DistributedArrays.drand(T, 10^i)
+            d2=DistributedArrays.samplesort(d)
+
+            @fact length(d) --> length(d2)
+            @fact sort(convert(Array, d)) --> convert(Array, d2)
+        end
+    end
+    darray_closeall()  # close the temporaries created above
+end
+
 check_leaks()
 
 darray_closeall()
