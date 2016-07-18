@@ -141,20 +141,40 @@ function DArray(refs::Array{Future})
 
     construct_darray(identity, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
 end
-
-macro DArray(ex::Expr)
-    if ex.head !== :comprehension
-        throw(ArgumentError("invalid @DArray syntax"))
+if VERSION < v"0.5.0-"
+    macro DArray(ex::Expr)
+        if ex.head !== :comprehension
+            throw(ArgumentError("invalid @DArray syntax"))
+        end
+        ex.args[1] = esc(ex.args[1])
+        ndim = length(ex.args) - 1
+        ranges = map(r->esc(r.args[2]), ex.args[2:end])
+        for d = 1:ndim
+            var = ex.args[d+1].args[1]
+            ex.args[d+1] = :( $(esc(var)) = ($(ranges[d]))[I[$d]] )
+        end
+        return :( DArray((I::Tuple{Vararg{UnitRange{Int}}})->($ex),
+                    tuple($(map(r->:(length($r)), ranges)...))) )
     end
-    ex.args[1] = esc(ex.args[1])
-    ndim = length(ex.args) - 1
-    ranges = map(r->esc(r.args[2]), ex.args[2:end])
-    for d = 1:ndim
-        var = ex.args[d+1].args[1]
-        ex.args[d+1] = :( $(esc(var)) = ($(ranges[d]))[I[$d]] )
+else
+    macro DArray(ex0::Expr)
+        if ex0.head !== :comprehension
+            throw(ArgumentError("invalid @DArray syntax"))
+        end
+        ex = ex0.args[1]
+        if ex.head !== :generator
+            throw(ArgumentError("invalid @DArray syntax"))
+        end
+        ex.args[1] = esc(ex.args[1])
+        ndim = length(ex.args) - 1
+        ranges = map(r->esc(r.args[2]), ex.args[2:end])
+        for d = 1:ndim
+            var = ex.args[d+1].args[1]
+            ex.args[d+1] = :( $(esc(var)) = ($(ranges[d]))[I[$d]] )
+        end
+        return :( DArray((I::Tuple{Vararg{UnitRange{Int}}})->($ex0),
+                    tuple($(map(r->:(length($r)), ranges)...))) )
     end
-    return :( DArray((I::Tuple{Vararg{UnitRange{Int}}})->($ex),
-                tuple($(map(r->:(length($r)), ranges)...))) )
 end
 
 # new DArray similar to an existing one
