@@ -6,6 +6,8 @@ end
 @assert nprocs() > 3
 @assert nworkers() >= 3
 
+using Compat
+import Compat.view
 # It should only be necessary to have FactCheck loaded on the master process, but
 # https://github.com/JuliaLang/julia/issues/15766. Move back to top when bug is fixed.
 using FactCheck

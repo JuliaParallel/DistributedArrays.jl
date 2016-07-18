@@ -3,6 +3,7 @@ __precompile__(true)
 module DistributedArrays
 
 using Compat
+import Compat.view
 
 if VERSION >= v"0.5.0-dev+4340"
     using Primes
@@ -606,7 +607,7 @@ Base.getindex(d::DArray, i::Int) = getindex_tuple(d, ind2sub(size(d), i))
 Base.getindex(d::DArray, i::Int...) = getindex_tuple(d, i)
 
 Base.getindex(d::DArray) = d[1]
-Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = sub(d, I...)
+Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
     if !(dest.dims == src.dims &&
@@ -656,7 +657,7 @@ function Base.setindex!(a::Array, s::SubDArray,
                 # partial chunk
                 @async a[idxs...] =
                     remotecall_fetch(d.pids[i]) do
-                        sub(localpart(d), [K[j]-first(K_c[j])+1 for j=1:n]...)
+                        view(localpart(d), [K[j]-first(K_c[j])+1 for j=1:n]...)
                     end
             end
         end
@@ -936,7 +937,7 @@ function _ppeval(f, A...; dim = map(ndims, A))
         push!(idx, Any[1:size(A[i], d) for d in 1:dims[i]])
         if dim[i] > 0
             idx[i][dim[i]] = 1
-            push!(args, slice(A[i], idx[i]...))
+            push!(args, view(A[i], idx[i]...))
         else
             push!(args, A[i])
         end
@@ -952,7 +953,7 @@ function _ppeval(f, A...; dim = map(ndims, A))
         for j = 1:narg
             if dim[j] > 0
                 idx[j][dim[j]] = i
-                args[j] = slice(A[j], idx[j]...)
+                args[j] = view(A[j], idx[j]...)
             else
                 args[j] = A[j]
             end
