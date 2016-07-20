@@ -1407,7 +1407,14 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
 
     elseif sample==false
         # Assume an uniform distribution between min and max values
-        minmax=asyncmap(p->remotecall_fetch(d->(minimum(localpart(d)), maximum(localpart(d))), p, d), pids)
+        if VERSION < v"0.5.0-"
+            minmax=Array(Tuple, np)
+            @sync for (i,p) in enumerate(pids)
+                @async minmax[i] = remotecall_fetch(d->(minimum(localpart(d)), maximum(localpart(d))), p, d)
+            end
+        else
+            minmax=asyncmap(p->remotecall_fetch(d->(minimum(localpart(d)), maximum(localpart(d))), p, d), pids)
+        end
         min_d = minimum(T[x[1] for x in minmax])
         max_d = maximum(T[x[2] for x in minmax])
 
