@@ -759,7 +759,7 @@ facts("test matmatmul") do
     darray_closeall()  # close the temporaries created above
 end
 
-facts("samplesort") do
+facts("sort") do
     for i in 1:6
         for T in [Int, Float64]
             d=DistributedArrays.drand(T, 10^i)
