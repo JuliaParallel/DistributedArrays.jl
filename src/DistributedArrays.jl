@@ -108,10 +108,12 @@ end
 DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(), maximum(dims))])
 
 # Create a DArray from a collection of references
-DArray(refs::Array{Future}) = darray_from_refs(refs)
-DArray(refs::Array{RemoteChannel}) = darray_from_refs(refs)
-
-function darray_from_refs(refs)
+# The refs must have the same layout as the parts distributed.
+# i.e.
+#    size(refs) must specify the distribution of dimensions across processors
+#    prod(size(refs)) must equal number of parts
+# FIXME : Empty parts are currently not supported.
+function DArray(refs)
     dimdist = size(refs)
     identity = next_did()
 
@@ -1337,7 +1339,7 @@ function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boun
     sorted_ref=RemoteChannel()
     put!(sorted_ref, sort!(lp_sorting; kwargs...))
 
-    return sorted_ref
+    return (sorted_ref, length(lp_sorting))
 end
 
 function compute_boundaries{T}(d::DVector{T}; kwargs...)
@@ -1380,21 +1382,24 @@ The sorted vector may not have the same distribution as the original.
 
 Keyword argument `sample` can take values:
 
-- `true`: A sample of max size 512 is first taken from all nodes. This is used to balance
-the distribution of the sorted array on participating workers. Default is `true`.
+- `true`: A sample of max size 512 is first taken from all nodes. This is used to balance the distribution of the sorted array on participating workers. Default is `true`.
 
-- `false`: No sampling is done. The sort assumes a uniform distribution between min(d) and max(d)
+- `false`: No sampling is done. Assumes a uniform distribution between min(d) and max(d)
 
-- Tuple{Min, Max}: No sampling is done. The sort assumes a uniform distribution between min and max values
+- 2-element tuple of the form `(min, max)`: No sampling is done. Assumes a uniform distribution between specified min and max values
 
 - Array{T}: The passed array is assumed to be a sample of the distribution and is used to balance the sorted distribution.
 
-Other keyword arguments are passed through to `Base.sort` which is used to sort the local parts.
-See help for `Base.sort` for details.
+Keyword argument `alg` takes the same options `Base.sort`
 """
 function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
     pids = procs(d)
     np = length(pids)
+
+    # Only `alg` and `sample` are supported as keyword arguments
+    if length(filter(x->x != :alg, [x[1] for x in kwargs])) > 0
+        throw(ArgumentError("Only `alg` and `sample` are supported as keyword arguments"))
+    end
 
     if sample==true
         boundaries, refs = compute_boundaries(d)
@@ -1417,7 +1422,7 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
 
         s = Array(T, np)
         part = abs(ub - lb)/np
-        isnan(part) && throw(ArgumentError("lower and upper bounds must not be infinities"))
+        (isnan(part) || isinf(part)) && throw(ArgumentError("lower and upper bounds must not be infinities"))
 
         for n in 1:np
             v = lb + (n-1)*part
@@ -1442,22 +1447,26 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
         throw(ArgumentError("keyword arg `sample` must be Boolean, Range or an actual sample of data"))
     end
 
-    sorted_refs = Array(RemoteChannel, np)
+    local_sort_results = Array(Tuple, np)
     if VERSION < v"0.5.0-"
         @sync begin
             for (i,p) in enumerate(pids)
-                @async sorted_refs[i] = remotecall_fetch(scatter_n_sort_localparts, p,
+                @async local_sort_results[i] = remotecall_fetch(scatter_n_sort_localparts, p,
                                             presorted?nothing:d, i, refs, boundaries; kwargs...)
             end
         end
     else
         Base.asyncmap!((i,p) -> remotecall_fetch(scatter_n_sort_localparts, p,
                                             presorted?nothing:d, i, refs, boundaries; kwargs...),
-                        sorted_refs, 1:np, pids)
+                        local_sort_results, 1:np, pids)
     end
 
-    # Construct a new DArray from the sorted refs
-    return DArray(sorted_refs)
+    # Construct a new DArray from the sorted refs. Remove parts with 0-length since
+    # the DArray constructor_from_refs does not yet support it. This implies that
+    # the participating workers for the sorted darray may be different from the original
+    # for highly non-uniform distributions.
+    local_sorted_refs = RemoteChannel[x[1] for x in filter(x->x[2]>0, local_sort_results)]
+    return DArray(local_sorted_refs)
 end
 
 

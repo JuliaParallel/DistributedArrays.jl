@@ -760,13 +760,15 @@ facts("test matmatmul") do
 end
 
 facts("sort") do
-    for i in 1:6
+    for i in 0:6
         for T in [Int, Float64]
             d=DistributedArrays.drand(T, 10^i)
-            d2=DistributedArrays.samplesort(d)
+            for sample in [true, false, (minimum(d),maximum(d)), rand(T, 10^i>512 ? 512 : 10^i)]
+                d2=DistributedArrays.sort(d; sample=sample)
 
-            @fact length(d) --> length(d2)
-            @fact sort(convert(Array, d)) --> convert(Array, d2)
+                @fact length(d) --> length(d2)
+                @fact sort(convert(Array, d)) --> convert(Array, d2)
+            end
         end
     end
     darray_closeall()  # close the temporaries created above
