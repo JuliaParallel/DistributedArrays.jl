@@ -763,7 +763,7 @@ facts("sort") do
     for i in 0:6
         for T in [Int, Float64]
             d=DistributedArrays.drand(T, 10^i)
-            for sample in [true, false, (minimum(d),maximum(d)), rand(T, 10^i>512 ? 512 : 10^i)]
+            for sample in Any[true, false, (minimum(d),maximum(d)), rand(T, 10^i>512 ? 512 : 10^i)]
                 d2=DistributedArrays.sort(d; sample=sample)
 
                 @fact length(d) --> length(d2)
