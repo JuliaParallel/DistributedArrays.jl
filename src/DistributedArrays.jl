@@ -1451,7 +1451,7 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
 
         refs=RemoteChannel[RemoteChannel(p) for p in procs(d)]
     else
-        throw(ArgumentError("keyword arg `sample` must be Boolean, Range or an actual sample of data"))
+        throw(ArgumentError("keyword arg `sample` must be Boolean, Tuple(Min,Max) or an actual sample of data : " * string(sample)))
     end
 
     local_sort_results = Array(Tuple, np)
