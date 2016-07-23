@@ -659,7 +659,11 @@ end
 # We also want to optimize setindex! with a SubDArray source, but this is hard
 # and only works on 0.5.
 if VERSION > v"0.5.0-dev+5230"
-    # Similar to Base.indexin, but just create a logical mask
+    # Similar to Base.indexin, but just create a logical mask. Note that this
+    # must return a logical mask in order to support merging multiple masks
+    # together into one linear index since we need to know how many elements to
+    # skip at the end. In many cases range intersection would be much faster
+    # than generating a logical mask, but that loses the endpoint information.
     indexin_mask(a, b::Number) = a .== b
     indexin_mask(a, r::Range{Int}) = [i in r for i in a]
     indexin_mask(a, b::AbstractArray{Int}) = indexin_mask(a, IntSet(b))
@@ -684,11 +688,12 @@ if VERSION > v"0.5.0-dev+5230"
         end
     end
     # The final indices are funky - they're allowed to accumulate together.
-    # Too many masks is an easy fix -- just use the outer product to merge them:
+    # An easy (albeit very inefficient) fix for too many masks is to use the
+    # outer product to merge them. But we can do that lazily with a custom type:
     function restrict_indices(a::Tuple{Any}, b::Tuple{Any, Any, Vararg{Any}})
-        restrict_indices(a, (map(Bool, vec(vec(b[1])*vec(b[2])')), tail(tail(b))...))
+        (vec(a[1])[vec(ProductIndices(b, map(length, b)))],)
     end
-    # But too many indices is much harder; this will require merging the indices
+    # But too many indices is much harder; this requires merging the indices
     # in `a` before applying the final mask in `b`.
     function restrict_indices(a::Tuple{Any, Any, Vararg{Any}}, b::Tuple{Any})
         if length(a[1]) == 1
@@ -701,8 +706,15 @@ if VERSION > v"0.5.0-dev+5230"
         end
     end
 
-    immutable MergedIndices{T,N} <: AbstractArray{CartesianIndex{N}, N}
-        indices::T
+    immutable ProductIndices{I,N} <: AbstractArray{Bool, N}
+        indices::I
+        sz::NTuple{N,Int}
+    end
+    Base.size(P::ProductIndices) = P.sz
+    Base.getindex{_,N}(P::ProductIndices{_,N}, I::Vararg{Int, N}) = Bool((&)(map(getindex, P.indices, I)...))
+
+    immutable MergedIndices{I,N} <: AbstractArray{CartesianIndex{N}, N}
+        indices::I
         sz::NTuple{N,Int}
     end
     Base.size(M::MergedIndices) = M.sz
