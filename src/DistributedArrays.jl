@@ -686,24 +686,24 @@ if VERSION > v"0.5.0-dev+5230"
     end
     Base.size(M::MergedIndices) = M.sz
     Base.getindex{_,N}(M::MergedIndices{_,N}, I::Vararg{Int, N}) = CartesianIndex(map(getindex, M.indices, I))
-    # Boundschecking for using MergedIndices as an array index. This is overly
-    # strict -- even for SubArrays of ReshapedIndices, we require that the entire
-    # parent array's indices are valid. In this usage, it is just fine... and is a
-    # huge optimization over exact bounds checking.
+    # Additionally, we optimize bounds checking when using MergedIndices as an 
+    # array index since checking, e.g., A[1:500, 1:500] is *way* faster than
+    # checking an array of 500^2 elements of CartesianIndex{2}. This optimization
+    # also applies to reshapes of MergedIndices since the outer shape of the
+    # container doesn't affect the index elements themselves. We can go even
+    # farther and say that even restricted views of MergedIndices must be valid
+    # over the entire array. This is overly strict in general, but in this
+    # use-case all the merged indices must be valid at some point, so it's ok.
     typealias ReshapedMergedIndices{T,N,M<:MergedIndices} Base.ReshapedArray{T,N,M}
     typealias SubMergedIndices{T,N,M<:Union{MergedIndices, ReshapedMergedIndices}} SubArray{T,N,M}
-    typealias MergedIndicesOrSub Union{MergedIndices, SubMergedIndices}
-    import Base: _chkbnds
-    # Ambiguity with linear indexing:
-    @inline _chkbnds(A::AbstractVector, checked::NTuple{1,Bool}, I::MergedIndicesOrSub) = _chkbnds(A, checked, parent(parent(I)).indices...)
-    @inline _chkbnds(A::AbstractArray, checked::NTuple{1,Bool}, I::MergedIndicesOrSub) = _chkbnds(A, checked, parent(parent(I)).indices...)
-    # Generic bounds checking
-    @inline _chkbnds{T,N}(A::AbstractArray{T,N}, checked::NTuple{N,Bool}, I1::MergedIndicesOrSub, I...) = _chkbnds(A, checked, parent(parent(I1)).indices..., I...)
-    @inline _chkbnds{T,N,M}(A::AbstractArray{T,N}, checked::NTuple{M,Bool}, I1::MergedIndicesOrSub, I...) = _chkbnds(A, checked, parent(parent(I1)).indices..., I...)
+    typealias MergedIndicesOrSub Union{MergedIndices, ReshapedMergedIndices, SubMergedIndices}
     import Base: checkbounds_indices
-    @inline checkbounds_indices(::Tuple{},   I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices((),   (parent(parent(I[1])).indices..., tail(I)...))
-    @inline checkbounds_indices(inds::Tuple{Any}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices(inds, (parent(parent(I[1])).indices..., tail(I)...))
-    @inline checkbounds_indices(inds::Tuple, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) = checkbounds_indices(inds, (parent(parent(I[1])).indices..., tail(I)...))
+    @inline checkbounds_indices(::Type{Bool}, inds::Tuple{}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
+        checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
+    @inline checkbounds_indices(::Type{Bool}, inds::Tuple{Any}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
+        checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
+    @inline checkbounds_indices(::Type{Bool}, inds::Tuple, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
+        checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
 
     # The tricky thing here is that we want to optimize the accesses into the
     # distributed array, but in doing so, we lose track of which indices in I we
