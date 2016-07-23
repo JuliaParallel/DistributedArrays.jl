@@ -550,7 +550,7 @@ end
 
 function Base.convert{T,N}(::Type{DArray}, SD::SubArray{T,N})
     D = SD.parent
-    DArray(SD.dims, procs(D)) do I
+    DArray(size(SD), procs(D)) do I
         TR = typeof(SD.indexes[1])
         lindices = Array(TR, 0)
         for (i,r) in zip(I, SD.indexes)
