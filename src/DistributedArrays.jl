@@ -711,14 +711,18 @@ if VERSION > v"0.5.0-dev+5230"
         sz::NTuple{N,Int}
     end
     Base.size(P::ProductIndices) = P.sz
-    Base.getindex{_,N}(P::ProductIndices{_,N}, I::Vararg{Int, N}) = Bool((&)(map(getindex, P.indices, I)...))
+    # This gets passed to map to avoid breaking propagation of inbounds
+    Base.@propagate_inbounds propagate_getindex(A, I...) = A[I...]
+    Base.@propagate_inbounds Base.getindex{_,N}(P::ProductIndices{_,N}, I::Vararg{Int, N}) =
+        Bool((&)(map(propagate_getindex, P.indices, I)...))
 
     immutable MergedIndices{I,N} <: AbstractArray{CartesianIndex{N}, N}
         indices::I
         sz::NTuple{N,Int}
     end
     Base.size(M::MergedIndices) = M.sz
-    Base.getindex{_,N}(M::MergedIndices{_,N}, I::Vararg{Int, N}) = CartesianIndex(map(getindex, M.indices, I))
+    Base.@propagate_inbounds Base.getindex{_,N}(M::MergedIndices{_,N}, I::Vararg{Int, N}) =
+        CartesianIndex(map(propagate_getindex, M.indices, I))
     # Additionally, we optimize bounds checking when using MergedIndices as an 
     # array index since checking, e.g., A[1:500, 1:500] is *way* faster than
     # checking an array of 500^2 elements of CartesianIndex{2}. This optimization
