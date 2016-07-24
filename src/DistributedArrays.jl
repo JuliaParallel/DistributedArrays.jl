@@ -550,7 +550,7 @@ end
 
 function Base.convert{T,N}(::Type{DArray}, SD::SubArray{T,N})
     D = SD.parent
-    DArray(SD.dims, procs(D)) do I
+    DArray(size(SD), procs(D)) do I
         TR = typeof(SD.indexes[1])
         lindices = Array(TR, 0)
         for (i,r) in zip(I, SD.indexes)
@@ -610,7 +610,7 @@ Base.getindex(d::DArray) = d[1]
 Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
-    if !(dest.dims == src.dims &&
+    if !(size(dest) == size(src) &&
          procs(dest) == procs(src) &&
          dest.indexes == src.indexes &&
          dest.cuts == src.cuts)
@@ -872,7 +872,7 @@ for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
 end
 
 function Base.ctranspose{T}(D::DArray{T,2})
-    DArray(reverse(D.dims), procs(D)) do I
+    DArray(reverse(size(D)), procs(D)) do I
         lp = Array(T, map(length, I))
         rp = convert(Array, D[reverse(I)...])
         ctranspose!(lp, rp)
@@ -880,7 +880,7 @@ function Base.ctranspose{T}(D::DArray{T,2})
 end
 
 function Base.transpose{T}(D::DArray{T,2})
-    DArray(reverse(D.dims), procs(D)) do I
+    DArray(reverse(size(D)), procs(D)) do I
         lp = Array(T, map(length, I))
         rp = convert(Array, D[reverse(I)...])
         transpose!(lp, rp)
