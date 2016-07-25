@@ -21,7 +21,7 @@ import Base.BLAS: axpy!
 
 export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($)
 export DArray, SubDArray, SubOrDArray, @DArray
-export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, ppeval, samedist
+export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindices, ppeval, samedist
 export close, darray_closeall
 
 const registry=Dict{Tuple, Any}()
@@ -56,22 +56,22 @@ type DArray{T,N,A} <: AbstractArray{T,N}
     identity::Tuple
     dims::NTuple{N,Int}
     pids::Array{Int,N}                          # pids[i]==p ⇒ processor p has piece i
-    indexes::Array{NTuple{N,UnitRange{Int}},N}  # indexes held by piece i
+    indices::Array{NTuple{N,UnitRange{Int}},N}  # indices held by piece i
     cuts::Vector{Vector{Int}}                   # cuts[d][i] = first index of chunk i in dimension d
 
     release::Bool
 
-    function DArray(identity, dims, pids, indexes, cuts)
+    function DArray(identity, dims, pids, indices, cuts)
         # check invariants
-        if dims != map(last, last(indexes))
-            throw(ArgumentError("dimension of DArray (dim) and indexes do not match"))
+        if dims != map(last, last(indices))
+            throw(ArgumentError("dimension of DArray (dim) and indices do not match"))
         end
         release = (myid() == identity[1])
 
         global registry
         haskey(registry, (identity, :DARRAY)) && return registry[(identity, :DARRAY)]
 
-        d = new(identity, dims, pids, indexes, cuts, release)
+        d = new(identity, dims, pids, indices, cuts, release)
         if release
             push!(refs, identity)
             registry[(identity, :DARRAY)] = d
@@ -125,11 +125,11 @@ function DArray(refs)
         end
     end
 
-    nindexes = Array(NTuple{length(dimdist),UnitRange{Int}}, dimdist...)
+    nindices = Array(NTuple{length(dimdist),UnitRange{Int}}, dimdist...)
 
-    for i in 1:length(nindexes)
+    for i in 1:length(nindices)
         subidx = ind2sub(dimdist, i)
-        nindexes[i] = ntuple(length(subidx)) do x
+        nindices[i] = ntuple(length(subidx)) do x
             idx_in_dim = subidx[x]
             startidx = 1
             for j in 1:(idx_in_dim-1)
@@ -141,11 +141,11 @@ function DArray(refs)
         end
     end
 
-    lastidxs = hcat([Int[last(idx_in_d)+1 for idx_in_d in idx] for idx in nindexes]...)
+    lastidxs = hcat([Int[last(idx_in_d)+1 for idx_in_d in idx] for idx in nindices]...)
     ncuts = Array{Int,1}[unshift!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
     ndims = tuple([sort(unique(lastidxs[x,:]))[end]-1 for x in 1:length(dimdist)]...)
 
-    construct_darray(identity, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
+    construct_darray(identity, refs, ndims, reshape(npids, dimdist), nindices, ncuts)
 end
 if VERSION < v"0.5.0-"
     macro DArray(ex::Expr)
@@ -184,7 +184,7 @@ else
 end
 
 # new DArray similar to an existing one
-DArray(init, d::DArray) = construct_darray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
+DArray(init, d::DArray) = construct_darray(next_did(), init, size(d), procs(d), d.indices, d.cuts)
 
 function construct_darray(identity, init, dims, pids, idxs, cuts)
     r=Channel(1)
@@ -287,7 +287,7 @@ function Base.serialize(S::SerializationState, d::DArray)
         serialize(S, (true, d.identity))    # (identity_only, identity)
     else
         serialize(S, (false, d.identity))
-        for n in [:dims, :pids, :indexes, :cuts]
+        for n in [:dims, :pids, :indices, :cuts]
             serialize(S, getfield(d, n))
         end
     end
@@ -313,9 +313,9 @@ function Base.deserialize{T<:DArray}(S::SerializationState, t::Type{T})
         # We are not a participating worker, deser fields and instantiate locally.
         dims = deserialize(S)
         pids = deserialize(S)
-        indexes = deserialize(S)
+        indices = deserialize(S)
         cuts = deserialize(S)
-        return T(identity, dims, pids, indexes, cuts)
+        return T(identity, dims, pids, indices, cuts)
     end
 end
 
@@ -368,7 +368,7 @@ function defaultdist(dims, pids)
     return chunks
 end
 
-# get array of start indexes for dividing sz into nc chunks
+# get array of start indices for dividing sz into nc chunks
 function defaultdist(sz::Int, nc::Int)
     if sz >= nc
         return round(Int, linspace(1, sz+1, nc+1))
@@ -377,7 +377,7 @@ function defaultdist(sz::Int, nc::Int)
     end
 end
 
-# compute indexes array for dividing dims into chunks
+# compute indices array for dividing dims into chunks
 function chunk_idxs(dims, chunks)
     cuts = map(defaultdist, dims, chunks)
     n = length(dims)
@@ -428,17 +428,17 @@ The identity when input is not distributed
 localpart(A) = A
 
 """
-    localindexes(d)
+    localindices(d)
 
-A tuple describing the indexes owned by the local process.
+A tuple describing the indices owned by the local process.
 Returns a tuple with empty ranges if no local part exists on the calling process.
 """
-function localindexes(d::DArray)
+function localindices(d::DArray)
     lpidx = localpartindex(d)
     if lpidx == 0
         return ntuple(i -> 1:0, ndims(d))
     end
-    return d.indexes[lpidx]
+    return d.indices[lpidx]
 end
 
 # find which piece holds index (I...)
@@ -532,18 +532,18 @@ Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
     a = Array(S, size(d))
     @sync begin
         for i = 1:length(d.pids)
-            @async a[d.indexes[i]...] = chunk(d, i)
+            @async a[d.indices[i]...] = chunk(d, i)
         end
     end
     return a
 end
 
 Base.convert{S,T,N}(::Type{Array{S,N}}, s::SubDArray{T,N}) = begin
-    I = s.indexes
+    I = s.indices
     d = s.parent
     if isa(I,Tuple{Vararg{UnitRange{Int}}}) && S<:T && T<:S
         l = locate(d, map(first, I)...)
-        if isequal(d.indexes[l...], I)
+        if isequal(d.indices[l...], I)
             # SubDArray corresponds to a chunk
             return chunk(d, l...)
         end
@@ -602,7 +602,7 @@ end
 getlocalindex(d::DArray, idx...) = localpart(d)[idx...]
 function getindex_tuple{T}(d::DArray{T}, I::Tuple{Vararg{Int}})
     chidx = locate(d, I...)
-    idxs = d.indexes[chidx...]
+    idxs = d.indices[chidx...]
     localidx = ntuple(i -> (I[i] - first(idxs[i]) + 1), ndims(d))
     pid = d.pids[chidx...]
     return remotecall_fetch(getlocalindex, pid, d, localidx...)::T
@@ -617,7 +617,7 @@ Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
     if !(size(dest) == size(src) &&
          procs(dest) == procs(src) &&
-         dest.indexes == src.indexes &&
+         dest.indices == src.indices &&
          dest.cuts == src.cuts)
         throw(DimensionMismatch("destination array doesn't fit to source array"))
     end
@@ -634,7 +634,7 @@ function Base.setindex!(a::Array, d::DArray,
         I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
     n = length(I)
     @sync for i = 1:length(d.pids)
-        K = d.indexes[i]
+        K = d.indices[i]
         @async a[[I[j][K[j]] for j=1:n]...] = chunk(d, i)
     end
     return a
@@ -644,14 +644,14 @@ function Base.setindex!(a::Array, s::SubDArray,
         I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
     n = length(I)
     d = s.parent
-    J = s.indexes
+    J = s.indices
     if length(J) < n
         a[I...] = convert(Array,s)
         return a
     end
     offs = [isa(J[i],Int) ? J[i]-1 : first(J[i])-1 for i=1:n]
     @sync for i = 1:length(d.pids)
-        K_c = Any[d.indexes[i]...]
+        K_c = Any[d.indices[i]...]
         K = [ intersect(J[j],K_c[j]) for j=1:n ]
         if !any(isempty, K)
             idxs = [ I[j][K[j]-offs[j]] for j=1:n ]
@@ -715,16 +715,16 @@ end
 
 # mapreducedim
 Base.reducedim_initarray{R}(A::DArray, region, v0, ::Type{R}) = begin
-    procsgrid = reshape(procs(A), size(A.indexes))
-    gridsize = Base.reduced_dims(size(A.indexes), region)
+    procsgrid = reshape(procs(A), size(A.indices))
+    gridsize = Base.reduced_dims(size(A.indices), region)
     procsgrid = procsgrid[UnitRange{Int}[1:n for n = gridsize]...]
     return dfill(convert(R, v0), Base.reduced_dims(A, region), procsgrid, gridsize)
 end
 Base.reducedim_initarray{T}(A::DArray, region, v0::T) = Base.reducedim_initarray(A, region, v0, T)
 
 Base.reducedim_initarray0{R}(A::DArray, region, v0, ::Type{R}) = begin
-    procsgrid = reshape(procs(A), size(A.indexes))
-    gridsize = Base.reduced_dims0(size(A.indexes), region)
+    procsgrid = reshape(procs(A), size(A.indices))
+    gridsize = Base.reduced_dims0(size(A.indices), region)
     procsgrid = procsgrid[UnitRange{Int}[1:n for n = gridsize]...]
     return dfill(convert(R, v0), Base.reduced_dims0(A, region), procsgrid, gridsize)
 end
@@ -732,7 +732,7 @@ Base.reducedim_initarray0{T}(A::DArray, region, v0::T) = Base.reducedim_initarra
 
 mapreducedim_within(f, op, A::DArray, region) = begin
     arraysize = [size(A)...]
-    gridsize = [size(A.indexes)...]
+    gridsize = [size(A.indices)...]
     arraysize[[region...]] = gridsize[[region...]]
     return DArray(tuple(arraysize...), procs(A), tuple(gridsize...)) do I
         mapreducedim(f, op, localpart(A), region)
@@ -742,7 +742,7 @@ end
 function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
     @sync for p in procs(R)
         @async remotecall_fetch(p, f, op, R, A, region) do f, op, R, A, region
-            localind = [r for r = localindexes(A)]
+            localind = [r for r = localindices(A)]
             localind[[region...]] = [1:n for n = size(A)[[region...]]]
             B = convert(Array, A[localind...])
             Base.mapreducedim!(f, op, localpart(R), B)
@@ -910,7 +910,7 @@ end
 function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
     #Ensure that the complete DArray is available on the specified dims on all processors
     for d in dims
-        for idxs in D.indexes
+        for idxs in D.indices
             if length(idxs[d]) != size(D, d)
                 throw(DimensionMismatch(string("dimension $d is distributed. ",
                     "mapslices requires dimension $d to be completely available on all processors.")))
@@ -1017,7 +1017,7 @@ function ppeval(f, D...; dim::NTuple = map(t -> isa(t, DArray) ? ndims(t) : 0, D
     #Ensure that the complete DArray is available on the specified dims on all processors
     for i = 1:length(D)
         if isa(D[i], DArray)
-            for idxs in D[i].indexes
+            for idxs in D[i].indices
                 for d in setdiff(1:ndims(D[i]), dim[i])
                     if length(idxs[d]) != size(D[i], d)
                         throw(DimensionMismatch(string("dimension $d is distributed. ",
