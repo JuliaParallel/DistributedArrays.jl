@@ -1296,11 +1296,12 @@ function sample_n_setup_ref(d::DVector, sample_size; kwargs...)
 end
 
 
-function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boundaries::Array{T}; kwargs...)
+function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boundaries::Array{T}; by = identity, kwargs...)
     if d==nothing
         sorted = take!(refs[myidx])  # First entry in the remote channel is sorted localpart
     else
-        sorted = sort(localpart(d); kwargs...)
+        @show kwargs
+        sorted = sort(localpart(d); by=by, kwargs...)
     end
 
     # send respective parts to correct workers, iterate over sorted array
@@ -1311,7 +1312,7 @@ function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boun
         # calculate range to send to refs[i]
         ctr=1
         for x in sorted[p_sorted:end]
-            if x > boundaries[i+1]
+            if by(x) > by(boundaries[i+1])
                 p_till = p_sorted+ctr-1
                 break
             else
@@ -1362,7 +1363,8 @@ function compute_boundaries{T}(d::DVector{T}; kwargs...)
     for x in results
         append!(samples, x[1])
     end
-    sort!(samples)
+    @show kwargs
+    sort!(samples; kwargs...)
     samples[1] = typemin(T)
 
     refs=RemoteChannel[x[2] for x in results]
@@ -1397,7 +1399,7 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
     np = length(pids)
 
     # Only `alg` and `sample` are supported as keyword arguments
-    if length(filter(x->x != :alg, [x[1] for x in kwargs])) > 0
+    if length(filter(x->!(x in (:alg, :by)), [x[1] for x in kwargs])) > 0
         throw(ArgumentError("Only `alg` and `sample` are supported as keyword arguments"))
     end
 
