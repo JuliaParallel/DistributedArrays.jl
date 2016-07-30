@@ -1300,8 +1300,7 @@ function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boun
     if d==nothing
         sorted = take!(refs[myidx])  # First entry in the remote channel is sorted localpart
     else
-        @show kwargs
-        sorted = sort(localpart(d); by=by, kwargs...)
+        sorted = sort(localpart(d); by = by, kwargs...)
     end
 
     # send respective parts to correct workers, iterate over sorted array
@@ -1338,32 +1337,30 @@ function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boun
     end
 
     sorted_ref=RemoteChannel()
-    put!(sorted_ref, sort!(lp_sorting; kwargs...))
-
+    put!(sorted_ref, sort!(lp_sorting; by = by, kwargs...))
     return (sorted_ref, length(lp_sorting))
 end
 
 function compute_boundaries{T}(d::DVector{T}; kwargs...)
     pids = procs(d)
     np = length(pids)
-    sample_sz_on_wrkr=512
+    sample_sz_on_wrkr = 512
 
     if VERSION < v"0.5.0-"
-        results=Array(Any,np)
+        results = Array(Any,np)
         @sync begin
             for (i,p) in enumerate(pids)
-                @async results[i] = remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr; kwargs...)
+                @async results[i] = remotecall_fetch(() -> sample_n_setup_ref(d, sample_sz_on_wrkr; kwargs...), p)
             end
         end
     else
-        results = asyncmap(p -> remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr), pids; kwargs...)
+        results = asyncmap(p -> remotecall_fetch(() -> sample_n_setup_ref(d, sample_sz_on_wrkr; kwargs...), p), pids)
     end
 
     samples = Array(T,0)
     for x in results
         append!(samples, x[1])
     end
-    @show kwargs
     sort!(samples; kwargs...)
     samples[1] = typemin(T)
 
@@ -1404,7 +1401,7 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
     end
 
     if sample==true
-        boundaries, refs = compute_boundaries(d)
+        boundaries, refs = compute_boundaries(d; kwargs...)
         presorted=true
 
     elseif sample==false
@@ -1420,7 +1417,7 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
         min_d = minimum(T[x[1] for x in minmax])
         max_d = maximum(T[x[2] for x in minmax])
 
-        return sort(d; sample=(min_d,max_d), kwargs...)
+        return sort(d; sample=(min_d,max_d), by = by, kwargs...)
 
     elseif isa(sample, Tuple)
         # Assume an uniform distribution between min and max values in the tuple
@@ -1441,7 +1438,7 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
                 s[n] = v
             end
         end
-        return sort(d; sample=s, kwargs...)
+        return sort(d; sample=s, by = by, kwargs...)
 
     elseif isa(sample, Array)
         # Provided array is used as a sample
@@ -1460,14 +1457,15 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
     if VERSION < v"0.5.0-"
         @sync begin
             for (i,p) in enumerate(pids)
-                @async local_sort_results[i] = remotecall_fetch(scatter_n_sort_localparts, p,
-                                            presorted?nothing:d, i, refs, boundaries; kwargs...)
+                @async local_sort_results[i] =
+                    remotecall_fetch(
+                        () -> scatter_n_sort_localparts(presorted ? nothing : d, i, refs, boundaries; kwargs...), p)
             end
         end
     else
-        Base.asyncmap!((i,p) -> remotecall_fetch(scatter_n_sort_localparts, p,
-                                            presorted?nothing:d, i, refs, boundaries; kwargs...),
-                        local_sort_results, 1:np, pids)
+        Base.asyncmap!((i,p) -> remotecall_fetch(
+            () -> scatter_n_sort_localparts(presorted ? nothing : d, i, refs, boundaries; kwargs...), p),
+                                    local_sort_results, 1:np, pids)
     end
 
     # Construct a new DArray from the sorted refs. Remove parts with 0-length since
