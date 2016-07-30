@@ -1350,11 +1350,11 @@ function compute_boundaries{T}(d::DVector{T}; kwargs...)
         results = Array(Any,np)
         @sync begin
             for (i,p) in enumerate(pids)
-                @async results[i] = remotecall_fetch(() -> sample_n_setup_ref(d, sample_sz_on_wrkr; kwargs...), p)
+                @async results[i] = remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr; kwargs...)
             end
         end
     else
-        results = asyncmap(p -> remotecall_fetch(() -> sample_n_setup_ref(d, sample_sz_on_wrkr; kwargs...), p), pids)
+        results = asyncmap(p -> remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr; kwargs...), pids)
     end
 
     samples = Array(T,0)
@@ -1397,7 +1397,7 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
 
     # Only `alg` and `sample` are supported as keyword arguments
     if length(filter(x->!(x in (:alg, :by)), [x[1] for x in kwargs])) > 0
-        throw(ArgumentError("Only `alg` and `sample` are supported as keyword arguments"))
+        throw(ArgumentError("Only `alg`, `by` and `sample` are supported as keyword arguments"))
     end
 
     if sample==true
@@ -1459,12 +1459,12 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
             for (i,p) in enumerate(pids)
                 @async local_sort_results[i] =
                     remotecall_fetch(
-                        () -> scatter_n_sort_localparts(presorted ? nothing : d, i, refs, boundaries; kwargs...), p)
+                        scatter_n_sort_localparts, p, presorted ? nothing : d, i, refs, boundaries; kwargs...)
             end
         end
     else
         Base.asyncmap!((i,p) -> remotecall_fetch(
-            () -> scatter_n_sort_localparts(presorted ? nothing : d, i, refs, boundaries; kwargs...), p),
+            scatter_n_sort_localparts, p, presorted ? nothing : d, i, refs, boundaries; kwargs...),
                                     local_sort_results, 1:np, pids)
     end
 
