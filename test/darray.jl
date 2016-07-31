@@ -136,8 +136,12 @@ facts("test mapreducedim on DArrays") do
     @fact mapreducedim(t -> t*t, +, D2, 2) --> mapreducedim(t -> t*t, +, convert(Array, D2), 2)
     @fact mapreducedim(t -> t*t, +, D2, (1,2)) --> mapreducedim(t -> t*t, +, convert(Array, D2), (1,2))
 
-    close(D)
-    close(D2)
+    # Test non-regularly chunked DArrays
+    r1 = DistributedArrays.remotecall(() -> sprandn(3, 10, 0.1), workers()[1])
+    r2 = DistributedArrays.remotecall(() -> sprandn(7, 10, 0.1), workers()[2])
+    D = DArray(reshape([r1; r2], (2,1)))
+    @fact Array(sum(D, 2)) --> sum(Array(D), 2)
+
     darray_closeall()   # temp created by the mapreduce above
 end
 

@@ -715,18 +715,24 @@ end
 
 # mapreducedim
 Base.reducedim_initarray{R}(A::DArray, region, v0, ::Type{R}) = begin
-    procsgrid = reshape(procs(A), size(A.indexes))
-    gridsize = Base.reduced_dims(size(A.indexes), region)
-    procsgrid = procsgrid[UnitRange{Int}[1:n for n = gridsize]...]
-    return dfill(convert(R, v0), Base.reduced_dims(A, region), procsgrid, gridsize)
+    # Store reduction on lowest pids
+    pids = A.pids[ntuple(i -> i in region ? (1:1) : (:))...]
+    chunks = similar(pids, Future)
+    @sync for i in eachindex(pids)
+        @async chunks[i...] = remotecall_wait(() -> Base.reducedim_initarray(localpart(A), region, v0, R), pids[i...])
+    end
+    return DArray(chunks)
 end
 Base.reducedim_initarray{T}(A::DArray, region, v0::T) = Base.reducedim_initarray(A, region, v0, T)
 
 Base.reducedim_initarray0{R}(A::DArray, region, v0, ::Type{R}) = begin
-    procsgrid = reshape(procs(A), size(A.indexes))
-    gridsize = Base.reduced_dims0(size(A.indexes), region)
-    procsgrid = procsgrid[UnitRange{Int}[1:n for n = gridsize]...]
-    return dfill(convert(R, v0), Base.reduced_dims0(A, region), procsgrid, gridsize)
+    # Store reduction on lowest pids
+    pids = A.pids[ntuple(i -> i in region ? (1:1) : (:))...]
+    chunks = similar(pids, Future)
+    @sync for i in eachindex(pids)
+        @async chunks[i...] = remotecall_wait(() -> Base.reducedim_initarray0(localpart(A), region, v0, R), pids[i...])
+    end
+    return DArray(chunks)
 end
 Base.reducedim_initarray0{T}(A::DArray, region, v0::T) = Base.reducedim_initarray0(A, region, v0, T)
 
