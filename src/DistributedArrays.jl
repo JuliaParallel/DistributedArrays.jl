@@ -1417,7 +1417,7 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
         min_d = minimum(T[x[1] for x in minmax])
         max_d = maximum(T[x[2] for x in minmax])
 
-        return sort(d; sample=(min_d,max_d), by = by, kwargs...)
+        return sort(d; sample=(min_d,max_d), kwargs...)
 
     elseif isa(sample, Tuple)
         # Assume an uniform distribution between min and max values in the tuple
@@ -1438,7 +1438,7 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
                 s[n] = v
             end
         end
-        return sort(d; sample=s, by = by, kwargs...)
+        return sort(d; sample=s, kwargs...)
 
     elseif isa(sample, Array)
         # Provided array is used as a sample
