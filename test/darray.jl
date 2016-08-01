@@ -142,6 +142,8 @@ facts("test mapreducedim on DArrays") do
     D = DArray(reshape([r1; r2], (2,1)))
     @fact Array(sum(D, 2)) --> sum(Array(D), 2)
 
+    # close(D)
+    # close(D2)
     darray_closeall()   # temp created by the mapreduce above
 end
 
@@ -195,7 +197,7 @@ facts("test sum on DArrays") do
         sum(DA, -1)
     catch err
         if isa(err, CompositeException)
-            @fact isempty(err) --> false
+            @fact isempty(err.exceptions) --> false
             for excep in err.exceptions
                 # Unpack the remote exception
                 orig_err = excep.ex.captured.ex
@@ -209,7 +211,7 @@ facts("test sum on DArrays") do
         sum(DA, 0)
     catch err
         if isa(err, CompositeException)
-            @fact isempty(err) --> false
+            @fact isempty(err.exceptions) --> false
             for excep in err.exceptions
                 # Unpack the remote exception
                 orig_err = excep.ex.captured.ex
