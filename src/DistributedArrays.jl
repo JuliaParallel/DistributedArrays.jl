@@ -716,7 +716,7 @@ end
 # mapreducedim
 Base.reducedim_initarray{R}(A::DArray, region, v0, ::Type{R}) = begin
     # Store reduction on lowest pids
-    pids = A.pids[ntuple(i -> i in region ? (1:1) : (:))...]
+    pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
     chunks = similar(pids, Future)
     @sync for i in eachindex(pids)
         @async chunks[i...] = remotecall_wait(() -> Base.reducedim_initarray(localpart(A), region, v0, R), pids[i...])
@@ -727,7 +727,7 @@ Base.reducedim_initarray{T}(A::DArray, region, v0::T) = Base.reducedim_initarray
 
 Base.reducedim_initarray0{R}(A::DArray, region, v0, ::Type{R}) = begin
     # Store reduction on lowest pids
-    pids = A.pids[ntuple(i -> i in region ? (1:1) : (:))...]
+    pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
     chunks = similar(pids, Future)
     @sync for i in eachindex(pids)
         @async chunks[i...] = remotecall_wait(() -> Base.reducedim_initarray0(localpart(A), region, v0, R), pids[i...])
