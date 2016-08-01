@@ -190,8 +190,35 @@ facts("test sum on DArrays") do
     A = randn(100,100)
     DA = distribute(A)
 
-    @fact_throws ArgumentError sum(DA,-1)
-    @fact_throws ArgumentError sum(DA, 0)
+    # sum either throws an ArgumentError or a CompositeException of ArgumentErrors
+    try
+        sum(DA, -1)
+    catch err
+        if isa(err, CompositeException)
+            @fact isempty(err) --> false
+            for excep in err.exceptions
+                # Unpack the remote exception
+                orig_err = excep.ex.captured.ex
+                @fact isa(orig_err, ArgumentError) --> true
+            end
+        else
+            @fact isa(err, ArgumentError) --> true
+        end
+    end
+    try
+        sum(DA, 0)
+    catch err
+        if isa(err, CompositeException)
+            @fact isempty(err) --> false
+            for excep in err.exceptions
+                # Unpack the remote exception
+                orig_err = excep.ex.captured.ex
+                @fact isa(orig_err, ArgumentError) --> true
+            end
+        else
+            @fact isa(err, ArgumentError) --> true
+        end
+    end
 
     @fact sum(DA) --> roughly(sum(A), atol=1e-12)
     @fact sum(DA,1) --> roughly(sum(A,1), atol=1e-12)
