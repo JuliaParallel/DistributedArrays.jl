@@ -102,7 +102,7 @@ typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
 
 ## core constructors ##
 
-function construct_darray(identity, init, dims, pids, idxs, cuts)
+function DArray(identity, init, dims, pids, idxs, cuts)
     r=Channel(1)
     @sync begin
         for i = 1:length(pids)
@@ -144,7 +144,7 @@ function DArray(init, dims, procs, dist)
     idxs, cuts = chunk_idxs([dims...], dist)
     identity = next_did()
 
-    return construct_darray(identity, init, dims, procs, idxs, cuts)
+    return DArray(identity, init, dims, procs, idxs, cuts)
 end
 
 function DArray(init, dims, procs)
@@ -193,7 +193,7 @@ function DArray(refs)
     ncuts = Array{Int,1}[unshift!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
     ndims = tuple([sort(unique(lastidxs[x,:]))[end]-1 for x in 1:length(dimdist)]...)
 
-    construct_darray(identity, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
+    DArray(identity, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
 end
 if VERSION < v"0.5.0-"
     macro DArray(ex::Expr)
@@ -232,7 +232,7 @@ else
 end
 
 # new DArray similar to an existing one
-DArray(init, d::DArray) = construct_darray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
+DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
 
 function release_localpart(identity)
     global registry
@@ -749,7 +749,7 @@ mapreducedim_within(f, op, A::DArray, region) = begin
         indx[i] = ntuple(j -> j in region ? (i.I[j]:i.I[j]) : A.indexes[i][j], ndims(A))
     end
     cuts = [i in region ? collect(1:arraysize[i] + 1) : A.cuts[i] for i in 1:ndims(A)]
-    return construct_darray(next_did(), I -> mapreducedim(f, op, localpart(A), region),
+    return DArray(next_did(), I -> mapreducedim(f, op, localpart(A), region),
         tuple(arraysize...), procs(A), indx, cuts)
 end
 
