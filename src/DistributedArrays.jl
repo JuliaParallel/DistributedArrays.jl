@@ -13,6 +13,7 @@ end
 if VERSION < v"0.5.0-"
     typealias Future RemoteRef
     typealias RemoteChannel RemoteRef
+    typealias AbstractSerializer SerializationState  # On 0.4 fallback to the only concrete implementation
 end
 
 importall Base
@@ -278,7 +279,7 @@ function rr_localpart(ref, identity)
     return size(lp)
 end
 
-function Base.serialize(S::SerializationState, d::DArray)
+function Base.serialize(S::AbstractSerializer, d::DArray)
     # Only send the ident for participating workers - we expect the DArray to exist in the
     # remote registry
     destpid = Base.worker_id_from_socket(S.io)
@@ -293,7 +294,7 @@ function Base.serialize(S::SerializationState, d::DArray)
     end
 end
 
-function Base.deserialize{T<:DArray}(S::SerializationState, t::Type{T})
+function Base.deserialize{T<:DArray}(S::AbstractSerializer, t::Type{T})
     what = deserialize(S)
     identity_only = what[1]
     identity = what[2]
