@@ -28,6 +28,17 @@ export close, darray_closeall
 const registry=Dict{Tuple, Any}()
 const refs=Set()  # Collection of darray identities created on this node
 
+let DID::Int = 1
+    global next_did
+    next_did() = (id = DID; DID += 1; (myid(), id))
+end
+
+"""
+    next_did()
+
+Produces an incrementing ID that will be used for DArrays.
+"""
+next_did
 
 """
     DArray(init, dims, [procs, dist])
@@ -90,6 +101,42 @@ typealias SubDArray{T,N,D<:DArray} SubArray{T,N,D}
 typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
 
 ## core constructors ##
+
+function construct_darray(identity, init, dims, pids, idxs, cuts)
+    r=Channel(1)
+    @sync begin
+        for i = 1:length(pids)
+            @async begin
+                local typA
+                if isa(init, Function)
+                    typA=remotecall_fetch(construct_localparts, pids[i], init, identity, dims, pids, idxs, cuts)
+                else
+                    # constructing from an array of remote refs.
+                    typA=remotecall_fetch(construct_localparts, pids[i], init[i], identity, dims, pids, idxs, cuts)
+                end
+                !isready(r) && put!(r, typA)
+            end
+        end
+    end
+
+    typA = take!(r)
+    if myid() in pids
+        d = registry[(identity, :DARRAY)]
+    else
+        d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
+    end
+    d
+end
+
+function construct_localparts(init, identity, dims, pids, idxs, cuts)
+    A = isa(init, Function) ? init(idxs[localpartindex(pids)]) : fetch(init)
+    global registry
+    registry[(identity, :LOCALPART)] = A
+    typA = typeof(A)
+    d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
+    registry[(identity, :DARRAY)] = d
+    typA
+end
 
 function DArray(init, dims, procs, dist)
     np = prod(dist)
@@ -186,47 +233,6 @@ end
 
 # new DArray similar to an existing one
 DArray(init, d::DArray) = construct_darray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
-
-function construct_darray(identity, init, dims, pids, idxs, cuts)
-    r=Channel(1)
-    @sync begin
-        for i = 1:length(pids)
-            @async begin
-                local typA
-                if isa(init, Function)
-                    typA=remotecall_fetch(construct_localparts, pids[i], init, identity, dims, pids, idxs, cuts)
-                else
-                    # constructing from an array of remote refs.
-                    typA=remotecall_fetch(construct_localparts, pids[i], init[i], identity, dims, pids, idxs, cuts)
-                end
-                !isready(r) && put!(r, typA)
-            end
-        end
-    end
-
-    typA = take!(r)
-    if myid() in pids
-        d = registry[(identity, :DARRAY)]
-    else
-        d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
-    end
-    d
-end
-
-function construct_localparts(init, identity, dims, pids, idxs, cuts)
-    A = isa(init, Function) ? init(idxs[localpartindex(pids)]) : fetch(init)
-    global registry
-    registry[(identity, :LOCALPART)] = A
-    typA = typeof(A)
-    d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
-    registry[(identity, :DARRAY)] = d
-    typA
-end
-
-let DID::Int = 1
-    global next_did
-    next_did() = (id = DID; DID += 1; (myid(), id))
-end
 
 function release_localpart(identity)
     global registry
