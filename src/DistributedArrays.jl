@@ -529,6 +529,25 @@ function distribute(A::AbstractArray;
     return DArray(I->verify_and_get(pas, I), size(A), procs, dist)
 end
 
+"""
+    distribute(A, DA)
+
+Distribute a local array `A` like the distributed array `DA`.
+
+"""
+function distribute(A::AbstractArray, DA::DArray)
+    size(DA) == size(A) || throw(DimensionMismatch("Distributed array has size $(size(DA)) but array has $(size(A))"))
+
+    owner = myid()
+    rr = RemoteChannel()
+    put!(rr, A)
+
+    d = DArray(DA) do I
+        remotecall_fetch(() -> fetch(rr)[I...], owner)
+    end
+    return d
+end
+
 Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
 
 Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
