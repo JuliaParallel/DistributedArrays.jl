@@ -1310,11 +1310,11 @@ function sample_n_setup_ref(d::DVector, sample_size; kwargs...)
 end
 
 
-function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boundaries::Array{T}; kwargs...)
+function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boundaries::Array{T}; by = identity, kwargs...)
     if d==nothing
         sorted = take!(refs[myidx])  # First entry in the remote channel is sorted localpart
     else
-        sorted = sort(localpart(d); kwargs...)
+        sorted = sort(localpart(d); by = by, kwargs...)
     end
 
     # send respective parts to correct workers, iterate over sorted array
@@ -1325,7 +1325,7 @@ function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boun
         # calculate range to send to refs[i]
         ctr=1
         for x in sorted[p_sorted:end]
-            if x > boundaries[i+1]
+            if by(x) > by(boundaries[i+1])
                 p_till = p_sorted+ctr-1
                 break
             else
@@ -1351,32 +1351,31 @@ function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boun
     end
 
     sorted_ref=RemoteChannel()
-    put!(sorted_ref, sort!(lp_sorting; kwargs...))
-
+    put!(sorted_ref, sort!(lp_sorting; by = by, kwargs...))
     return (sorted_ref, length(lp_sorting))
 end
 
 function compute_boundaries{T}(d::DVector{T}; kwargs...)
     pids = procs(d)
     np = length(pids)
-    sample_sz_on_wrkr=512
+    sample_sz_on_wrkr = 512
 
     if VERSION < v"0.5.0-"
-        results=Array(Any,np)
+        results = Array(Any,np)
         @sync begin
             for (i,p) in enumerate(pids)
                 @async results[i] = remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr; kwargs...)
             end
         end
     else
-        results = asyncmap(p -> remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr), pids; kwargs...)
+        results = asyncmap(p -> remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr; kwargs...), pids)
     end
 
     samples = Array(T,0)
     for x in results
         append!(samples, x[1])
     end
-    sort!(samples)
+    sort!(samples; kwargs...)
     samples[1] = typemin(T)
 
     refs=RemoteChannel[x[2] for x in results]
@@ -1411,12 +1410,12 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
     np = length(pids)
 
     # Only `alg` and `sample` are supported as keyword arguments
-    if length(filter(x->x != :alg, [x[1] for x in kwargs])) > 0
-        throw(ArgumentError("Only `alg` and `sample` are supported as keyword arguments"))
+    if length(filter(x->!(x in (:alg, :by)), [x[1] for x in kwargs])) > 0
+        throw(ArgumentError("Only `alg`, `by` and `sample` are supported as keyword arguments"))
     end
 
     if sample==true
-        boundaries, refs = compute_boundaries(d)
+        boundaries, refs = compute_boundaries(d; kwargs...)
         presorted=true
 
     elseif sample==false
@@ -1472,14 +1471,15 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
     if VERSION < v"0.5.0-"
         @sync begin
             for (i,p) in enumerate(pids)
-                @async local_sort_results[i] = remotecall_fetch(scatter_n_sort_localparts, p,
-                                            presorted?nothing:d, i, refs, boundaries; kwargs...)
+                @async local_sort_results[i] =
+                    remotecall_fetch(
+                        scatter_n_sort_localparts, p, presorted ? nothing : d, i, refs, boundaries; kwargs...)
             end
         end
     else
-        Base.asyncmap!((i,p) -> remotecall_fetch(scatter_n_sort_localparts, p,
-                                            presorted?nothing:d, i, refs, boundaries; kwargs...),
-                        local_sort_results, 1:np, pids)
+        Base.asyncmap!((i,p) -> remotecall_fetch(
+            scatter_n_sort_localparts, p, presorted ? nothing : d, i, refs, boundaries; kwargs...),
+                                    local_sort_results, 1:np, pids)
     end
 
     # Construct a new DArray from the sorted refs. Remove parts with 0-length since
