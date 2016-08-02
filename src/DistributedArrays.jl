@@ -715,30 +715,44 @@ end
 
 # mapreducedim
 Base.reducedim_initarray{R}(A::DArray, region, v0, ::Type{R}) = begin
-    procsgrid = reshape(procs(A), size(A.indexes))
-    gridsize = Base.reduced_dims(size(A.indexes), region)
-    procsgrid = procsgrid[UnitRange{Int}[1:n for n = gridsize]...]
-    return dfill(convert(R, v0), Base.reduced_dims(A, region), procsgrid, gridsize)
+    # Store reduction on lowest pids
+    pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
+    chunks = similar(pids, Future)
+    @sync for i in eachindex(pids)
+        @async chunks[i...] = remotecall_wait(() -> Base.reducedim_initarray(localpart(A), region, v0, R), pids[i...])
+    end
+    return DArray(chunks)
 end
 Base.reducedim_initarray{T}(A::DArray, region, v0::T) = Base.reducedim_initarray(A, region, v0, T)
 
 Base.reducedim_initarray0{R}(A::DArray, region, v0, ::Type{R}) = begin
-    procsgrid = reshape(procs(A), size(A.indexes))
-    gridsize = Base.reduced_dims0(size(A.indexes), region)
-    procsgrid = procsgrid[UnitRange{Int}[1:n for n = gridsize]...]
-    return dfill(convert(R, v0), Base.reduced_dims0(A, region), procsgrid, gridsize)
+    # Store reduction on lowest pids
+    pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
+    chunks = similar(pids, Future)
+    @sync for i in eachindex(pids)
+        @async chunks[i...] = remotecall_wait(() -> Base.reducedim_initarray0(localpart(A), region, v0, R), pids[i...])
+    end
+    return DArray(chunks)
 end
 Base.reducedim_initarray0{T}(A::DArray, region, v0::T) = Base.reducedim_initarray0(A, region, v0, T)
 
+# Compute mapreducedim of each localpart and store the result in a new DArray
 mapreducedim_within(f, op, A::DArray, region) = begin
     arraysize = [size(A)...]
     gridsize = [size(A.indexes)...]
     arraysize[[region...]] = gridsize[[region...]]
-    return DArray(tuple(arraysize...), procs(A), tuple(gridsize...)) do I
-        mapreducedim(f, op, localpart(A), region)
+    indx = similar(A.indexes)
+    for i in CartesianRange(size(indx))
+        indx[i] = ntuple(j -> j in region ? (i.I[j]:i.I[j]) : A.indexes[i][j], ndims(A))
     end
+    cuts = [i in region ? collect(1:arraysize[i] + 1) : A.cuts[i] for i in 1:ndims(A)]
+    return construct_darray(next_did(), I -> mapreducedim(f, op, localpart(A), region),
+        tuple(arraysize...), procs(A), indx, cuts)
 end
 
+# Compute mapreducedim accros the processes. This should be done after mapreducedim
+# has been run on each localpart with mapreducedim_within. Eventually, we might
+# want to write mapreducedim_between! as a binary reduction.
 function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
     @sync for p in procs(R)
         @async remotecall_fetch(p, f, op, R, A, region) do f, op, R, A, region

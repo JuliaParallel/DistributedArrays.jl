@@ -136,8 +136,14 @@ facts("test mapreducedim on DArrays") do
     @fact mapreducedim(t -> t*t, +, D2, 2) --> mapreducedim(t -> t*t, +, convert(Array, D2), 2)
     @fact mapreducedim(t -> t*t, +, D2, (1,2)) --> mapreducedim(t -> t*t, +, convert(Array, D2), (1,2))
 
-    close(D)
-    close(D2)
+    # Test non-regularly chunked DArrays
+    r1 = DistributedArrays.remotecall(() -> sprandn(3, 10, 0.1), workers()[1])
+    r2 = DistributedArrays.remotecall(() -> sprandn(7, 10, 0.1), workers()[2])
+    D = DArray(reshape([r1; r2], (2,1)))
+    @fact Array(sum(D, 2)) --> sum(Array(D), 2)
+
+    # close(D)
+    # close(D2)
     darray_closeall()   # temp created by the mapreduce above
 end
 
@@ -186,8 +192,35 @@ facts("test sum on DArrays") do
     A = randn(100,100)
     DA = distribute(A)
 
-    @fact_throws ArgumentError sum(DA,-1)
-    @fact_throws ArgumentError sum(DA, 0)
+    # sum either throws an ArgumentError or a CompositeException of ArgumentErrors
+    try
+        sum(DA, -1)
+    catch err
+        if isa(err, CompositeException)
+            @fact isempty(err.exceptions) --> false
+            for excep in err.exceptions
+                # Unpack the remote exception
+                orig_err = excep.ex.captured.ex
+                @fact isa(orig_err, ArgumentError) --> true
+            end
+        else
+            @fact isa(err, ArgumentError) --> true
+        end
+    end
+    try
+        sum(DA, 0)
+    catch err
+        if isa(err, CompositeException)
+            @fact isempty(err.exceptions) --> false
+            for excep in err.exceptions
+                # Unpack the remote exception
+                orig_err = excep.ex.captured.ex
+                @fact isa(orig_err, ArgumentError) --> true
+            end
+        else
+            @fact isa(err, ArgumentError) --> true
+        end
+    end
 
     @fact sum(DA) --> roughly(sum(A), atol=1e-12)
     @fact sum(DA,1) --> roughly(sum(A,1), atol=1e-12)
