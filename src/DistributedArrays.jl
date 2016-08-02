@@ -902,6 +902,8 @@ for f in (:+, :-, :div, :mod, :rem, :&, :|, :$)
             B = samedist(A, B)
             map_localparts($f, A, B)
         end
+        ($f){T}(A::DArray{T}, B::Array{T}) = ($f)(A, distribute(B, A))
+        ($f){T}(A::Array{T}, B::DArray{T}) = ($f)(distribute(A, B), B)
     end
 end
 for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
@@ -909,6 +911,8 @@ for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
         function ($f){T}(A::DArray{T}, B::DArray{T})
             map_localparts($f, A, B)
         end
+        ($f){T}(A::DArray{T}, B::Array{T}) = ($f)(A, distribute(B, A))
+        ($f){T}(A::Array{T}, B::DArray{T}) = ($f)(distribute(A, B), B)
     end
 end
 

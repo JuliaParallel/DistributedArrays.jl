@@ -8,31 +8,31 @@ function check_leaks()
     end
 end
 
-facts("test distribute") do
+@testset "test distribute" begin
     A = rand(1:100, (100,100))
 
-    context("test default distribute") do
+    @testset "test default distribute" begin
         DA = distribute(A)
-        @fact length(procs(DA)) --> nworkers()
-        @fact sum(DA) --> sum(A)
+        @test length(procs(DA)) == nworkers()
+        @test sum(DA) == sum(A)
         close(DA)
     end
 
-    context("test distribute with procs arguments") do
+    @testset "test distribute with procs arguments" begin
         DA = distribute(A, procs = procs())
-        @fact length(procs(DA)) --> nprocs()
-        @fact sum(DA) --> sum(A)
+        @test length(procs(DA)) == nprocs()
+        @test sum(DA) == sum(A)
         close(DA)
     end
 
-    context("test distribute with procs and dist arguments") do
+    @testset "test distribute with procs and dist arguments" begin
         DA = distribute(A, procs = [1, 2], dist = [1,2])
-        @fact size(procs(DA)) --> (1,2)
-        @fact sum(DA) --> sum(A)
+        @test size(procs(DA)) == (1,2)
+        @test sum(DA) == sum(A)
         close(DA)
     end
 
-    context("Create darray with unconventional distribution and distibute like it") do
+    @testset "Create darray with unconventional distribution and distibute like it" begin
         block = 10
         Y = nworkers() * block
         X = nworkers() * block
@@ -43,7 +43,7 @@ facts("test distribute") do
         A = rand(X, Y)
         DA2 = distribute(A, DA1)
 
-        @fact size(DA1) --> size(DA2)
+        @test size(DA1) == size(DA2)
 
         close(DA1)
         close(DA2)
@@ -52,17 +52,17 @@ end
 
 check_leaks()
 
-facts("test DArray equality") do
+@testset "test DArray equality" begin
     D = drand((200,200), [MYID, OTHERIDS])
     DC = copy(D)
 
-    context("test isequal(::Array, ::DArray)") do
-        @fact D == DC --> true
+    @testset "test isequal(::DArray, ::DArray)" begin
+        @test D == DC
     end
 
-    context("test copy(::DArray) does a copy of each localpart") do
+    @testset "test copy(::DArray) does a copy of each localpart" begin
         @spawnat OTHERIDS localpart(DC)[1] = 0
-        @fact fetch(@spawnat OTHERIDS localpart(D)[1] != 0) --> true
+        @test fetch(@spawnat OTHERIDS localpart(D)[1] != 0)
     end
 
     close(D)
@@ -71,33 +71,33 @@ end
 
 check_leaks()
 
-facts("test @DArray comprehension constructor") do
+@testset "test @DArray comprehension constructor" begin
 
-    context("test valid use of @DArray") do
+    @testset "test valid use of @DArray" begin
         D = @DArray [i+j for i=1:10, j=1:10]
-        @fact D --> [i+j for i=1:10, j=1:10]
+        @test D == [i+j for i=1:10, j=1:10]
         close(D)
     end
 
-    context("test invalid use of @DArray") do
-        @fact_throws ArgumentError eval(:((@DArray [1,2,3,4])))
+    @testset "test invalid use of @DArray" begin
+        @test_throws ArgumentError eval(:((@DArray [1,2,3,4])))
     end
 end
 
 check_leaks()
 
-facts("test DArray / Array conversion") do
+@testset "test DArray / Array conversion" begin
     D = drand((200,200), [MYID, OTHERIDS])
 
-    context("test convert(::Array, ::(Sub)DArray)") do
+    @testset "test convert(::Array, ::(Sub)DArray)" begin
         S = convert(Matrix{Float64}, D[1:150, 1:150])
         A = convert(Matrix{Float64}, D)
 
-        @fact A[1:150,1:150] --> S
+        @test A[1:150,1:150] == S
         D2 = convert(DArray{Float64,2,Matrix{Float64}}, A)
-        @fact D2 --> D
-        @fact fetch(@spawnat MYID localpart(D)[1,1]) --> D[1,1]
-        @fact fetch(@spawnat OTHERIDS localpart(D)[1,1]) --> D[1,101]
+        @test D2 == D
+        @test fetch(@spawnat MYID localpart(D)[1,1]) == D[1,1]
+        @test fetch(@spawnat OTHERIDS localpart(D)[1,1]) == D[1,101]
         close(D2)
     end
     close(D)
@@ -105,62 +105,60 @@ end
 
 check_leaks()
 
-facts("test DArray reduce") do
+@testset "test DArray reduce" begin
     D = DArray(id->fill(myid(), map(length,id)), (10,10), [MYID, OTHERIDS])
 
-    context("test reduce") do
-        @fact reduce(+, D) --> ((50*MYID) + (50*OTHERIDS))
+    @testset "test reduce" begin
+        @test reduce(+, D) == ((50*MYID) + (50*OTHERIDS))
     end
 
-    context("test map / reduce") do
+    @testset "test map / reduce" begin
         D2 = map(x->1, D)
-        @fact reduce(+, D2) --> 100
+        @test reduce(+, D2) == 100
         close(D2)
     end
 
-    context("test map! / reduce") do
+    @testset "test map! / reduce" begin
         map!(x->1, D)
-        @fact reduce(+, D) --> 100
+        @test reduce(+, D) == 100
     end
     close(D)
 end
 
 check_leaks()
 
-facts("test scale") do
+@testset "test scale" begin
     A = randn(100,100)
     DA = distribute(A)
-    @fact scale!(DA, 2) --> scale!(A, 2)
+    @test scale!(DA, 2) == scale!(A, 2)
     close(DA)
 end
 
 check_leaks()
 
-facts("test mapreduce on DArrays") do
-    # temporaroly reduce to three iterations because of https://github.com/JuliaLang/julia/issues/15766
-    # for _ = 1:25, f = [x -> Int128(2x), x -> Int128(x^2), x -> Int128(x^2 + 2x - 1)], opt = [+, *]
-    for _ = 1:3, f = [x -> Int128(2x), x -> Int128(x^2), x -> Int128(x^2 + 2x - 1)], opt = [+, *]
+@testset "test mapreduce on DArrays" begin
+    for _ = 1:25, f = [x -> Int128(2x), x -> Int128(x^2), x -> Int128(x^2 + 2x - 1)], opt = [+, *]
         A = rand(1:5, rand(2:30))
         DA = distribute(A)
-        @fact mapreduce(f, opt, DA) - mapreduce(f, opt, A) == 0 --> true
+        @test mapreduce(f, opt, DA) - mapreduce(f, opt, A) == 0
         close(DA)
     end
 end
 
 check_leaks()
 
-facts("test mapreducedim on DArrays") do
+@testset "test mapreducedim on DArrays" begin
     D = DArray(I->fill(myid(), map(length,I)), (73,73), [MYID, OTHERIDS])
     D2 = map(x->1, D)
-    @fact mapreducedim(t -> t*t, +, D2, 1) --> mapreducedim(t -> t*t, +, convert(Array, D2), 1)
-    @fact mapreducedim(t -> t*t, +, D2, 2) --> mapreducedim(t -> t*t, +, convert(Array, D2), 2)
-    @fact mapreducedim(t -> t*t, +, D2, (1,2)) --> mapreducedim(t -> t*t, +, convert(Array, D2), (1,2))
+    @test mapreducedim(t -> t*t, +, D2, 1) == mapreducedim(t -> t*t, +, convert(Array, D2), 1)
+    @test mapreducedim(t -> t*t, +, D2, 2) == mapreducedim(t -> t*t, +, convert(Array, D2), 2)
+    @test mapreducedim(t -> t*t, +, D2, (1,2)) == mapreducedim(t -> t*t, +, convert(Array, D2), (1,2))
 
     # Test non-regularly chunked DArrays
     r1 = DistributedArrays.remotecall(() -> sprandn(3, 10, 0.1), workers()[1])
     r2 = DistributedArrays.remotecall(() -> sprandn(7, 10, 0.1), workers()[2])
     D = DArray(reshape([r1; r2], (2,1)))
-    @fact Array(sum(D, 2)) --> sum(Array(D), 2)
+    @test Array(sum(D, 2)) == sum(Array(D), 2)
 
     # close(D)
     # close(D2)
@@ -169,16 +167,16 @@ end
 
 check_leaks()
 
-facts("test mapreducdim, reducedim on DArrays") do
+@testset "test mapreducdim, reducedim on DArrays" begin
     dims = (20,20,20)
     DA = drandn(dims)
     A = convert(Array, DA)
 
-    for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
-        @fact mapreducedim(t -> t*t, +, DA, dms) --> roughly(mapreducedim(t -> t*t, +, A, dms))
-        @fact mapreducedim(t -> t*t, +, DA, dms, 1.0) --> roughly(mapreducedim(t -> t*t, +, A, dms, 1.0))
-        @fact reducedim(*, DA, dms) --> roughly(reducedim(*, A, dms))
-        @fact reducedim(*, DA, dms, 2.0) --> roughly(reducedim(*, A, dms, 2.0))
+    @testset "dimension $dms" for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
+        @test mapreducedim(t -> t*t, +, A, dms) ≈ mapreducedim(t -> t*t, +, DA, dms)
+        @test mapreducedim(t -> t*t, +, A, dms, 1.0) ≈ mapreducedim(t -> t*t, +, DA, dms, 1.0)
+        @test reducedim(*, A, dms) ≈ reducedim(*, DA, dms)
+        @test reducedim(*, A, dms, 2.0) ≈ reducedim(*, DA, dms, 2.0)
     end
     close(DA)
     darray_closeall()   # temp created by the mapreduce above
@@ -186,29 +184,23 @@ end
 
 check_leaks()
 
-facts("test statistical functions on DArrays") do
+@testset "test statistical functions on DArrays" begin
     dims = (20,20,20)
     DA = drandn(dims)
     A = convert(Array, DA)
 
-    context("test mean") do
-        for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
-            @fact mean(DA,dms) --> roughly(mean(A,dms), atol=1e-12)
-        end
+    @testset "test $f for dimension $dms" for f in (mean, ), dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
+        # std is pending implementation
+        @test f(DA,dms) ≈ f(A,dms)
     end
 
-    context("test std") do
-        for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
-            @pending std(DA,dms) --> roughly(std(A,dms), atol=1e-12)
-        end
-    end
     close(DA)
     darray_closeall()   # temporaries created above
 end
 
 check_leaks()
 
-facts("test sum on DArrays") do
+@testset "test sum on DArrays" begin
     A = randn(100,100)
     DA = distribute(A)
 
@@ -217,349 +209,350 @@ facts("test sum on DArrays") do
         sum(DA, -1)
     catch err
         if isa(err, CompositeException)
-            @fact isempty(err.exceptions) --> false
+            @test !isempty(err.exceptions)
             for excep in err.exceptions
                 # Unpack the remote exception
                 orig_err = excep.ex.captured.ex
-                @fact isa(orig_err, ArgumentError) --> true
+                @test isa(orig_err, ArgumentError)
             end
         else
-            @fact isa(err, ArgumentError) --> true
+            @test isa(err, ArgumentError)
         end
     end
     try
         sum(DA, 0)
     catch err
         if isa(err, CompositeException)
-            @fact isempty(err.exceptions) --> false
+            @test !isempty(err.exceptions)
             for excep in err.exceptions
                 # Unpack the remote exception
                 orig_err = excep.ex.captured.ex
-                @fact isa(orig_err, ArgumentError) --> true
+                @test isa(orig_err, ArgumentError)
             end
         else
-            @fact isa(err, ArgumentError) --> true
+            @test isa(err, ArgumentError)
         end
     end
 
-    @fact sum(DA) --> roughly(sum(A), atol=1e-12)
-    @fact sum(DA,1) --> roughly(sum(A,1), atol=1e-12)
-    @fact sum(DA,2) --> roughly(sum(A,2), atol=1e-12)
-    @fact sum(DA,3) --> roughly(sum(A,3), atol=1e-12)
+    @test sum(DA) ≈ sum(A)
+    @test sum(DA,1) ≈ sum(A,1)
+    @test sum(DA,2) ≈ sum(A,2)
+    @test sum(DA,3) ≈ sum(A,3)
     close(DA)
     darray_closeall()   # temporaries created above
 end
 
 check_leaks()
 
-facts("test size on DArrays") do
+@testset "test size on DArrays" begin
+
     A = randn(100,100)
     DA = distribute(A)
 
-    @fact_throws size(DA, 0) # BoundsError
-    @fact size(DA,1) --> size(A,1)
-    @fact size(DA,2) --> size(A,2)
-    @fact size(DA,3) --> size(A,3)
+    @test_throws BoundsError size(DA, 0)
+    @test size(DA,1) == size(A,1)
+    @test size(DA,2) == size(A,2)
+    @test size(DA,3) == size(A,3)
     close(DA)
 end
 
 check_leaks()
 
 # test length / endof
-facts("test collections API") do
+@testset "test collections API" begin
     A = randn(23,23)
     DA = distribute(A)
 
-    context("test length") do
-        @fact length(DA) --> length(A)
+    @testset "test length" begin
+        @test length(DA) == length(A)
     end
 
-    context("test endof") do
-        @fact endof(DA) --> endof(A)
+    @testset "test endof" begin
+        @test endof(DA) == endof(A)
     end
     close(DA)
 end
 
 check_leaks()
 
-facts("test max / min / sum") do
+@testset "test max / min / sum" begin
     a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
     d = distribute(a)
 
-    @fact sum(d) --> sum(a)
-    @fact maximum(d) --> maximum(a)
-    @fact minimum(d) --> minimum(a)
-    @fact maxabs(d) --> maxabs(a)
-    @fact minabs(d) --> minabs(a)
-    @fact sumabs(d) --> sumabs(a)
-    @fact sumabs2(d) --> sumabs2(a)
+    @test sum(d) == sum(a)
+    @test maximum(d) == maximum(a)
+    @test minimum(d) == minimum(a)
+    @test maxabs(d) == maxabs(a)
+    @test minabs(d) == minabs(a)
+    @test sumabs(d) == sumabs(a)
+    @test sumabs2(d) == sumabs2(a)
     close(d)
 end
 
 check_leaks()
 
-facts("test all / any") do
+@testset "test all / any" begin
     a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
     a = [true for i in 1:100]
     d = distribute(a)
 
-    @fact all(d) --> true
-    @fact any(d) --> true
+    @test all(d)
+    @test any(d)
 
     close(d)
 
     a[50] = false
     d = distribute(a)
-    @fact all(d) --> false
-    @fact any(d) --> true
+    @test !all(d)
+    @test any(d)
 
     close(d)
 
     a = [false for i in 1:100]
     d = distribute(a)
-    @fact all(d) --> false
-    @fact any(d) --> false
+    @test !all(d)
+    @test !any(d)
 
     close(d)
 
     d = dones(10,10)
-    @fact all(x-> x>1.0, d) --> false
-    @fact all(x-> x>0.0, d) --> true
+    @test !all(x-> x>1.0, d)
+    @test all(x-> x>0.0, d)
 
     close(d)
 
     a = ones(10,10)
     a[10] = 2.0
     d = distribute(a)
-    @fact any(x-> x == 1.0, d) --> true
-    @fact any(x-> x == 2.0, d) --> true
-    @fact any(x-> x == 3.0, d) --> false
+    @test any(x-> x == 1.0, d)
+    @test any(x-> x == 2.0, d)
+    @test !any(x-> x == 3.0, d)
 
     close(d)
 end
 
 check_leaks()
 
-facts("test count" ) do
+@testset "test count"  begin
     a = ones(10,10)
     a[10] = 2.0
     d = distribute(a)
 
-    @fact count(x-> x == 2.0, d) --> 1
-    @fact count(x-> x == 1.0, d) --> 99
-    @fact count(x-> x == 0.0, d) --> 0
+    @test count(x-> x == 2.0, d) == 1
+    @test count(x-> x == 1.0, d) == 99
+    @test count(x-> x == 0.0, d) == 0
 
     close(d)
 end
 
 check_leaks()
 
-facts("test prod") do
+@testset "test prod" begin
     a = fill(2, 10);
     d = distribute(a);
-    @fact prod(d) --> 2^10
+    @test prod(d) == 2^10
 
     close(d)
 end
 
 check_leaks()
 
-facts("test zeros") do
-    context("1D dzeros default element type") do
+@testset "test zeros" begin
+    @testset "1D dzeros default element type" begin
         A = dzeros(10)
-        @fact A --> zeros(10)
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (10,)
+        @test A == zeros(10)
+        @test eltype(A) == Float64
+        @test size(A) == (10,)
         close(A)
     end
 
-    context("1D dzeros with specified element type") do
+    @testset "1D dzeros with specified element type" begin
         A = dzeros(Int, 10)
-        @fact A --> zeros(10)
-        @fact eltype(A) --> Int
-        @fact size(A) --> (10,)
+        @test A == zeros(10)
+        @test eltype(A) == Int
+        @test size(A) == (10,)
         close(A)
     end
 
-    context("2D dzeros default element type, Dims constuctor") do
+    @testset "2D dzeros default element type, Dims constuctor" begin
         A = dzeros((10,10))
-        @fact A --> zeros((10,10))
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (10,10)
+        @test A == zeros((10,10))
+        @test eltype(A) == Float64
+        @test size(A) == (10,10)
         close(A)
     end
 
-    context("2D dzeros specified element type, Dims constructor") do
+    @testset "2D dzeros specified element type, Dims constructor" begin
         A = dzeros(Int, (10,10))
-        @fact A --> zeros(Int, (10,10))
-        @fact eltype(A) --> Int
-        @fact size(A) --> (10,10)
+        @test A == zeros(Int, (10,10))
+        @test eltype(A) == Int
+        @test size(A) == (10,10)
         close(A)
     end
 
-    context("2D dzeros, default element type") do
+    @testset "2D dzeros, default element type" begin
         A = dzeros(10,10)
-        @fact A --> zeros(10,10)
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (10,10)
+        @test A == zeros(10,10)
+        @test eltype(A) == Float64
+        @test size(A) == (10,10)
         close(A)
     end
 
-    context("2D dzeros, specified element type") do
+    @testset "2D dzeros, specified element type" begin
         A = dzeros(Int, 10, 10)
-        @fact A --> zeros(Int, 10, 10)
-        @fact eltype(A) --> Int
-        @fact size(A) --> (10,10)
+        @test A == zeros(Int, 10, 10)
+        @test eltype(A) == Int
+        @test size(A) == (10,10)
         close(A)
     end
 end
 
 check_leaks()
 
-facts("test dones") do
-    context("1D dones default element type") do
+@testset "test dones" begin
+    @testset "1D dones default element type" begin
         A = dones(10)
-        @fact A --> ones(10)
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (10,)
+        @test A == ones(10)
+        @test eltype(A) == Float64
+        @test size(A) == (10,)
         close(A)
     end
 
-    context("1D dones with specified element type") do
+    @testset "1D dones with specified element type" begin
         A = dones(Int, 10)
-        @fact eltype(A) --> Int
-        @fact size(A) --> (10,)
+        @test eltype(A) == Int
+        @test size(A) == (10,)
         close(A)
     end
 
-    context("2D dones default element type, Dims constuctor") do
+    @testset "2D dones default element type, Dims constuctor" begin
         A = dones((10,10))
-        @fact A --> ones((10,10))
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (10,10)
+        @test A == ones((10,10))
+        @test eltype(A) == Float64
+        @test size(A) == (10,10)
         close(A)
     end
 
-    context("2D dones specified element type, Dims constructor") do
+    @testset "2D dones specified element type, Dims constructor" begin
         A = dones(Int, (10,10))
-        @fact A --> ones(Int, (10,10))
-        @fact eltype(A) --> Int
-        @fact size(A) --> (10,10)
+        @test A == ones(Int, (10,10))
+        @test eltype(A) == Int
+        @test size(A) == (10,10)
         close(A)
     end
 
-    context("2D dones, default element type") do
+    @testset "2D dones, default element type" begin
         A = dones(10,10)
-        @fact A --> ones(10,10)
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (10,10)
+        @test A == ones(10,10)
+        @test eltype(A) == Float64
+        @test size(A) == (10,10)
         close(A)
     end
 
-    context("2D dones, specified element type") do
+    @testset "2D dones, specified element type" begin
         A = dones(Int, 10, 10)
-        @fact A --> ones(Int, 10, 10)
-        @fact eltype(A) --> Int
-        @fact size(A) --> (10,10)
+        @test A == ones(Int, 10, 10)
+        @test eltype(A) == Int
+        @test size(A) == (10,10)
         close(A)
     end
 end
 
 check_leaks()
 
-facts("test drand") do
-    context("1D drand") do
+@testset "test drand" begin
+    @testset "1D drand" begin
         A = drand(100)
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (100,)
-        @fact all(x-> x >= 0.0 && x <= 1.0, A) --> true
+        @test eltype(A) == Float64
+        @test size(A) == (100,)
+        @test all(x-> x >= 0.0 && x <= 1.0, A)
         close(A)
     end
 
-    context("1D drand, specified element type") do
+    @testset "1D drand, specified element type" begin
         A = drand(Int, 100)
-        @fact eltype(A) --> Int
-        @fact size(A) --> (100,)
+        @test eltype(A) == Int
+        @test size(A) == (100,)
         close(A)
     end
 
-    context("2D drand, Dims constructor") do
+    @testset "2D drand, Dims constructor" begin
         A = drand((50,50))
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (50,50)
-        @fact all(x-> x >= 0.0 && x <= 1.0, A) --> true
+        @test eltype(A) == Float64
+        @test size(A) == (50,50)
+        @test all(x-> x >= 0.0 && x <= 1.0, A)
         close(A)
     end
 
-    context("2D drand") do
+    @testset "2D drand" begin
         A = drand(100,100)
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (100,100)
-        @fact all(x-> x >= 0.0 && x <= 1.0, A) --> true
+        @test eltype(A) == Float64
+        @test size(A) == (100,100)
+        @test all(x-> x >= 0.0 && x <= 1.0, A)
         close(A)
     end
 
-    context("2D drand, Dims constructor, specified element type") do
+    @testset "2D drand, Dims constructor, specified element type" begin
         A = drand(Int, (100,100))
-        @fact eltype(A) --> Int
-        @fact size(A) --> (100,100)
+        @test eltype(A) == Int
+        @test size(A) == (100,100)
         close(A)
     end
 
-    context("2D drand, specified element type") do
+    @testset "2D drand, specified element type" begin
         A = drand(Int, 100, 100)
-        @fact eltype(A) --> Int
-        @fact size(A) --> (100,100)
+        @test eltype(A) == Int
+        @test size(A) == (100,100)
         close(A)
     end
 end
 
 check_leaks()
 
-facts("test randn") do
-    context("1D drandn") do
+@testset "test randn" begin
+    @testset "1D drandn" begin
         A = drandn(100)
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (100,)
+        @test eltype(A) == Float64
+        @test size(A) == (100,)
         close(A)
     end
 
-    context("2D drandn, Dims constructor") do
+    @testset "2D drandn, Dims constructor" begin
         A = drandn((50,50))
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (50,50)
+        @test eltype(A) == Float64
+        @test size(A) == (50,50)
         close(A)
     end
 
-    context("2D drandn") do
+    @testset "2D drandn" begin
         A = drandn(100,100)
-        @fact eltype(A) --> Float64
-        @fact size(A) --> (100,100)
+        @test eltype(A) == Float64
+        @test size(A) == (100,100)
         close(A)
     end
 end
 
 check_leaks()
 
-facts("test c/transpose") do
-    context("test ctranspose real") do
+@testset "test c/transpose" begin
+    @testset "test ctranspose real" begin
         A = drand(Float64, 100, 200)
-        @fact A' --> Array(A)'
+        @test A' == Array(A)'
         close(A)
     end
-    context("test ctranspose complex") do
+    @testset "test ctranspose complex" begin
         A = drand(Complex128, 200, 100)
-        @fact A' --> Array(A)'
+        @test A' == Array(A)'
         close(A)
     end
-    context("test transpose real") do
+    @testset "test transpose real" begin
         A = drand(Float64, 200, 100)
-        @fact A.' --> Array(A).'
+        @test A.' == Array(A).'
         close(A)
     end
-    context("test ctranspose complex") do
+    @testset "test ctranspose complex" begin
         A = drand(Complex128, 100, 200)
-        @fact A.' --> Array(A).'
+        @test A.' == Array(A).'
         close(A)
     end
 
@@ -568,26 +561,26 @@ end
 
 check_leaks()
 
-facts("test convert from subdarray") do
+@testset "test convert from subdarray" begin
     a = drand(20, 20);
 
     s = view(a, 1:5, 5:8)
-    @fact isa(s, SubDArray) --> true
-    @fact s --> convert(DArray, s)
+    @test isa(s, SubDArray)
+    @test s == convert(DArray, s)
 
     s = view(a, 6:5, 5:8)
-    @fact isa(s, SubDArray) --> true
-    @fact s --> convert(DArray, s)
+    @test isa(s, SubDArray)
+    @test s == convert(DArray, s)
     close(a)
     darray_closeall()  # close the temporaries created above
 end
 
 check_leaks()
 
-facts("test scalar math") do
+@testset "test scalar math" begin
     a = drand(20, 20);
     b = convert(Array, a)
-    for f in (:abs, :abs2, :acos, :acosd, :acot,
+    @testset "$f" for f in (:abs, :abs2, :acos, :acosd, :acot,
               :acotd, :acsch, :angle, :asech, :asin,
               :asind, :asinh, :atan, :atand, :atanh,
               :big, :cbrt, :ceil, :cis, :complex, :conj,
@@ -600,16 +593,12 @@ facts("test scalar math") do
               :lgamma, :log, :log10, :log1p, :log2, :rad2deg, :real,
               :sec, :secd, :sech, :sign, :sin, :sinc, :sind,
               :sinh, :sinpi, :sqrt, :tan, :tand, :tanh, :trigamma)
-        context("$f") do
-            @fact (eval(f))(a) --> (eval(f))(b)
-        end
+        @test (eval(f))(a) == (eval(f))(b)
     end
     a = a + 1
     b = b + 1
-    for f in (:asec, :asecd, :acosh, :acsc, :acscd, :acoth)
-        context("$f") do
-            @fact (eval(f))(a) --> (eval(f))(b)
-        end
+    @testset "$f" for f in (:asec, :asecd, :acosh, :acsc, :acscd, :acoth)
+        @test (eval(f))(a) == (eval(f))(b)
     end
     close(a)
     darray_closeall()  # close the temporaries created above
@@ -619,7 +608,7 @@ check_leaks()
 
 # The mapslices tests have been taken from Base.
 # Commented out tests that need to be enabled in due course when DArray support is more complete
-facts("test mapslices") do
+@testset "test mapslices" begin
     a = drand((5,5), workers(), [1, min(nworkers(), 5)])
     if VERSION < v"0.5.0-dev+4361"
         h = mapslices(v -> hist(v,0:0.1:1)[2], a, 1)
@@ -631,31 +620,31 @@ facts("test mapslices") do
 #    S = mapslices(sort, a, [2])
     for i = 1:5
         if VERSION < v"0.5.0-dev+4361"
-            @fact h[:,i] --> hist(a[:,i],0:0.1:1)[2]
+            @test h[:,i] == hist(a[:,i],0:0.1:1)[2]
         else
-            @fact h[:,i] --> fit(Histogram, a[:,i],0:0.1:1).weights
+            @test h[:,i] == fit(Histogram, a[:,i],0:0.1:1).weights
         end
-#        @fact vec(H[i,:]) => hist(vec(a[i,:]),0:0.1:1)[2]
-#        @fact s[:,i] => sort(a[:,i])
-#        @fact vec(S[i,:]) => sort(vec(a[i,:]))
+#        @test vec(H[i,:]) => hist(vec(a[i,:]),0:0.1:1)[2]
+#        @test s[:,i] => sort(a[:,i])
+#        @test vec(S[i,:]) => sort(vec(a[i,:]))
     end
 
     # issue #3613
     b = mapslices(sum, dones(Float64, (2,3,4), workers(), [1,1,min(nworkers(),4)]), [1,2])
-    @fact size(b) --> exactly((1,1,4))
-    @fact all(b.==6) --> true
+    @test size(b) == (1,1,4)
+    @test all(b.==6)
 
     # issue #5141
     ## Update Removed the version that removes the dimensions when dims==1:ndims(A)
     c1 = mapslices(x-> maximum(-x), a, [])
-#    @fact c1 => -a
+#    @test c1 => -a
 
     # issue #5177
     c = dones(Float64, (2,3,4,5), workers(), [1,1,1,min(nworkers(),5)])
     m1 = mapslices(x-> ones(2,3), c, [1,2])
     m2 = mapslices(x-> ones(2,4), c, [1,3])
     m3 = mapslices(x-> ones(3,4), c, [2,3])
-    @fact size(m1) == size(m2) == size(m3) == size(c) --> true
+    @test size(m1) == size(m2) == size(m3) == size(c)
 
     n1 = mapslices(x-> ones(6), c, [1,2])
     n2 = mapslices(x-> ones(6), c, [1,3])
@@ -663,8 +652,8 @@ facts("test mapslices") do
     n1a = mapslices(x-> ones(1,6), c, [1,2])
     n2a = mapslices(x-> ones(1,6), c, [1,3])
     n3a = mapslices(x-> ones(1,6), c, [2,3])
-    @fact (size(n1a) == (1,6,4,5) && size(n2a) == (1,3,6,5) && size(n3a) == (2,1,6,5)) --> true
-    @fact (size(n1) == (6,1,4,5) && size(n2) == (6,3,1,5) && size(n3) == (2,6,1,5)) --> true
+    @test (size(n1a) == (1,6,4,5) && size(n2a) == (1,3,6,5) && size(n3a) == (2,1,6,5))
+    @test (size(n1) == (6,1,4,5) && size(n2) == (6,3,1,5) && size(n3) == (2,6,1,5))
     close(a)
     close(c)
     darray_closeall()  # close the temporaries created above
@@ -672,19 +661,17 @@ end
 
 check_leaks()
 
-facts("test scalar ops") do
+@testset "test scalar ops" begin
     a = drand(20,20)
     b = convert(Array, a)
     c = drand(20,20)
     d = convert(Array, c)
 
-    for f in (:+, :-, :.+, :.-, :.*, :./, :.%, :div, :mod)
-        context("$f") do
-            x = rand()
-            @fact (eval(f))(a, x) --> (eval(f))(b, x)
-            @fact (eval(f))(x, a) --> (eval(f))(x, b)
-            @fact (eval(f))(a, c) --> (eval(f))(b, d)
-        end
+    @testset "$f" for f in (:+, :-, :.+, :.-, :.*, :./, :.%, :div, :mod)
+        x = rand()
+        @test (eval(f))(a, x) == (eval(f))(b, x)
+        @test (eval(f))(x, a) == (eval(f))(x, b)
+        @test (eval(f))(a, c) == (eval(f))(b, d)
     end
 
     close(a)
@@ -692,19 +679,15 @@ facts("test scalar ops") do
 
     a = dones(Int, 20, 20)
     b = convert(Array, a)
-    for f in (:.<<, :.>>)
-        context("$f") do
-            @fact (eval(f))(a, 2) --> (eval(f))(b, 2)
-            @fact (eval(f))(2, a) --> (eval(f))(2, b)
-            @fact (eval(f))(a, a) --> (eval(f))(b, b)
-        end
+    @testset "$f" for f in (:.<<, :.>>)
+        @test (eval(f))(a, 2) == (eval(f))(b, 2)
+        @test (eval(f))(2, a) == (eval(f))(2, b)
+        @test (eval(f))(a, a) == (eval(f))(b, b)
     end
 
-    for f in (:rem,)
-        context("$f") do
-            x = rand()
-            @fact (eval(f))(a, x) --> (eval(f))(b, x)
-        end
+    @testset "$f" for f in (:rem,)
+        x = rand()
+        @test (eval(f))(a, x) == (eval(f))(b, x)
     end
     close(a)
     close(c)
@@ -713,7 +696,7 @@ end
 
 check_leaks()
 
-facts("test broadcast ops") do
+@testset "test broadcast ops" begin
     wrkrs = workers()
     nwrkrs = length(wrkrs)
     nrows = 20 * nwrkrs
@@ -722,21 +705,21 @@ facts("test broadcast ops") do
     m = mean(a, 1)
     c = a .- m
     d = convert(Array, a) .- convert(Array, m)
-    @fact c --> d
+    @test c == d
     darray_closeall()
 end
 
 check_leaks()
 
-facts("test matrix multiplication") do
+@testset "test matrix multiplication" begin
     A = drandn(20,20)
     b = drandn(20)
     B = drandn(20,20)
 
-    @fact norm(convert(Array, A*b) - convert(Array, A)*convert(Array, b), Inf) --> less_than(sqrt(eps()))
-    @fact norm(convert(Array, A*B) - convert(Array, A)*convert(Array, B), Inf) -->  less_than(sqrt(eps()))
-    @fact norm(convert(Array, A'*b) - convert(Array, A)'*convert(Array, b), Inf) --> less_than(sqrt(eps()))
-    @fact norm(convert(Array, A'*B) - convert(Array, A)'*convert(Array, B), Inf) --> less_than(sqrt(eps()))
+    @test norm(convert(Array, A*b) - convert(Array, A)*convert(Array, b), Inf) < sqrt(eps())
+    @test norm(convert(Array, A*B) - convert(Array, A)*convert(Array, B), Inf) < sqrt(eps())
+    @test norm(convert(Array, A'*b) - convert(Array, A)'*convert(Array, b), Inf) < sqrt(eps())
+    @test norm(convert(Array, A'*B) - convert(Array, A)'*convert(Array, B), Inf) < sqrt(eps())
     close(A)
     close(b)
     close(B)
@@ -745,24 +728,24 @@ end
 
 check_leaks()
 
-facts("test norm") do
+@testset "test norm" begin
     x = drandn(20)
 
-    @fact abs(norm(x) - norm(convert(Array, x))) --> less_than(sqrt(eps()))
-    @fact abs(norm(x, 1) - norm(convert(Array, x), 1)) --> less_than(sqrt(eps()))
-    @fact abs(norm(x, 2) - norm(convert(Array, x), 2)) --> less_than(sqrt(eps()))
-    @fact abs(norm(x, Inf) - norm(convert(Array, x), Inf)) --> less_than(sqrt(eps()))
+    @test abs(norm(x) - norm(convert(Array, x))) < sqrt(eps())
+    @test abs(norm(x, 1) - norm(convert(Array, x), 1)) < sqrt(eps())
+    @test abs(norm(x, 2) - norm(convert(Array, x), 2)) < sqrt(eps())
+    @test abs(norm(x, Inf) - norm(convert(Array, x), Inf)) < sqrt(eps())
     close(x)
 end
 
 check_leaks()
 
-facts("test axpy!") do
+@testset "test axpy!" begin
     x = drandn(20)
     y = drandn(20)
 
-    @fact norm(convert(Array, LinAlg.axpy!(2.0, x, copy(y))) - LinAlg.axpy!(2.0, convert(Array, x), convert(Array, y))) --> less_than(sqrt(eps()))
-    @fact_throws LinAlg.axpy!(2.0, x, zeros(length(x) + 1)) DimensionMismatch
+    @test norm(convert(Array, LinAlg.axpy!(2.0, x, copy(y))) - LinAlg.axpy!(2.0, convert(Array, x), convert(Array, y))) < sqrt(eps())
+    @test_throws DimensionMismatch LinAlg.axpy!(2.0, x, zeros(length(x) + 1))
     close(x)
     close(y)
     darray_closeall()  # close the temporaries created above
@@ -770,7 +753,7 @@ end
 
 check_leaks()
 
-facts("test ppeval") do
+@testset "test ppeval" begin
     A = drandn((10, 10, nworkers()), workers(), [1, 1, nworkers()])
     B = drandn((10, nworkers()), workers(), [1, nworkers()])
 
@@ -778,8 +761,8 @@ facts("test ppeval") do
     for i = 1:nworkers()
         R[:, i] = convert(Array, A)[:, :, i]*convert(Array, B)[:, i]
     end
-    @fact convert(Array, ppeval(*, A, B)) --> roughly(R)
-    @fact sum(ppeval(eigvals, A)) --> roughly(sum(ppeval(eigvals, A, eye(10, 10))))
+    @test convert(Array, ppeval(*, A, B)) ≈ R
+    @test sum(ppeval(eigvals, A)) ≈ sum(ppeval(eigvals, A, eye(10, 10)))
     close(A)
     close(B)
     darray_closeall()  # close the temporaries created above
@@ -787,12 +770,12 @@ end
 
 check_leaks()
 
-facts("test nnz") do
+@testset "test nnz" begin
     A = sprandn(10, 10, 0.5)
-    @fact nnz(distribute(A)) --> nnz(A)
+    @test nnz(distribute(A)) == nnz(A)
 end
 
-facts("test matmatmul") do
+@testset "test matmatmul" begin
     A = drandn(30, 30)
     B = drandn(30, 20)
     a = convert(Array, A)
@@ -806,23 +789,19 @@ facts("test matmatmul") do
     atb = a.' * b
     acb = a' * b
 
-    @fact AB --> roughly(ab)
-    @fact AtB --> roughly(atb)
-    @fact AcB --> roughly(acb)
+    @test AB ≈ ab
+    @test AtB ≈ atb
+    @test AcB ≈ acb
     darray_closeall()  # close the temporaries created above
 end
 
-facts("sort") do
-    for i in 0:6
-        for T in [Int, Float64]
-            d=DistributedArrays.drand(T, 10^i)
-            for sample in Any[true, false, (minimum(d),maximum(d)), rand(T, 10^i>512 ? 512 : 10^i)]
-                d2=DistributedArrays.sort(d; sample=sample)
+@testset "sort, T = $T" for i in 0:6, T in [Int, Float64]
+    d = DistributedArrays.drand(T, 10^i)
+    @testset "sample = $sample" for sample in Any[true, false, (minimum(d),maximum(d)), rand(T, 10^i>512 ? 512 : 10^i)]
+        d2 = DistributedArrays.sort(d; sample=sample)
 
-                @fact length(d) --> length(d2)
-                @fact sort(convert(Array, d)) --> convert(Array, d2)
-            end
-        end
+        @test length(d) == length(d2)
+        @test sort(convert(Array, d)) == convert(Array, d2)
     end
     darray_closeall()  # close the temporaries created above
 end
@@ -831,11 +810,11 @@ check_leaks()
 
 darray_closeall()
 
-facts("test for any leaks") do
+@testset "test for any leaks" begin
     sleep(1.0)     # allow time for any cleanup to complete
     allrefszero = Bool[remotecall_fetch(()->length(DistributedArrays.refs) == 0, p) for p in procs()]
-    @fact all(allrefszero) --> true
+    @test all(allrefszero)
 
     allregistrieszero = Bool[remotecall_fetch(()->length(DistributedArrays.registry) == 0, p) for p in procs()]
-    @fact all(allregistrieszero) --> true
+    @test all(allregistrieszero)
 end
