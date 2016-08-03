@@ -15,7 +15,7 @@ using DistributedArrays
 using StatsBase # for fit(Histogram, ...)
 @everywhere using StatsBase # because exported functions are not exported on workers with using
 
-@everywhere srand(123 + myid())
+@everywhere srand(1234 + myid())
 
 include("darray.jl")
 
