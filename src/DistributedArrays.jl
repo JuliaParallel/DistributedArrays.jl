@@ -538,14 +538,8 @@ Distribute a local array `A` like the distributed array `DA`.
 function distribute(A::AbstractArray, DA::DArray)
     size(DA) == size(A) || throw(DimensionMismatch("Distributed array has size $(size(DA)) but array has $(size(A))"))
 
-    owner = myid()
-    rr = RemoteChannel()
-    put!(rr, A)
-
-    d = DArray(DA) do I
-        remotecall_fetch(() -> fetch(rr)[I...], owner)
-    end
-    return d
+    pas = PartitionedSerializer(A, procs(DA), DA.indexes)
+    return DArray(I->verify_and_get(pas, I), DA)
 end
 
 Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
@@ -870,6 +864,21 @@ map_localparts(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
 map_localparts(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
     f(localpart(d1), localpart(d2))
 end
+
+function map_localparts(f::Callable, DA::DArray, A::Array)
+    pas = PartitionedSerializer(A, procs(DA), DA.indexes)
+    DArray(DA) do I
+        f(localpart(DA), verify_and_get(pas, I))
+    end
+end
+
+function map_localparts(f::Callable, A::Array, DA::DArray)
+    pas = PartitionedSerializer(A, procs(DA), DA.indexes)
+    DArray(DA) do I
+        f(verify_and_get(pas, I), localpart(DA))
+    end
+end
+
 function map_localparts!(f::Callable, d::DArray)
     @sync for p in procs(d)
         @async remotecall_fetch((f,d)->(f(localpart(d)); nothing), p, f, d)
