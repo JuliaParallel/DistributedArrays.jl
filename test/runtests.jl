@@ -1,3 +1,10 @@
+if VERSION >= v"0.5.0-dev+7720"
+    using Base.Test
+else
+    using BaseTestNext
+    const Test = BaseTestNext
+end
+
 # add at least 3 worker processes
 if nworkers() < 3
     n = max(3, min(8, Sys.CPU_CORES))
@@ -8,15 +15,12 @@ end
 
 using Compat
 import Compat.view
-# It should only be necessary to have FactCheck loaded on the master process, but
-# https://github.com/JuliaLang/julia/issues/15766. Move back to top when bug is fixed.
-using FactCheck
 using DistributedArrays
 using StatsBase # for fit(Histogram, ...)
 @everywhere using StatsBase # because exported functions are not exported on workers with using
 
 @everywhere srand(1234 + myid())
 
-include("darray.jl")
-
-FactCheck.exitstatus()
+@testset "DArray tests" begin
+    include("darray.jl")
+end
