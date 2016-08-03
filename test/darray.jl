@@ -9,23 +9,26 @@ function check_leaks()
 end
 
 facts("test distribute") do
-    A = randn(100,100)
+    A = rand(1:100, (100,100))
 
     context("test default distribute") do
         DA = distribute(A)
         @fact length(procs(DA)) --> nworkers()
+        @fact sum(DA) --> sum(A)
         close(DA)
     end
 
     context("test distribute with procs arguments") do
-        DA = distribute(A, procs = [1, 2])
-        @fact length(procs(DA)) --> 2
+        DA = distribute(A, procs = procs())
+        @fact length(procs(DA)) --> nprocs()
+        @fact sum(DA) --> sum(A)
         close(DA)
     end
 
     context("test distribute with procs and dist arguments") do
         DA = distribute(A, procs = [1, 2], dist = [1,2])
         @fact size(procs(DA)) --> (1,2)
+        @fact sum(DA) --> sum(A)
         close(DA)
     end
 
