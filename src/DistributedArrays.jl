@@ -28,6 +28,17 @@ export close, darray_closeall
 const registry=Dict{Tuple, Any}()
 const refs=Set()  # Collection of darray identities created on this node
 
+let DID::Int = 1
+    global next_did
+    next_did() = (id = DID; DID += 1; (myid(), id))
+end
+
+"""
+    next_did()
+
+Produces an incrementing ID that will be used for DArrays.
+"""
+next_did
 
 """
     DArray(init, dims, [procs, dist])
@@ -91,13 +102,49 @@ typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
 
 ## core constructors ##
 
+function DArray(identity, init, dims, pids, idxs, cuts)
+    r=Channel(1)
+    @sync begin
+        for i = 1:length(pids)
+            @async begin
+                local typA
+                if isa(init, Function)
+                    typA=remotecall_fetch(construct_localparts, pids[i], init, identity, dims, pids, idxs, cuts)
+                else
+                    # constructing from an array of remote refs.
+                    typA=remotecall_fetch(construct_localparts, pids[i], init[i], identity, dims, pids, idxs, cuts)
+                end
+                !isready(r) && put!(r, typA)
+            end
+        end
+    end
+
+    typA = take!(r)
+    if myid() in pids
+        d = registry[(identity, :DARRAY)]
+    else
+        d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
+    end
+    d
+end
+
+function construct_localparts(init, identity, dims, pids, idxs, cuts)
+    A = isa(init, Function) ? init(idxs[localpartindex(pids)]) : fetch(init)
+    global registry
+    registry[(identity, :LOCALPART)] = A
+    typA = typeof(A)
+    d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
+    registry[(identity, :DARRAY)] = d
+    typA
+end
+
 function DArray(init, dims, procs, dist)
     np = prod(dist)
     procs = reshape(procs[1:np], ntuple(i->dist[i], length(dist)))
     idxs, cuts = chunk_idxs([dims...], dist)
     identity = next_did()
 
-    return construct_darray(identity, init, dims, procs, idxs, cuts)
+    return DArray(identity, init, dims, procs, idxs, cuts)
 end
 
 function DArray(init, dims, procs)
@@ -146,7 +193,7 @@ function DArray(refs)
     ncuts = Array{Int,1}[unshift!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
     ndims = tuple([sort(unique(lastidxs[x,:]))[end]-1 for x in 1:length(dimdist)]...)
 
-    construct_darray(identity, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
+    DArray(identity, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
 end
 if VERSION < v"0.5.0-"
     macro DArray(ex::Expr)
@@ -185,48 +232,7 @@ else
 end
 
 # new DArray similar to an existing one
-DArray(init, d::DArray) = construct_darray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
-
-function construct_darray(identity, init, dims, pids, idxs, cuts)
-    r=Channel(1)
-    @sync begin
-        for i = 1:length(pids)
-            @async begin
-                local typA
-                if isa(init, Function)
-                    typA=remotecall_fetch(construct_localparts, pids[i], init, identity, dims, pids, idxs, cuts)
-                else
-                    # constructing from an array of remote refs.
-                    typA=remotecall_fetch(construct_localparts, pids[i], init[i], identity, dims, pids, idxs, cuts)
-                end
-                !isready(r) && put!(r, typA)
-            end
-        end
-    end
-
-    typA = take!(r)
-    if myid() in pids
-        d = registry[(identity, :DARRAY)]
-    else
-        d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
-    end
-    d
-end
-
-function construct_localparts(init, identity, dims, pids, idxs, cuts)
-    A = isa(init, Function) ? init(idxs[localpartindex(pids)]) : fetch(init)
-    global registry
-    registry[(identity, :LOCALPART)] = A
-    typA = typeof(A)
-    d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
-    registry[(identity, :DARRAY)] = d
-    typA
-end
-
-let DID::Int = 1
-    global next_did
-    next_did() = (id = DID; DID += 1; (myid(), id))
-end
+DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
 
 function release_localpart(identity)
     global registry
@@ -523,6 +529,25 @@ function distribute(A::AbstractArray;
     return DArray(I->verify_and_get(pas, I), size(A), procs, dist)
 end
 
+"""
+    distribute(A, DA)
+
+Distribute a local array `A` like the distributed array `DA`.
+
+"""
+function distribute(A::AbstractArray, DA::DArray)
+    size(DA) == size(A) || throw(DimensionMismatch("Distributed array has size $(size(DA)) but array has $(size(A))"))
+
+    owner = myid()
+    rr = RemoteChannel()
+    put!(rr, A)
+
+    d = DArray(DA) do I
+        remotecall_fetch(() -> fetch(rr)[I...], owner)
+    end
+    return d
+end
+
 Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
 
 Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
@@ -743,7 +768,7 @@ mapreducedim_within(f, op, A::DArray, region) = begin
         indx[i] = ntuple(j -> j in region ? (i.I[j]:i.I[j]) : A.indexes[i][j], ndims(A))
     end
     cuts = [i in region ? collect(1:arraysize[i] + 1) : A.cuts[i] for i in 1:ndims(A)]
-    return construct_darray(next_did(), I -> mapreducedim(f, op, localpart(A), region),
+    return DArray(next_did(), I -> mapreducedim(f, op, localpart(A), region),
         tuple(arraysize...), procs(A), indx, cuts)
 end
 

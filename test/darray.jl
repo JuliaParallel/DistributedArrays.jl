@@ -28,6 +28,23 @@ facts("test distribute") do
         @fact size(procs(DA)) --> (1,2)
         close(DA)
     end
+
+    context("Create darray with unconventional distribution and distibute like it") do
+        block = 10
+        Y = nworkers() * block
+        X = nworkers() * block
+        remote_parts = map(workers()) do wid
+            remotecall(rand, wid, block, Y)
+        end
+        DA1 = DArray(reshape(remote_parts, (length(remote_parts), 1)))
+        A = rand(X, Y)
+        DA2 = distribute(A, DA1)
+
+        @fact size(DA1) --> size(DA2)
+
+        close(DA1)
+        close(DA2)
+    end
 end
 
 check_leaks()
