@@ -101,20 +101,20 @@ check_leaks()
         close(D2)
 
         S2 = convert(Vector{Float64}, D[4, 23:176])
-        @fact A[4, 23:176] --> S2
+        @test A[4, 23:176] == S2
 
         S3 = convert(Vector{Float64}, D[23:176, 197])
-        @fact A[23:176, 197] --> S3
+        @test A[23:176, 197] == S3
 
         S4 = zeros(4)
         setindex!(S4, D[3:4, 99:100], :)
-        @fact S4 --> vec(D[3:4, 99:100])
-        @fact S4 --> vec(A[3:4, 99:100])
-        
+        @test S4 == vec(D[3:4, 99:100])
+        @test S4 == vec(A[3:4, 99:100])
+
         S5 = zeros(2,2)
         setindex!(S5, D[1,1:4], :, 1:2)
-        @fact vec(S5) --> D[1, 1:4]
-        @fact vec(S5) --> A[1, 1:4]
+        @test vec(S5) == D[1, 1:4]
+        @test vec(S5) == A[1, 1:4]
     end
     close(D)
 end
@@ -626,20 +626,12 @@ check_leaks()
 # Commented out tests that need to be enabled in due course when DArray support is more complete
 @testset "test mapslices" begin
     a = drand((5,5), workers(), [1, min(nworkers(), 5)])
-    if VERSION < v"0.5.0-dev+4361"
-        h = mapslices(v -> hist(v,0:0.1:1)[2], a, 1)
-    else
-        h = mapslices(v -> fit(Histogram,v,0:0.1:1).weights, a, 1)
-    end
+    h = mapslices(v -> fit(Histogram,v,0:0.1:1).weights, a, 1)
 #    H = mapslices(v -> hist(v,0:0.1:1)[2], a, 2)
 #    s = mapslices(sort, a, [1])
 #    S = mapslices(sort, a, [2])
     for i = 1:5
-        if VERSION < v"0.5.0-dev+4361"
-            @test h[:,i] == hist(a[:,i],0:0.1:1)[2]
-        else
-            @test h[:,i] == fit(Histogram, a[:,i],0:0.1:1).weights
-        end
+        @test h[:,i] == fit(Histogram, a[:,i],0:0.1:1).weights
 #        @test vec(H[i,:]) => hist(vec(a[i,:]),0:0.1:1)[2]
 #        @test s[:,i] => sort(a[:,i])
 #        @test vec(S[i,:]) => sort(vec(a[i,:]))
