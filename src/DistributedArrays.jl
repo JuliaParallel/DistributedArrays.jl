@@ -1498,7 +1498,7 @@ type PartitionedSerializer
 
    PartitionedSerializer(obj, local_idxs::Tuple) = new(obj, Nullable{Array}(), Nullable{Array}(), local_idxs)
    function PartitionedSerializer(obj, pids::Array, idxs::Array)
-        pas = new(obj,pids,idxs,Nullable{Array}())
+        pas = new(obj,pids,idxs,Nullable{Tuple}())
 
         if myid() in pids
             pas.local_idxs = idxs[findfirst(pids, myid())]
@@ -1515,7 +1515,6 @@ function Base.serialize(S::AbstractSerializer, pas::PartitionedSerializer)
     serialize(S, I)
 end
 
-
 function Base.deserialize{T<:PartitionedSerializer}(S::AbstractSerializer, t::Type{T})
     obj_part = deserialize(S)
     I = deserialize(S)
@@ -1523,8 +1522,15 @@ function Base.deserialize{T<:PartitionedSerializer}(S::AbstractSerializer, t::Ty
 end
 
 function verify_and_get(pas::PartitionedSerializer, I)
-    @assert I == get(pas.local_idxs, [])
-    return pas.indexable_obj
+    # Handle the special case where myid() is part of pas.pids.
+    # For this case serialize/deserialize is not called as the remotecall is executed locally
+    if myid() in get(pas.pids, [])
+        @assert I == get(pas.idxs)[findfirst(get(pas.pids),myid())]
+        return pas.indexable_obj[I...]
+    else
+        @assert I == get(pas.local_idxs, ())
+        return pas.indexable_obj
+    end
 end
 
 end # module
