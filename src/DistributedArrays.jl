@@ -517,14 +517,10 @@ Convert a local array to distributed.
 function distribute(A::AbstractArray;
     procs = workers()[1:min(nworkers(), maximum(size(A)))],
     dist = defaultdist(size(A), procs))
+    idxs, _ = chunk_idxs([size(A)...], dist)
 
-    owner = myid()
-    rr = RemoteChannel()
-    put!(rr, A)
-    d = DArray(size(A), procs, dist) do I
-        remotecall_fetch(() -> fetch(rr)[I...], owner)
-    end
-    return d
+    pas = PartitionedSerializer(A, procs, idxs)
+    return DArray(I->verify_and_get(pas, I), size(A), procs, dist)
 end
 
 Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
@@ -1491,5 +1487,44 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
     return DArray(local_sorted_refs)
 end
 
+# Serialize only those parts of the object as required by the destination worker.
+type PartitionedSerializer
+   indexable_obj                      # An indexable object, Array, SparseMatrix, etc.
+                                      # Complete object on the serializing side.
+                                      # Part object on the deserialized side.
+   pids::Nullable{Array}
+   idxs::Nullable{Array}
+   local_idxs::Nullable{Tuple}
+
+   PartitionedSerializer(obj, local_idxs::Tuple) = new(obj, Nullable{Array}(), Nullable{Array}(), local_idxs)
+   function PartitionedSerializer(obj, pids::Array, idxs::Array)
+        pas = new(obj,pids,idxs,Nullable{Array}())
+
+        if myid() in pids
+            pas.local_idxs = idxs[findfirst(pids, myid())]
+        end
+        return pas
+    end
+end
+
+function Base.serialize(S::AbstractSerializer, pas::PartitionedSerializer)
+    pid = Base.worker_id_from_socket(S.io)
+    I = get(pas.idxs)[findfirst(get(pas.pids), pid)]
+    Serializer.serialize_type(S, typeof(pas))
+    serialize(S, pas.indexable_obj[I...])
+    serialize(S, I)
+end
+
+
+function Base.deserialize{T<:PartitionedSerializer}(S::AbstractSerializer, t::Type{T})
+    obj_part = deserialize(S)
+    I = deserialize(S)
+    return PartitionedSerializer(obj_part, I)
+end
+
+function verify_and_get(pas::PartitionedSerializer, I)
+    @assert I == get(pas.local_idxs, [])
+    return pas.indexable_obj
+end
 
 end # module
