@@ -629,25 +629,25 @@ check_leaks()
 @testset "test scalar math" begin
     a = drand(20, 20);
     b = convert(Array, a)
-    @testset "$f" for f in (:-, :abs, :abs2, :acos, :acosd, :acot,
-              :acotd, :acsch, :angle, :asech, :asin,
-              :asind, :asinh, :atan, :atand, :atanh,
-              :big, :cbrt, :ceil, :cis, :complex, :conj,
-              :cos, :cosc, :cosd, :cosh, :cospi, :cot,
-              :cotd, :coth, :csc, :cscd, :csch, :dawson,
-              :deg2rad, :digamma, :erf, :erfc, :erfcinv,
-              :erfcx, :erfi, :erfinv, :exp, :exp10, :exp2,
-              :expm1, :exponent, :float, :floor, :gamma, :imag,
-              :invdigamma, :isfinite, :isinf, :isnan, :lfact,
-              :lgamma, :log, :log10, :log1p, :log2, :rad2deg, :real,
-              :sec, :secd, :sech, :sign, :sin, :sinc, :sind,
-              :sinh, :sinpi, :sqrt, :tan, :tand, :tanh, :trigamma)
-        @test (eval(f))(a) == (eval(f))(b)
+    @testset "$f" for f in (-, abs, abs2, acos, acosd, acot,
+              acotd, acsch, angle, asech, asin,
+              asind, asinh, atan, atand, atanh,
+              big, cbrt, ceil, cis, complex, conj,
+              cos, cosc, cosd, cosh, cospi, cot,
+              cotd, coth, csc, cscd, csch, dawson,
+              deg2rad, digamma, erf, erfc, erfcinv,
+              erfcx, erfi, erfinv, exp, exp10, exp2,
+              expm1, exponent, float, floor, gamma, imag,
+              invdigamma, isfinite, isinf, isnan, lfact,
+              lgamma, log, log10, log1p, log2, rad2deg, real,
+              sec, secd, sech, sign, sin, sinc, sind,
+              sinh, sinpi, sqrt, tan, tand, tanh, trigamma)
+        @test f(a) == f(b)
     end
     a = a + 1
     b = b + 1
-    @testset "$f" for f in (:asec, :asecd, :acosh, :acsc, :acscd, :acoth)
-        @test (eval(f))(a) == (eval(f))(b)
+    @testset "$f" for f in (asec, asecd, acosh, acsc, acscd, acoth)
+        @test f(a) == f(b)
     end
     close(a)
     darray_closeall()  # close the temporaries created above
@@ -708,11 +708,11 @@ check_leaks()
     c = drand(20,20)
     d = convert(Array, c)
 
-    @testset "$f" for f in (:+, :-, :.+, :.-, :.*, :./, :.%, :div, :mod)
+    @testset "$f" for f in (+, -, .+, .-, .*, ./, .%, div, mod)
         x = rand()
-        @test (eval(f))(a, x) == (eval(f))(b, x)
-        @test (eval(f))(x, a) == (eval(f))(x, b)
-        @test (eval(f))(a, c) == (eval(f))(b, d)
+        @test f(a, x) == f(b, x)
+        @test f(x, a) == f(x, b)
+        @test f(a, c) == f(b, d)
     end
 
     close(a)
@@ -720,15 +720,15 @@ check_leaks()
 
     a = dones(Int, 20, 20)
     b = convert(Array, a)
-    @testset "$f" for f in (:.<<, :.>>)
-        @test (eval(f))(a, 2) == (eval(f))(b, 2)
-        @test (eval(f))(2, a) == (eval(f))(2, b)
-        @test (eval(f))(a, a) == (eval(f))(b, b)
+    @testset "$f" for f in (.<<, .>>)
+        @test f(a, 2) == f(b, 2)
+        @test f(2, a) == f(2, b)
+        @test f(a, a) == f(b, b)
     end
 
-    @testset "$f" for f in (:rem,)
+    @testset "$f" for f in (rem,)
         x = rand()
-        @test (eval(f))(a, x) == (eval(f))(b, x)
+        @test f(a, x) == f(b, x)
     end
     close(a)
     close(c)
