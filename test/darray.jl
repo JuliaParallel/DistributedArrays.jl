@@ -629,7 +629,7 @@ check_leaks()
 @testset "test scalar math" begin
     a = drand(20, 20);
     b = convert(Array, a)
-    @testset "$f" for f in (:abs, :abs2, :acos, :acosd, :acot,
+    @testset "$f" for f in (:-, :abs, :abs2, :acos, :acosd, :acot,
               :acotd, :acsch, :angle, :asech, :asin,
               :asind, :asinh, :atan, :atand, :atanh,
               :big, :cbrt, :ceil, :cis, :complex, :conj,
