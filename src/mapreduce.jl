@@ -222,7 +222,7 @@ for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
 end
 
 ### Should be deleted when broadcast is defined
-for f in (:abs, :abs2, :acos, :acosd, :acosh, :acot, :acotd, :acoth,
+for f in (:-, :abs, :abs2, :acos, :acosd, :acosh, :acot, :acotd, :acoth,
           :acsc, :acscd, :acsch, :angle, :asec, :asecd, :asech, :asin,
           :asind, :asinh, :atan, :atand, :atanh, :big, :cbrt, :ceil, :cis,
           :complex, :cos, :cosc, :cosd, :cosh, :cospi, :cot, :cotd, :coth,
