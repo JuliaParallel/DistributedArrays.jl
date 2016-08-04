@@ -21,6 +21,4 @@ using StatsBase # for fit(Histogram, ...)
 
 @everywhere srand(1234 + myid())
 
-@testset "DArray tests" begin
-    include("darray.jl")
-end
+include("darray.jl")
