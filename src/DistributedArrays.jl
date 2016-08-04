@@ -2,9 +2,6 @@ __precompile__(true)
 
 module DistributedArrays
 
-using Compat
-import Compat.view
-
 using Primes
 using Primes: factor
 
