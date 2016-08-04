@@ -1,9 +1,4 @@
-if VERSION >= v"0.5.0-dev+7720"
-    using Base.Test
-else
-    using BaseTestNext
-    const Test = BaseTestNext
-end
+using Base.Test
 
 # add at least 3 worker processes
 if nworkers() < 3
@@ -13,8 +8,6 @@ end
 @assert nprocs() > 3
 @assert nworkers() >= 3
 
-using Compat
-import Compat.view
 using DistributedArrays
 using StatsBase # for fit(Histogram, ...)
 @everywhere using StatsBase # because exported functions are not exported on workers with using

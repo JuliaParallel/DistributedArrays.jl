@@ -26,7 +26,7 @@ function _mapreduce(f, opt, d::DArray)
     end
     reduce(opt, results)
 end
-Base.mapreduce(f, opt::Union{typeof(@functorize(|)), typeof(@functorize(&))}, d::DArray) = _mapreduce(f, opt, d)
+Base.mapreduce(f, opt::Union{typeof(|), typeof(&)}, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
 
@@ -124,7 +124,7 @@ for (fn, fr) in ((:sum, :+),
                  (:minimum, :min),
                  (:any, :|),
                  (:all, :&))
-    @eval (Base.$fn)(d::DArray) = reduce(@functorize($fr), d)
+    @eval (Base.$fn)(d::DArray) = reduce($fr, d)
 end
 
 # mapreduce like
@@ -132,7 +132,7 @@ for (fn, fr1, fr2) in ((:maxabs, :abs, :max),
                        (:minabs, :abs, :min),
                        (:sumabs, :abs, :+),
                        (:sumabs2, :abs2, :+))
-    @eval (Base.$fn)(d::DArray) = mapreduce(@functorize($fr1), @functorize($fr2), d)
+    @eval (Base.$fn)(d::DArray) = mapreduce($fr1, $fr2, d)
 end
 
 # semi mapreduce
@@ -140,10 +140,9 @@ for (fn, fr) in ((:any, :|),
                  (:all, :&),
                  (:count, :+))
     @eval begin
-        (Base.$fn)(f::typeof(@functorize(identity)), d::DArray) = mapreduce(f, @functorize($fr), d)
-        (Base.$fn)(f::Base.Predicate, d::DArray) = mapreduce(f, @functorize($fr), d)
-        # (Base.$fn)(f::Base.Func{1}, d::DArray) = mapreduce(f, @functorize $fr, d)
-        (Base.$fn)(f::Callable, d::DArray) = mapreduce(f, @functorize($fr), d)
+        (Base.$fn)(f::typeof(identity), d::DArray) = mapreduce(f, $fr, d)
+        (Base.$fn)(f::Base.Predicate{1}, d::DArray) = mapreduce(f, $fr, d)
+        (Base.$fn)(f::Callable, d::DArray) = mapreduce(f, $fr, d)
     end
 end
 
@@ -208,8 +207,8 @@ for f in (:+, :-, :div, :mod, :rem, :&, :|, :$)
             B = samedist(A, B)
             map_localparts($f, A, B)
         end
-        ($f){T}(A::DArray{T}, B::Array{T}) = ($f)(A, distribute(B, A))
-        ($f){T}(A::Array{T}, B::DArray{T}) = ($f)(distribute(A, B), B)
+        ($f){T}(A::DArray{T}, B::Array{T}) = map_localparts($f, A, B)
+        ($f){T}(A::Array{T}, B::DArray{T}) = map_localparts($f, A, B)
     end
 end
 for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
@@ -217,8 +216,8 @@ for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
         function ($f){T}(A::DArray{T}, B::DArray{T})
             map_localparts($f, A, B)
         end
-        ($f){T}(A::DArray{T}, B::Array{T}) = ($f)(A, distribute(B, A))
-        ($f){T}(A::Array{T}, B::DArray{T}) = ($f)(distribute(A, B), B)
+        ($f){T}(A::DArray{T}, B::Array{T}) = map_localparts($f, A, B)
+        ($f){T}(A::Array{T}, B::DArray{T}) = map_localparts($f, A, B)
     end
 end
 

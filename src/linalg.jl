@@ -43,7 +43,7 @@ function dot(x::DVector, y::DVector)
             @async push!(results, remotecall_fetch((x, y, i) -> dot(localpart(x), fetch(y, i)), x.pids[i], x, y, i))
         end
     end
-    return reduce(@functorize(+), results)
+    return reduce(+, results)
 end
 
 function norm(x::DVector, p::Real = 2)
