@@ -237,15 +237,15 @@ for f in (:-, :abs, :abs2, :acos, :acosd, :acosh, :acot, :acotd, :acoth,
     end
 end
 
-function mapslices{T,N}(f::Function, D::DArray{T,N}, dims::AbstractVector)
-    #Ensure that the complete DArray is available on the specified dims on all processors
-    for d in dims
-        for idxs in D.indexes
-            if length(idxs[d]) != size(D, d)
-                throw(DimensionMismatch(string("dimension $d is distributed. ",
-                    "mapslices requires dimension $d to be completely available on all processors.")))
-            end
+function mapslices{T,N,A}(f::Function, D::DArray{T,N,A}, dims::AbstractVector)
+    if !all(t -> t == 1, size(D.indexes)[dims])
+        p = ones(Int, ndims(D))
+        nondims = filter(t -> !(t in dims), 1:ndims(D))
+        p[nondims] = defaultdist([size(D)...][[nondims...]], procs(D))
+        DD = DArray(size(D), procs(D), p) do I
+            return convert(A, D[I...])
         end
+        return mapslices(f, DD, dims)
     end
 
     refs = Future[remotecall((x,y,z)->mapslices(x,localpart(y),z), p, f, D, dims) for p in procs(D)]

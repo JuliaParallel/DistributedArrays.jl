@@ -9,8 +9,6 @@ end
 @assert nworkers() >= 3
 
 using DistributedArrays
-using StatsBase # for fit(Histogram, ...)
-@everywhere using StatsBase # because exported functions are not exported on workers with using
 
 @everywhere srand(1234 + myid())
 
