@@ -154,6 +154,19 @@ end
 
 check_leaks()
 
+@testset "copy!" begin
+    D1 = dzeros((10,10))
+    r1 = remotecall_wait(() -> randn(3,10), workers()[1])
+    r2 = remotecall_wait(() -> randn(7,10), workers()[2])
+    D2 = DArray(reshape([r1; r2], 2, 1))
+    copy!(D2, D1)
+    @test D1 == D2
+    close(D1)
+    close(D2)
+end
+
+check_leaks()
+
 @testset "test DArray reduce" begin
     D = DArray(id->fill(myid(), map(length,id)), (10,10), [MYID, OTHERIDS])
 

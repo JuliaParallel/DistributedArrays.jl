@@ -551,14 +551,10 @@ Base.getindex(d::DArray) = d[1]
 Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
-    if !(size(dest) == size(src) &&
-         procs(dest) == procs(src) &&
-         dest.indexes == src.indexes &&
-         dest.cuts == src.cuts)
-        throw(DimensionMismatch("destination array doesn't fit to source array"))
-    end
-    @sync for p in procs(dest)
-        @async remotecall_fetch((dest,src)->(copy!(localpart(dest), localpart(src)); nothing), p, dest, src)
+    asyncmap(procs(dest)) do p
+        remotecall_fetch(p) do
+            localpart(dest)[:] = src[localindexes(dest)...]
+        end
     end
     return dest
 end
