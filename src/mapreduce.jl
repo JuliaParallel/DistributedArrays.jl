@@ -162,16 +162,20 @@ map_localparts(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
 end
 
 function map_localparts(f::Callable, DA::DArray, A::Array)
-    pas = PartitionedSerializer(A, procs(DA), DA.indexes)
+    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
+        A[DA.indexes[pididx]...]
+    end
     DArray(DA) do I
-        f(localpart(DA), verify_and_get(pas, I))
+        f(localpart(DA), localpart(s))
     end
 end
 
 function map_localparts(f::Callable, A::Array, DA::DArray)
-    pas = PartitionedSerializer(A, procs(DA), DA.indexes)
+    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
+        A[DA.indexes[pididx]...]
+    end
     DArray(DA) do I
-        f(verify_and_get(pas, I), localpart(DA))
+        f(localpart(s), localpart(DA))
     end
 end
 
