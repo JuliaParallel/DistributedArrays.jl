@@ -443,12 +443,14 @@ Convert a local array to distributed.
 function distribute(A::AbstractArray;
     procs = workers()[1:min(nworkers(), maximum(size(A)))],
     dist = defaultdist(size(A), procs))
+    np = prod(dist)
+    procs_used = procs[1:np]
     idxs, _ = chunk_idxs([size(A)...], dist)
 
-    s = verified_destination_serializer(reshape(procs, size(idxs)), size(idxs)) do pididx
+    s = verified_destination_serializer(reshape(procs_used, size(idxs)), size(idxs)) do pididx
         A[idxs[pididx]...]
     end
-    return DArray(I->localpart(s), size(A), procs, dist)
+    return DArray(I->localpart(s), size(A), procs_used, dist)
 end
 
 """
