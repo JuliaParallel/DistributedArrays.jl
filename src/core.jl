@@ -246,6 +246,46 @@ function rr_localpart(ref, identity)
     return size(lp)
 end
 
+function Base.serialize(S::AbstractSerializer, d::DArray)
+    # Only send the ident for participating workers - we expect the DArray to exist in the
+    # remote registry
+    destpid = Base.worker_id_from_socket(S.io)
+    Serializer.serialize_type(S, typeof(d))
+    if (destpid in d.pids) || (destpid == d.identity[1])
+        serialize(S, (true, d.identity))    # (identity_only, identity)
+    else
+        serialize(S, (false, d.identity))
+        for n in [:dims, :pids, :indexes, :cuts]
+            serialize(S, getfield(d, n))
+        end
+    end
+end
+
+function Base.deserialize{T<:DArray}(S::AbstractSerializer, t::Type{T})
+    what = deserialize(S)
+    identity_only = what[1]
+    identity = what[2]
+
+    if identity_only
+        global registry
+        if haskey(registry, (identity, :DARRAY))
+            return registry[(identity, :DARRAY)]
+        else
+            # access to fields will throw an error, at least the deserialization process will not
+            # result in worker death
+            d = T()
+            d.identity = identity
+            return d
+        end
+    else
+        # We are not a participating worker, deser fields and instantiate locally.
+        dims = deserialize(S)
+        pids = deserialize(S)
+        indexes = deserialize(S)
+        cuts = deserialize(S)
+        return T(identity, dims, pids, indexes, cuts)
+    end
+end
 
 Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array(T, map(length,I)), dims, procs(d))
 Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
@@ -551,14 +591,10 @@ Base.getindex(d::DArray) = d[1]
 Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
 
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
-    if !(size(dest) == size(src) &&
-         procs(dest) == procs(src) &&
-         dest.indexes == src.indexes &&
-         dest.cuts == src.cuts)
-        throw(DimensionMismatch("destination array doesn't fit to source array"))
-    end
-    @sync for p in procs(dest)
-        @async remotecall_fetch((dest,src)->(copy!(localpart(dest), localpart(src)); nothing), p, dest, src)
+    asyncmap(procs(dest)) do p
+        remotecall_fetch(p) do
+            localpart(dest)[:] = src[localindexes(dest)...]
+        end
     end
     return dest
 end
