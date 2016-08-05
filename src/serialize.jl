@@ -40,47 +40,46 @@ function Base.deserialize{T<:DArray}(S::AbstractSerializer, t::Type{T})
 end
 
 # Serialize only those parts of the object as required by the destination worker.
-type PartitionedSerializer
-   indexable_obj                      # An indexable object, Array, SparseMatrix, etc.
-                                      # Complete object on the serializing side.
-                                      # Part object on the deserialized side.
-   pids::Nullable{Array}
-   idxs::Nullable{Array}
-   local_idxs::Nullable{Tuple}
+type DestinationSerializer
+    generate::Nullable{Function}     # Function to generate the part to be serialized
+    pids::Nullable{Array}            # MUST have the same shape as the distribution
 
-   PartitionedSerializer(obj, local_idxs::Tuple) = new(obj, Nullable{Array}(), Nullable{Array}(), local_idxs)
-   function PartitionedSerializer(obj, pids::Array, idxs::Array)
-        pas = new(obj,pids,idxs,Nullable{Tuple}())
+    deser_obj::Nullable{Any}         # Deserialized part
 
-        if myid() in pids
-            pas.local_idxs = idxs[findfirst(pids, myid())]
-        end
-        return pas
-    end
+    DestinationSerializer(f,p,d) = new(f,p,d)
 end
 
-function Base.serialize(S::AbstractSerializer, pas::PartitionedSerializer)
+DestinationSerializer(f::Function, pids::Array) = DestinationSerializer(f, pids, Nullable{Any}())
+
+# contructs a DestinationSerializer after verifying that the shape of pids.
+function verified_destination_serializer(f::Function, pids::Array, verify_size)
+    @assert size(pids) == verify_size
+    return DestinationSerializer(f, pids)
+end
+
+DestinationSerializer(deser_obj::Any) = DestinationSerializer(Nullable{Function}(), Nullable{Array}(), deser_obj)
+
+function Base.serialize(S::AbstractSerializer, s::DestinationSerializer)
     pid = Base.worker_id_from_socket(S.io)
-    I = get(pas.idxs)[findfirst(get(pas.pids), pid)]
-    Serializer.serialize_type(S, typeof(pas))
-    serialize(S, pas.indexable_obj[I...])
-    serialize(S, I)
+    pididx = findfirst(get(s.pids), pid)
+    Serializer.serialize_type(S, typeof(s))
+    serialize(S, get(s.generate)(pididx))
 end
 
-function Base.deserialize{T<:PartitionedSerializer}(S::AbstractSerializer, t::Type{T})
-    obj_part = deserialize(S)
-    I = deserialize(S)
-    return PartitionedSerializer(obj_part, I)
+function Base.deserialize{T<:DestinationSerializer}(S::AbstractSerializer, t::Type{T})
+    lpart = deserialize(S)
+    return DestinationSerializer(lpart)
 end
 
-function verify_and_get(pas::PartitionedSerializer, I)
-    # Handle the special case where myid() is part of pas.pids.
-    # For this case serialize/deserialize is not called as the remotecall is executed locally
-    if myid() in get(pas.pids, [])
-        @assert I == get(pas.idxs)[findfirst(get(pas.pids),myid())]
-        return pas.indexable_obj[I...]
+
+function localpart(s::DestinationSerializer)
+    if !isnull(s.deser_obj)
+        return get(s.deser_obj)
+    elseif  !isnull(s.generate) && (myid() in get(s.pids))
+        # Handle the special case where myid() is part of s.pids.
+        # In this case serialize/deserialize is not called as the remotecall is executed locally
+        return get(s.generate)(findfirst(get(s.pids), myid()))
     else
-        @assert I == get(pas.local_idxs, ())
-        return pas.indexable_obj
+        throw(ErrorException(string("Invalid state in DestinationSerializer.")))
     end
 end

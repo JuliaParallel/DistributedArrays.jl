@@ -443,10 +443,14 @@ Convert a local array to distributed.
 function distribute(A::AbstractArray;
     procs = workers()[1:min(nworkers(), maximum(size(A)))],
     dist = defaultdist(size(A), procs))
+    np = prod(dist)
+    procs_used = procs[1:np]
     idxs, _ = chunk_idxs([size(A)...], dist)
 
-    pas = PartitionedSerializer(A, procs, idxs)
-    return DArray(I->verify_and_get(pas, I), size(A), procs, dist)
+    s = verified_destination_serializer(reshape(procs_used, size(idxs)), size(idxs)) do pididx
+        A[idxs[pididx]...]
+    end
+    return DArray(I->localpart(s), size(A), procs_used, dist)
 end
 
 """
@@ -458,8 +462,10 @@ Distribute a local array `A` like the distributed array `DA`.
 function distribute(A::AbstractArray, DA::DArray)
     size(DA) == size(A) || throw(DimensionMismatch("Distributed array has size $(size(DA)) but array has $(size(A))"))
 
-    pas = PartitionedSerializer(A, procs(DA), DA.indexes)
-    return DArray(I->verify_and_get(pas, I), DA)
+    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
+        A[DA.indexes[pididx]...]
+    end
+    return DArray(I->localpart(s), DA)
 end
 
 Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
@@ -589,7 +595,7 @@ indexin_mask(a, b) = [i in b for i in a]
 import Base: tail
 # Given a tuple of indices and a tuple of masks, restrict the indices to the
 # valid regions. This is, effectively, reversing Base.setindex_shape_check.
-# We can't just use indexing into MergedIndices here because getindex is much 
+# We can't just use indexing into MergedIndices here because getindex is much
 # pickier about singleton dimensions than setindex! is.
 restrict_indices(::Tuple{}, ::Tuple{}) = ()
 function restrict_indices(a::Tuple{Any, Vararg{Any}}, b::Tuple{Any, Vararg{Any}})
@@ -639,7 +645,7 @@ end
 Base.size(M::MergedIndices) = M.sz
 Base.@propagate_inbounds Base.getindex{_,N}(M::MergedIndices{_,N}, I::Vararg{Int, N}) =
     CartesianIndex(map(propagate_getindex, M.indices, I))
-# Additionally, we optimize bounds checking when using MergedIndices as an 
+# Additionally, we optimize bounds checking when using MergedIndices as an
 # array index since checking, e.g., A[1:500, 1:500] is *way* faster than
 # checking an array of 500^2 elements of CartesianIndex{2}. This optimization
 # also applies to reshapes of MergedIndices since the outer shape of the
