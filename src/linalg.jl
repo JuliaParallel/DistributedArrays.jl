@@ -165,15 +165,6 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     return y
 end
 
-function Base.LinAlg.scale!(x::AbstractVector, A::DMatrix)
-    asyncmap(procs(A)) do p
-        remotecall_fetch(p) do
-            scale!(Array(x[localindexes(A)[1]]), localpart(A))
-            nothing
-        end
-    end
-    A
-end
 
 # Level 3
 function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix, tA)
