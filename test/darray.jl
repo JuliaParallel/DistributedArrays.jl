@@ -655,30 +655,24 @@ end
 
 check_leaks()
 
-# The mapslices tests have been taken from Base.
-# Commented out tests that need to be enabled in due course when DArray support is more complete
 @testset "test mapslices" begin
-    a = drand((5,5), workers(), [1, min(nworkers(), 5)])
-    h = mapslices(v -> fit(Histogram,v,0:0.1:1).weights, a, 1)
-#    H = mapslices(v -> hist(v,0:0.1:1)[2], a, 2)
-#    s = mapslices(sort, a, [1])
-#    S = mapslices(sort, a, [2])
-    for i = 1:5
-        @test h[:,i] == fit(Histogram, a[:,i],0:0.1:1).weights
-#        @test vec(H[i,:]) => hist(vec(a[i,:]),0:0.1:1)[2]
-#        @test s[:,i] => sort(a[:,i])
-#        @test vec(S[i,:]) => sort(vec(a[i,:]))
-    end
+    A = randn(5,5,5)
+    D = distribute(A, procs = workers(), dist = [1, 1, min(nworkers(), 5)])
+    @test mapslices(svdvals, D, (1,2)) ≈ mapslices(svdvals, A, (1,2))
+    @test mapslices(svdvals, D, (1,3)) ≈ mapslices(svdvals, A, (1,3))
+    @test mapslices(svdvals, D, (2,3)) ≈ mapslices(svdvals, A, (2,3))
+    @test mapslices(sort, D, (1,)) ≈ mapslices(sort, A, (1,))
+    @test mapslices(sort, D, (2,)) ≈ mapslices(sort, A, (2,))
+    @test mapslices(sort, D, (3,)) ≈ mapslices(sort, A, (3,))
 
     # issue #3613
-    b = mapslices(sum, dones(Float64, (2,3,4), workers(), [1,1,min(nworkers(),4)]), [1,2])
-    @test size(b) == (1,1,4)
-    @test all(b.==6)
+    B = mapslices(sum, dones(Float64, (2,3,4), workers(), [1,1,min(nworkers(),4)]), [1,2])
+    @test size(B) == (1,1,4)
+    @test all(B.==6)
 
     # issue #5141
-    ## Update Removed the version that removes the dimensions when dims==1:ndims(A)
-    c1 = mapslices(x-> maximum(-x), a, [])
-#    @test c1 => -a
+    C1 = mapslices(x-> maximum(-x), D, [])
+    @test C1 == -D
 
     # issue #5177
     c = dones(Float64, (2,3,4,5), workers(), [1,1,1,min(nworkers(),5)])
@@ -695,7 +689,7 @@ check_leaks()
     n3a = mapslices(x-> ones(1,6), c, [2,3])
     @test (size(n1a) == (1,6,4,5) && size(n2a) == (1,3,6,5) && size(n3a) == (2,1,6,5))
     @test (size(n1) == (6,1,4,5) && size(n2) == (6,3,1,5) && size(n3) == (2,6,1,5))
-    close(a)
+    close(D)
     close(c)
     darray_closeall()  # close the temporaries created above
 end
