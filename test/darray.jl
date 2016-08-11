@@ -198,6 +198,21 @@ end
 
 check_leaks()
 
+@testset "test scale!(b, A)" begin
+    A = randn(100, 100)
+    b = randn(100)
+    DA = distribute(A)
+    @test scale!(b, A) == scale!(b, DA)
+    close(DA)
+    A = randn(100, 100)
+    b = randn(100)
+    DA = distribute(A)
+    @test scale!(A, b) == scale!(DA, b)
+    close(DA)
+end
+
+check_leaks()
+
 @testset "test mapreduce on DArrays" begin
     for _ = 1:25, f = [x -> Int128(2x), x -> Int128(x^2), x -> Int128(x^2 + 2x - 1)], opt = [+, *]
         A = rand(1:5, rand(2:30))
