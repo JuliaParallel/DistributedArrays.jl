@@ -165,6 +165,23 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     return y
 end
 
+function Base.LinAlg.scale!(b::AbstractVector, DA::DMatrix)
+    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
+        b[DA.indexes[pididx][1]]
+    end
+    map_localparts!(DA) do lDA
+        scale!(localpart(s), lDA)
+    end
+end
+
+function Base.LinAlg.scale!(DA::DMatrix, b::AbstractVector)
+    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
+        b[DA.indexes[pididx][2]]
+    end
+    map_localparts!(DA) do lDA
+        scale!(lDA, localpart(s))
+    end
+end
 
 # Level 3
 function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix, tA)
