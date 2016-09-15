@@ -181,27 +181,46 @@ end
 (-)(D::DArray) = map(-, D)
 
 
-map_localparts(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
-map_localparts(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
-    f(localpart(d1), localpart(d2))
+function map_localparts(f::Callable, d::DArray)
+    r = Base.asyncmap!(similar(procs(d), Future), procs(d)) do p
+        remotecall_wait(p) do
+            f(localpart(d))
+        end
+    end
+    return DArray(r)
+end
+
+function map_localparts(f::Callable, d1::DArray, d2::DArray)
+    r = Base.asyncmap!(similar(procs(d1), Future), procs(d1)) do p
+        remotecall_wait(p) do
+            f(localpart(d1), localpart(d2))
+        end
+    end
+    return DArray(r)
 end
 
 function map_localparts(f::Callable, DA::DArray, A::Array)
     s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
         A[DA.indexes[pididx]...]
     end
-    DArray(DA) do I
-        f(localpart(DA), localpart(s))
+    r = Base.asyncmap!(similar(procs(DA), Future), procs(DA)) do p
+        remotecall_wait(p) do
+            f(localpart(DA), localpart(s))
+        end
     end
+    return DArray(r)
 end
 
 function map_localparts(f::Callable, A::Array, DA::DArray)
     s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
         A[DA.indexes[pididx]...]
     end
-    DArray(DA) do I
-        f(localpart(s), localpart(DA))
+    r = Base.asyncmap!(similar(procs(DA), Future), procs(DA)) do p
+        remotecall_wait(p) do
+            f(localpart(s), localpart(DA))
+        end
     end
+    return DArray(r)
 end
 
 function map_localparts!(f::Callable, d::DArray)
@@ -211,9 +230,14 @@ function map_localparts!(f::Callable, d::DArray)
     return d
 end
 
-# Here we assume all the DArrays have
-# the same size and distribution
-map_localparts(f::Callable, As::DArray...) = DArray(I->f(map(localpart, As)...), As[1])
+function map_localparts(f::Callable, As::DArray...)
+    r = Base.asyncmap!(similar(procs(As[1]), Future), procs(As[1])) do p
+        remotecall_wait(p) do
+            f(map(localpart, As)...)
+        end
+    end
+    return DArray(r)
+end
 
 
 function samedist(A::DArray, B::DArray)

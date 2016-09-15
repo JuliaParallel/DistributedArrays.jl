@@ -924,6 +924,24 @@ check_leaks()
 
 d_closeall()
 
+@testset "test map_localpart" begin
+    a1 = randn(10, 10)
+    d1 = distribute(a1)
+    @test Array(map_localparts(abs, d1)) == map(abs, a1)
+    @test Array(map_localparts(+, d1, d1)) == map(+, a1, a1)
+    @test Array(map_localparts(+, d1, a1)) == map(+, a1, a1)
+    @test Array(map_localparts(+, a1, d1)) == map(+, a1, a1)
+    @test Array(map_localparts(+, d1, d1, d1)) == map(+, a1, a1, a1)
+
+    d2 = @DArray [i for i in 1:40]
+    y1 = map_localparts(sum, d2)
+    y2 = [0; cumsum(Array(y1))[1:end-1]]
+    y3 = map_localparts((t,s) -> cumsum(t) .+ s[1], d2, distribute(y2))
+    @test Array(y3) == cumsum(Array(d2))
+end
+
+darray_closeall()
+
 @testset "test for any leaks" begin
     sleep(1.0)     # allow time for any cleanup to complete
     allrefszero = Bool[remotecall_fetch(()->length(DistributedArrays.refs) == 0, p) for p in procs()]
