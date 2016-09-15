@@ -1,9 +1,16 @@
 ## higher-order functions ##
 
-### We need to define broadcast operations which will soon be very common
-### in base through the dot-verctorization syntax
-
 Base.map(f, d::DArray) = DArray(I->map(f, localpart(d)), d)
+
+Base.map!{F}(f::F, d::DArray) = begin
+    @sync for p in procs(d)
+        @async remotecall_fetch((f,d)->(map!(f, localpart(d)); nothing), p, f, d)
+    end
+    return d
+end
+
+# FixMe! We'll have to handle the general n args case but it seems tricky
+Base.broadcast(f, d::DArray) = DArray(I -> broadcast(f, localpart(d)), d)
 
 function Base.reduce(f, d::DArray)
     results=[]
@@ -29,13 +36,6 @@ end
 Base.mapreduce(f, opt::Union{typeof(|), typeof(&)}, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
-
-Base.map!{F}(f::F, d::DArray) = begin
-    @sync for p in procs(d)
-        @async remotecall_fetch((f,d)->(map!(f, localpart(d)); nothing), p, f, d)
-    end
-    return d
-end
 
 # mapreducedim
 Base.reducedim_initarray{R}(A::DArray, region, v0, ::Type{R}) = begin
@@ -146,6 +146,9 @@ for (fn, fr) in ((:any, :|),
     end
 end
 
+# Unary vector functions
+(-)(D::DArray) = map(-, D)
+
 # scalar ops
 (+)(A::DArray{Bool}, x::Bool) = A .+ x
 (+)(x::Bool, A::DArray{Bool}) = x .+ A
@@ -222,22 +225,6 @@ for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
         end
         ($f){T}(A::DArray{T}, B::Array{T}) = map_localparts($f, A, B)
         ($f){T}(A::Array{T}, B::DArray{T}) = map_localparts($f, A, B)
-    end
-end
-
-### Should be deleted when broadcast is defined
-for f in (:-, :abs, :abs2, :acos, :acosd, :acosh, :acot, :acotd, :acoth,
-          :acsc, :acscd, :acsch, :angle, :asec, :asecd, :asech, :asin,
-          :asind, :asinh, :atan, :atand, :atanh, :big, :cbrt, :ceil, :cis,
-          :complex, :cos, :cosc, :cosd, :cosh, :cospi, :cot, :cotd, :coth,
-          :csc, :cscd, :csch, :dawson, :deg2rad, :digamma, :erf, :erfc,
-          :erfcinv, :erfcx, :erfi, :erfinv, :exp, :exp10, :exp2, :expm1,
-          :exponent, :float, :floor, :gamma, :imag, :invdigamma, :isfinite,
-          :isinf, :isnan, :lfact, :lgamma, :log, :log10, :log1p, :log2, :rad2deg,
-          :real, :sec, :secd, :sech, :sign, :sin, :sinc, :sind, :sinh, :sinpi,
-          :sqrt, :tan, :tand, :tanh, :trigamma)
-    @eval begin
-        ($f)(A::DArray) = map($f, A)
     end
 end
 
