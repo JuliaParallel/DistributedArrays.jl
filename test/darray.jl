@@ -670,12 +670,12 @@ check_leaks()
               lgamma, log, log10, log1p, log2, rad2deg, real,
               sec, secd, sech, sign, sin, sinc, sind,
               sinh, sinpi, sqrt, tan, tand, tanh, trigamma)
-        @test f(a) == f(b)
+        @test f.(a) == f.(b)
     end
     a = a + 1
     b = b + 1
     @testset "$f" for f in (asec, asecd, acosh, acsc, acscd, acoth)
-        @test f(a) == f(b)
+        @test f.(a) == f.(b)
     end
     close(a)
     darray_closeall()  # close the temporaries created above
