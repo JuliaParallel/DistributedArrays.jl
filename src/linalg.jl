@@ -165,6 +165,15 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     return y
 end
 
+function Base.LinAlg.scale!(b::DVector, DA::DMatrix)
+    Base.asyncmap(procs(DA)) do p
+        remotecall_fetch(p) do
+            scale!(Array(b[localindexes(DA)[1]]), localpart(DA))
+            nothing
+        end
+    end
+    DA
+end
 function Base.LinAlg.scale!(b::AbstractVector, DA::DMatrix)
     s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
         b[DA.indexes[pididx][1]]
