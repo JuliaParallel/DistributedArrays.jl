@@ -54,12 +54,12 @@ type DArray{T,N,A} <: AbstractArray{T,N}
         release = (myid() == identity[1])
 
         global registry
-        haskey(registry, (identity, :DARRAY)) && return registry[(identity, :DARRAY)]
+        haskey(registry, (identity, :CONTAINER)) && return registry[(identity, :CONTAINER)]
 
         d = new(identity, dims, pids, indexes, cuts, release)
         if release
             push!(refs, identity)
-            registry[(identity, :DARRAY)] = d
+            registry[(identity, :CONTAINER)] = d
 
 #            println("Installing finalizer for : ", d.identity, ", : ", object_id(d), ", isbits: ", isbits(d))
             finalizer(d, close)
@@ -98,7 +98,7 @@ function DArray(identity, init, dims, pids, idxs, cuts)
 
     typA = take!(r)
     if myid() in pids
-        d = registry[(identity, :DARRAY)]
+        d = registry[(identity, :CONTAINER)]
     else
         d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
     end
@@ -111,7 +111,7 @@ function construct_localparts(init, identity, dims, pids, idxs, cuts)
     registry[(identity, :LOCALPART)] = A
     typA = typeof(A)
     d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
-    registry[(identity, :DARRAY)] = d
+    registry[(identity, :CONTAINER)] = d
     typA
 end
 
@@ -197,7 +197,7 @@ DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indexes,
 
 function release_localpart(identity)
     global registry
-    delete!(registry, (identity, :DARRAY))
+    delete!(registry, (identity, :CONTAINER))
     delete!(registry, (identity, :LOCALPART))
     nothing
 end
@@ -233,7 +233,7 @@ function darray_closeall()
     crefs = copy(refs)
     for identity in crefs
         if identity[1] ==  myid() # sanity check
-            haskey(registry, (identity, :DARRAY)) && close(registry[(identity, :DARRAY)])
+            haskey(registry, (identity, :CONTAINER)) && close(registry[(identity, :CONTAINER)])
             yield()
         end
     end

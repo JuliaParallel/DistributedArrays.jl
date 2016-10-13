@@ -19,5 +19,6 @@ include("serialize.jl")
 include("mapreduce.jl")
 include("linalg.jl")
 include("sort.jl")
+include("distmisc.jl")
 
 end # module

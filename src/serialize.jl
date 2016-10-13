@@ -20,8 +20,8 @@ function Base.deserialize{T<:DArray}(S::AbstractSerializer, t::Type{T})
 
     if identity_only
         global registry
-        if haskey(registry, (identity, :DARRAY))
-            return registry[(identity, :DARRAY)]
+        if haskey(registry, (identity, :CONTAINER))
+            return registry[(identity, :CONTAINER)]
         else
             # access to fields will throw an error, at least the deserialization process will not
             # result in worker death
