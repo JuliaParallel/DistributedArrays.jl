@@ -39,7 +39,7 @@ end
         remote_parts = map(workers()) do wid
             remotecall(rand, wid, block, Y)
         end
-        DA1 = DArray(reshape(remote_parts, (length(remote_parts), 1)))
+        DA1 = Distributed(reshape(remote_parts, (length(remote_parts), 1)))
         A = rand(X, Y)
         DA2 = distribute(A, DA1)
 
@@ -52,15 +52,15 @@ end
 
 check_leaks()
 
-@testset "test DArray equality" begin
+@testset "test Distributed equality" begin
     D = drand((200,200), [MYID, OTHERIDS])
     DC = copy(D)
 
-    @testset "test isequal(::DArray, ::DArray)" begin
+    @testset "test isequal(::Distributed, ::Distributed)" begin
         @test D == DC
     end
 
-    @testset "test copy(::DArray) does a copy of each localpart" begin
+    @testset "test copy(::Distributed) does a copy of each localpart" begin
         @spawnat OTHERIDS localpart(DC)[1] = 0
         @test fetch(@spawnat OTHERIDS localpart(D)[1] != 0)
     end
@@ -71,7 +71,7 @@ end
 
 check_leaks()
 
-@testset "test DArray similar" begin
+@testset "test Distributed similar" begin
     D = drand((200,200), [MYID, OTHERIDS])
     DS = similar(D,Float16)
 
@@ -88,7 +88,7 @@ end
 
 check_leaks()
 
-@testset "test DArray reshape" begin
+@testset "test Distributed reshape" begin
     D = drand((200,200), [MYID, OTHERIDS])
 
     @testset "Test error-throwing in reshape" begin
@@ -104,30 +104,30 @@ end
 
 check_leaks()
 
-@testset "test @DArray comprehension constructor" begin
+@testset "test @Distributed comprehension constructor" begin
 
-    @testset "test valid use of @DArray" begin
-        D = @DArray [i+j for i=1:10, j=1:10]
+    @testset "test valid use of @Distributed" begin
+        D = @Distributed [i+j for i=1:10, j=1:10]
         @test D == [i+j for i=1:10, j=1:10]
         close(D)
     end
 
-    @testset "test invalid use of @DArray" begin
-        @test_throws ArgumentError eval(:((@DArray [1,2,3,4])))
+    @testset "test invalid use of @Distributed" begin
+        @test_throws ArgumentError eval(:((@Distributed [1,2,3,4])))
     end
 end
 
 check_leaks()
 
-@testset "test DArray / Array conversion" begin
+@testset "test Distributed / Array conversion" begin
     D = drand((200,200), [MYID, OTHERIDS])
 
-    @testset "test convert(::Array, ::(Sub)DArray)" begin
+    @testset "test convert(::Array, ::(Sub)Distributed)" begin
         S = convert(Matrix{Float64}, D[1:150, 1:150])
         A = convert(Matrix{Float64}, D)
 
         @test A[1:150,1:150] == S
-        D2 = convert(DArray{Float64,2,Matrix{Float64}}, A)
+        D2 = convert(Distributed{Float64,2,Matrix{Float64}}, A)
         @test D2 == D
         @test fetch(@spawnat MYID localpart(D)[1,1]) == D[1,1]
         @test fetch(@spawnat OTHERIDS localpart(D)[1,1]) == D[1,101]
@@ -158,7 +158,7 @@ check_leaks()
     D1 = dzeros((10,10))
     r1 = remotecall_wait(() -> randn(3,10), workers()[1])
     r2 = remotecall_wait(() -> randn(7,10), workers()[2])
-    D2 = DArray(reshape([r1; r2], 2, 1))
+    D2 = Distributed(reshape([r1; r2], 2, 1))
     copy!(D2, D1)
     @test D1 == D2
     close(D1)
@@ -167,8 +167,8 @@ end
 
 check_leaks()
 
-@testset "test DArray reduce" begin
-    D = DArray(id->fill(myid(), map(length,id)), (10,10), [MYID, OTHERIDS])
+@testset "test Distributed reduce" begin
+    D = Distributed(id->fill(myid(), map(length,id)), (10,10), [MYID, OTHERIDS])
 
     @testset "test reduce" begin
         @test reduce(+, D) == ((50*MYID) + (50*OTHERIDS))
@@ -213,7 +213,7 @@ end
 
 check_leaks()
 
-@testset "test mapreduce on DArrays" begin
+@testset "test mapreduce on Distributeds" begin
     for _ = 1:25, f = [x -> Int128(2x), x -> Int128(x^2), x -> Int128(x^2 + 2x - 1)], opt = [+, *]
         A = rand(1:5, rand(2:30))
         DA = distribute(A)
@@ -224,17 +224,17 @@ end
 
 check_leaks()
 
-@testset "test mapreducedim on DArrays" begin
-    D = DArray(I->fill(myid(), map(length,I)), (73,73), [MYID, OTHERIDS])
+@testset "test mapreducedim on Distributeds" begin
+    D = Distributed(I->fill(myid(), map(length,I)), (73,73), [MYID, OTHERIDS])
     D2 = map(x->1, D)
     @test mapreducedim(t -> t*t, +, D2, 1) == mapreducedim(t -> t*t, +, convert(Array, D2), 1)
     @test mapreducedim(t -> t*t, +, D2, 2) == mapreducedim(t -> t*t, +, convert(Array, D2), 2)
     @test mapreducedim(t -> t*t, +, D2, (1,2)) == mapreducedim(t -> t*t, +, convert(Array, D2), (1,2))
 
-    # Test non-regularly chunked DArrays
+    # Test non-regularly chunked Distributeds
     r1 = DistributedArrays.remotecall(() -> sprandn(3, 10, 0.1), workers()[1])
     r2 = DistributedArrays.remotecall(() -> sprandn(7, 10, 0.1), workers()[2])
-    D = DArray(reshape([r1; r2], (2,1)))
+    D = Distributed(reshape([r1; r2], (2,1)))
     @test Array(sum(D, 2)) == sum(Array(D), 2)
 
     # close(D)
@@ -244,7 +244,7 @@ end
 
 check_leaks()
 
-@testset "test mapreducdim, reducedim on DArrays" begin
+@testset "test mapreducdim, reducedim on Distributeds" begin
     dims = (20,20,20)
     DA = drandn(dims)
     A = convert(Array, DA)
@@ -261,7 +261,7 @@ end
 
 check_leaks()
 
-@testset "test statistical functions on DArrays" begin
+@testset "test statistical functions on Distributeds" begin
     dims = (20,20,20)
     DA = drandn(dims)
     A = convert(Array, DA)
@@ -277,7 +277,7 @@ end
 
 check_leaks()
 
-@testset "test sum on DArrays" begin
+@testset "test sum on Distributeds" begin
     A = randn(100,100)
     DA = distribute(A)
 
@@ -321,7 +321,7 @@ end
 
 check_leaks()
 
-@testset "test size on DArrays" begin
+@testset "test size on Distributeds" begin
 
     A = randn(100,100)
     DA = distribute(A)
@@ -642,12 +642,12 @@ check_leaks()
     a = drand(20, 20);
 
     s = view(a, 1:5, 5:8)
-    @test isa(s, SubDArray)
-    @test s == convert(DArray, s)
+    @test isa(s, SubDistributed)
+    @test s == convert(Distributed, s)
 
     s = view(a, 6:5, 5:8)
-    @test isa(s, SubDArray)
-    @test s == convert(DArray, s)
+    @test isa(s, SubDistributed)
+    @test s == convert(Distributed, s)
     close(a)
     darray_closeall()  # close the temporaries created above
 end

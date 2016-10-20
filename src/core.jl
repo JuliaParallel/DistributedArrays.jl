@@ -9,12 +9,12 @@ end
 """
     next_did()
 
-Produces an incrementing ID that will be used for DArrays.
+Produces an incrementing ID that will be used for Distributeds.
 """
 next_did
 
 """
-    DArray(init, dims, [procs, dist])
+    Distributed(init, dims, [procs, dist])
 
 Construct a distributed array.
 
@@ -34,119 +34,177 @@ For example, the `dfill` function that creates a distributed array and fills it 
 
 ### Example
 ```jl
-dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
+dfill(v, args...) = Distributed(I->fill(v, map(length,I)), args...)
 ```
 """
-type DArray{T,N,A} <: AbstractArray{T,N}
-    identity::Tuple
+type Distributed{T,N,A,DistType} <: AbstractArray{T,N}
+    id::Tuple
     dims::NTuple{N,Int}
     pids::Array{Int,N}                          # pids[i]==p ⇒ processor p has piece i
     indexes::Array{NTuple{N,UnitRange{Int}},N}  # indexes held by piece i
     cuts::Vector{Vector{Int}}                   # cuts[d][i] = first index of chunk i in dimension d
 
     release::Bool
+    v::Nullable{A}                              # Always refers to the localpart on a node.
+                                                # Should never be serialized.
 
-    function DArray(identity, dims, pids, indexes, cuts)
-        # check invariants
-        if dims != map(last, last(indexes))
-            throw(ArgumentError("dimension of DArray (dim) and indexes do not match"))
+    function Distributed(id, dims, pids;
+                         indexes=Array(NTuple{N,UnitRange{Int}}, 0),
+                         cuts=Array(Vector{Int}, 0),
+                         localpart=Nullable{A}())
+
+        if DistType == DArray
+            # check invariants
+            if dims != map(last, last(indexes))
+                throw(ArgumentError("dimension of Distributed (dim) and indexes do not match"))
+            end
         end
-        release = (myid() == identity[1])
+
+        release = (myid() == id[1])
 
         global registry
-        haskey(registry, (identity, :CONTAINER)) && return registry[(identity, :CONTAINER)]
+        haskey(registry, id) && return registry[id]
 
-        d = new(identity, dims, pids, indexes, cuts, release)
+        d = new(id, dims, pids, indexes, cuts, release, localpart)
         if release
-            push!(refs, identity)
-            registry[(identity, :CONTAINER)] = d
+            push!(refs, id)
+            registry[id] = d
 
-#            println("Installing finalizer for : ", d.identity, ", : ", object_id(d), ", isbits: ", isbits(d))
+#            println("Installing finalizer for : ", d.id, ", : ", object_id(d), ", isbits: ", isbits(d))
             finalizer(d, close)
         end
         d
     end
 
-    DArray() = new()
+    Distributed() = new()
 end
 
-typealias SubDArray{T,N,D<:DArray} SubArray{T,N,D}
-typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
+typealias SubDistributed{T,N,D<:Distributed} SubArray{T,N,D}
+typealias SubOrDistributed{T,N} Union{Distributed{T,N}, SubDistributed{T,N}}
 
-localtype{T,N,S}(A::DArray{T,N,S}) = S
+localtype{T,N,S}(A::Distributed{T,N,S}) = S
 localtype(A::AbstractArray) = typeof(A)
 
+# BCast is the same value broadcasted on each node
+# DAny stores one element per worker
+# DArray is a regular N-dimensional array distributed across participating workers
+
+@enum DISTTYPE DArray=1 BCast=2 DAny=3
+
+Base.show(io, disttype::DISTTYPE) = begin
+    println(io, ["DArray", "BCast", "DAny"][disttype])
+end
 
 ## core constructors ##
 
-function DArray(identity, init, dims, pids, idxs, cuts)
+function Distributed(id, init, dims, pids, idxs, cuts, disttype=DArray)
     r=Channel(1)
+
+    if disttype == DArray
+        if isa(init, Function)
+            clp_func = i -> remotecall_fetch(construct_localparts, pids[i], init, id, dims, pids, idxs, cuts)
+        else
+            # constructing from an array of remote refs.
+            clp_func = i -> remotecall_fetch(construct_localparts, pids[i], init[i], id, dims, pids, idxs, cuts)
+        end
+    else
+        clp_func = i -> remotecall_fetch(construct_localparts, pids[i], init, id, pids, disttype)
+    end
+
     @sync begin
         for i = 1:length(pids)
             @async begin
                 local typA
-                if isa(init, Function)
-                    typA=remotecall_fetch(construct_localparts, pids[i], init, identity, dims, pids, idxs, cuts)
-                else
-                    # constructing from an array of remote refs.
-                    typA=remotecall_fetch(construct_localparts, pids[i], init[i], identity, dims, pids, idxs, cuts)
-                end
+                typA=clp_func(i)
                 !isready(r) && put!(r, typA)
             end
         end
     end
 
     typA = take!(r)
+
     if myid() in pids
-        d = registry[(identity, :CONTAINER)]
+        d = registry[id]
     else
-        d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
+        if disttype == DArray
+            d = Distributed{eltype(typA),length(dims),typA, disttype}(id, dims, pids; indexes=idxs, cuts=cuts)
+        elseif disttype == BCast
+            # Keep a local copy of the broadcasted variable. Bad idea?
+            construct_localparts(init, id, pids, disttype)
+            d = registry[id]
+        else
+            d = Distributed{typA,1,typA,disttype}(id, (length(pids),), pids)
+        end
     end
     d
 end
 
-function construct_localparts(init, identity, dims, pids, idxs, cuts)
+function construct_localparts(init, id, dims, pids, idxs, cuts)
     A = isa(init, Function) ? init(idxs[localpartindex(pids)]) : fetch(init)
     global registry
-    registry[(identity, :LOCALPART)] = A
     typA = typeof(A)
-    d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
-    registry[(identity, :CONTAINER)] = d
+    d = Distributed{eltype(typA),length(dims),typA,DArray}(id, dims, pids;
+                                                    indexes=idxs, cuts=cuts, localpart=Nullable{typA}(A))
+    registry[id] = d
     typA
 end
 
-function DArray(init, dims, procs, dist)
+function construct_localparts(init, id, pids, disttype::DISTTYPE)
+    A = isa(init, Function) ? init(localpartindex(pids)) : fetch(init)
+    global registry
+    typA = typeof(A)
+    d = Distributed{typA,1,typA,disttype}(id, (length(pids),), pids; localpart=Nullable{typA}(A))
+    registry[id] = d
+    typA
+end
+
+function Distributed(init::Function, dims, procs, dist)
     np = prod(dist)
     procs = reshape(procs[1:np], ntuple(i->dist[i], length(dist)))
     idxs, cuts = chunk_idxs([dims...], dist)
-    identity = next_did()
+    id = next_did()
 
-    return DArray(identity, init, dims, procs, idxs, cuts)
+    return Distributed(id, init, dims, procs, idxs, cuts)
 end
 
-function DArray(init, dims, procs)
+function Distributed(init::Function, dims, procs)
     if isempty(procs)
         throw(ArgumentError("no processors given"))
     end
-    return DArray(init, dims, procs, defaultdist(dims, procs))
+    return Distributed(init, dims, procs, defaultdist(dims, procs))
 end
-DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(), maximum(dims))])
+Distributed(init::Function, dims) = Distributed(init, dims, workers()[1:min(nworkers(), maximum(dims))])
 
-# Create a DArray from a collection of references
+# Create a Distributed from a collection of references
 # The refs must have the same layout as the parts distributed.
 # i.e.
 #    size(refs) must specify the distribution of dimensions across processors
 #    prod(size(refs)) must equal number of parts
 # FIXME : Empty parts are currently not supported.
-function DArray(refs)
+function Distributed(x; procs=workers(), disttype=DArray)
+    if isa(x, Array) && (disttype != BCast)
+        if (disttype == DArray) &&
+           ((eltype(x) <: Base.AbstractRemoteRef) || all(x->isa(x, Base.AbstractRemoteRef)))
+            return distributed_from_refs(x)
+        else
+            return distribute(x, disttype)
+        end
+    elseif isa(x, Function) && (disttype != DArray)
+        return Distributed(next_did(), x, nothing, procs, nothing, nothing, disttype)
+    else
+        return distribute(x, procs, BCast)
+    end
+end
+
+function distributed_from_refs(refs)
     dimdist = size(refs)
-    identity = next_did()
+    id = next_did()
 
     npids = [r.where for r in refs]
     nsizes = Array(Tuple, dimdist)
     @sync for i in 1:length(refs)
         let i=i
-            @async nsizes[i] = remotecall_fetch(rr_localpart, npids[i], refs[i], identity)
+            @async nsizes[i] = remotecall_fetch(rr_size_localpart, npids[i], refs[i])
         end
     end
 
@@ -170,16 +228,68 @@ function DArray(refs)
     ncuts = Array{Int,1}[unshift!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
     ndims = tuple([sort(unique(lastidxs[x,:]))[end]-1 for x in 1:length(dimdist)]...)
 
-    DArray(identity, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
+    Distributed(id, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
 end
 
-macro DArray(ex0::Expr)
+
+"""
+     distribute(A[; procs, dist])
+
+Convert a local array to distributed.
+
+`procs` optionally specifies an array of process IDs to use. (defaults to all workers)
+`dist` optionally specifies a vector or tuple of the number of partitions in each dimension
+"""
+function distribute(A::AbstractArray;
+    procs = workers()[1:min(nworkers(), maximum(size(A)))],
+    dist = defaultdist(size(A), procs))
+    np = prod(dist)
+    procs_used = procs[1:np]
+    idxs, _ = chunk_idxs([size(A)...], dist)
+
+    s = verified_destination_serializer(reshape(procs_used, size(idxs)), size(idxs)) do pididx
+        A[idxs[pididx]...]
+    end
+    return Distributed(I->localpart(s), size(A), procs_used, dist)
+end
+
+"""
+    distribute(A, DA)
+
+Distribute a local array `A` like the distributed array `DA`.
+
+"""
+function distribute(A::AbstractArray, DA::Distributed)
+    size(DA) == size(A) || throw(DimensionMismatch("Distributed array has size $(size(DA)) but array has $(size(A))"))
+
+    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
+        A[DA.indexes[pididx]...]
+    end
+    return Distributed(I->localpart(s), DA)
+end
+
+function distribute(x, procs::Array=workers(), disttype::DISTTYPE=DArray)
+    if disttype == BCast
+        return Distributed(next_did(), I->x, nothing, procs, nothing, nothing, BCast)
+    elseif isa(x, AbstractArray) && (disttype == DAny)
+        @assert length(x) == length(procs)
+        s = DestinationSerializer(p->x[p], procs)
+        return Distributed(next_did(), I->localpart(s), nothing, procs, nothing, nothing, DAny)
+
+    elseif isa(x, AbstractArray)
+            return distribute(x; procs=procs)
+    else
+        error("$(typeof(x)) cannot be distributed as $disttype")
+    end
+end
+
+macro Distributed(ex0::Expr)
     if ex0.head !== :comprehension
-        throw(ArgumentError("invalid @DArray syntax"))
+        throw(ArgumentError("invalid @Distributed syntax"))
     end
     ex = ex0.args[1]
     if ex.head !== :generator
-        throw(ArgumentError("invalid @DArray syntax"))
+        throw(ArgumentError("invalid @Distributed syntax"))
     end
     ex.args[1] = esc(ex.args[1])
     ndim = length(ex.args) - 1
@@ -188,40 +298,45 @@ macro DArray(ex0::Expr)
         var = ex.args[d+1].args[1]
         ex.args[d+1] = :( $(esc(var)) = ($(ranges[d]))[I[$d]] )
     end
-    return :( DArray((I::Tuple{Vararg{UnitRange{Int}}})->($ex0),
+    return :( Distributed((I::Tuple{Vararg{UnitRange{Int}}})->($ex0),
                 tuple($(map(r->:(length($r)), ranges)...))) )
 end
 
-# new DArray similar to an existing one
-DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
+# new Distributed similar to an existing one
+function Distributed{T,N,A,DT}(init::Function, d::Distributed{T,N,A,DT}; disttype=DT)
+    if disttype == DArray
+        return Distributed(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
+    else
+        return Distributed(next_did(), init, nothing, procs(d), nothing, nothing, disttype)
+    end
+end
 
-function release_localpart(identity)
+function release_localpart(id)
     global registry
-    delete!(registry, (identity, :CONTAINER))
-    delete!(registry, (identity, :LOCALPART))
+    delete!(registry, id)
     nothing
 end
-release_localpart(d::DArray) = release_localpart(d.identity)
+release_localpart(d::Distributed) = release_localpart(d.id)
 
-function close_by_identity(identity, pids)
-#   @schedule println("Finalizer for : ", identity)
+function close_by_id(id, pids)
+#   @schedule println("Finalizer for : ", id)
     global refs
     @sync begin
         for p in pids
-            @async remotecall_fetch(release_localpart, p, identity)
+            @async remotecall_fetch(release_localpart, p, id)
         end
         if !(myid() in pids)
-            release_localpart(identity)
+            release_localpart(id)
         end
     end
-    delete!(refs, identity)
+    delete!(refs, id)
     nothing
 end
 
-function close(d::DArray)
-#    @schedule println("close : ", d.identity, ", object_id : ", object_id(d), ", myid : ", myid() )
-    if (myid() == d.identity[1]) && d.release
-        @schedule close_by_identity(d.identity, d.pids)
+function close(d::Distributed)
+#    @schedule println("close : ", d.id, ", object_id : ", object_id(d), ", myid : ", myid() )
+    if (myid() == d.id[1]) && d.release
+        @schedule close_by_id(d.id, d.pids)
         d.release = false
     end
     nothing
@@ -231,38 +346,32 @@ function darray_closeall()
     global registry
     global refs
     crefs = copy(refs)
-    for identity in crefs
-        if identity[1] ==  myid() # sanity check
-            haskey(registry, (identity, :CONTAINER)) && close(registry[(identity, :CONTAINER)])
+    for id in crefs
+        if id[1] ==  myid() # sanity check
+            haskey(registry, id) && close(registry[id])
             yield()
         end
     end
 end
 
-function rr_localpart(ref, identity)
-    global registry
-    lp = fetch(ref)
-    registry[(identity, :LOCALPART)] = lp
-    return size(lp)
-end
+rr_size_localpart(ref) = size(fetch(ref))
 
+Base.similar(d::Distributed, T::Type, dims::Dims) = Distributed(I->Array(T, map(length,I)), dims, procs(d))
+Base.similar(d::Distributed, T::Type) = similar(d, T, size(d))
+Base.similar{T}(d::Distributed{T}, dims::Dims) = similar(d, T, dims)
+Base.similar{T}(d::Distributed{T}) = similar(d, T, size(d))
 
-Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array(T, map(length,I)), dims, procs(d))
-Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
-Base.similar{T}(d::DArray{T}, dims::Dims) = similar(d, T, dims)
-Base.similar{T}(d::DArray{T}) = similar(d, T, size(d))
-
-Base.size(d::DArray) = d.dims
+Base.size(d::Distributed) = d.dims
 
 
 """
-    procs(d::DArray)
+    procs(d::Distributed)
 
-Get the vector of processes storing pieces of DArray `d`.
+Get the vector of processes storing pieces of Distributed `d`.
 """
-Base.procs(d::DArray) = d.pids
+Base.procs(d::Distributed) = d.pids
 
-chunktype{T,N,A}(d::DArray{T,N,A}) = A
+chunktype{T,N,A}(d::Distributed{T,N,A}) = A
 
 ## chunk index utilities ##
 
@@ -324,28 +433,30 @@ function localpartindex(pids::Array{Int})
     end
     return 0
 end
-localpartindex(d::DArray) = localpartindex(procs(d))
+localpartindex(d::Distributed) = localpartindex(procs(d))
 
 """
-    localpart(d::DArray)
+    localpart(d::Distributed)
 
 Get the local piece of a distributed array.
 Returns an empty array if no local part exists on the calling process.
 """
-function localpart{T,N,A}(d::DArray{T,N,A})
-    lpidx = localpartindex(d)
-    if lpidx == 0
-        return convert(A, Array(T, ntuple(zero, N)))::A
+function localpart{T,N,A,DT}(d::Distributed{T,N,A,DT})
+    if isnull(d.v)
+        if DT == DArray
+            return convert(A, Array(T, ntuple(zero, N)))::A
+        else
+            error("No localpart available")
+        end
+    else
+        return get(d.v)::A
     end
-
-    global registry
-    return registry[(d.identity, :LOCALPART)]::A
 end
 
-localpart(d::DArray, localidx...) = localpart(d)[localidx...]
+localpart(d::Distributed, localidx...) = localpart(d)[localidx...]
 
 # fetch localpart of d at pids[i]
-fetch{T,N,A}(d::DArray{T,N,A}, i) = remotecall_fetch(localpart, d.pids[i], d)
+fetch{T,N,A}(d::Distributed{T,N,A}, i) = remotecall_fetch(localpart, d.pids[i], d)
 
 """
     localpart(A)
@@ -360,7 +471,7 @@ localpart(A) = A
 A tuple describing the indexes owned by the local process.
 Returns a tuple with empty ranges if no local part exists on the calling process.
 """
-function localindexes(d::DArray)
+function localindexes(d::Distributed)
     lpidx = localpartindex(d)
     if lpidx == 0
         return ntuple(i -> 1:0, ndims(d))
@@ -369,10 +480,10 @@ function localindexes(d::DArray)
 end
 
 # find which piece holds index (I...)
-locate(d::DArray, I::Int...) =
+locate(d::Distributed, I::Int...) =
     ntuple(i -> searchsortedlast(d.cuts[i], I[i]), ndims(d))
 
-chunk{T,N,A}(d::DArray{T,N,A}, i...) = remotecall_fetch(localpart, d.pids[i...], d)::A
+chunk{T,N,A}(d::Distributed{T,N,A}, i...) = remotecall_fetch(localpart, d.pids[i...], d)::A
 
 ## convenience constructors ##
 
@@ -380,10 +491,10 @@ chunk{T,N,A}(d::DArray{T,N,A}, i...) = remotecall_fetch(localpart, d.pids[i...],
      dzeros(dims, ...)
 
 Construct a distributed array of zeros.
-Trailing arguments are the same as those accepted by `DArray`.
+Trailing arguments are the same as those accepted by `Distributed`.
 """
-dzeros(dims::Dims, args...) = DArray(I->zeros(map(length,I)), dims, args...)
-dzeros{T}(::Type{T}, dims::Dims, args...) = DArray(I->zeros(T,map(length,I)), dims, args...)
+dzeros(dims::Dims, args...) = Distributed(I->zeros(map(length,I)), dims, args...)
+dzeros{T}(::Type{T}, dims::Dims, args...) = Distributed(I->zeros(T,map(length,I)), dims, args...)
 dzeros{T}(::Type{T}, d1::Integer, drest::Integer...) = dzeros(T, convert(Dims, tuple(d1, drest...)))
 dzeros(d1::Integer, drest::Integer...) = dzeros(Float64, convert(Dims, tuple(d1, drest...)))
 dzeros(d::Dims) = dzeros(Float64, d)
@@ -393,10 +504,10 @@ dzeros(d::Dims) = dzeros(Float64, d)
     dones(dims, ...)
 
 Construct a distributed array of ones.
-Trailing arguments are the same as those accepted by `DArray`.
+Trailing arguments are the same as those accepted by `Distributed`.
 """
-dones(dims::Dims, args...) = DArray(I->ones(map(length,I)), dims, args...)
-dones{T}(::Type{T}, dims::Dims, args...) = DArray(I->ones(T,map(length,I)), dims, args...)
+dones(dims::Dims, args...) = Distributed(I->ones(map(length,I)), dims, args...)
+dones{T}(::Type{T}, dims::Dims, args...) = Distributed(I->ones(T,map(length,I)), dims, args...)
 dones{T}(::Type{T}, d1::Integer, drest::Integer...) = dones(T, convert(Dims, tuple(d1, drest...)))
 dones(d1::Integer, drest::Integer...) = dones(Float64, convert(Dims, tuple(d1, drest...)))
 dones(d::Dims) = dones(Float64, d)
@@ -405,18 +516,18 @@ dones(d::Dims) = dones(Float64, d)
      dfill(x, dims, ...)
 
 Construct a distributed array filled with value `x`.
-Trailing arguments are the same as those accepted by `DArray`.
+Trailing arguments are the same as those accepted by `Distributed`.
 """
-dfill(v, dims::Dims, args...) = DArray(I->fill(v, map(length,I)), dims, args...)
+dfill(v, dims::Dims, args...) = Distributed(I->fill(v, map(length,I)), dims, args...)
 dfill(v, d1::Integer, drest::Integer...) = dfill(v, convert(Dims, tuple(d1, drest...)))
 
 """
      drand(dims, ...)
 
 Construct a distributed uniform random array.
-Trailing arguments are the same as those accepted by `DArray`.
+Trailing arguments are the same as those accepted by `Distributed`.
 """
-drand{T}(::Type{T}, dims::Dims, args...) = DArray(I->rand(T,map(length,I)), dims, args...)
+drand{T}(::Type{T}, dims::Dims, args...) = Distributed(I->rand(T,map(length,I)), dims, args...)
 drand{T}(::Type{T}, d1::Integer, drest::Integer...) = drand(T, convert(Dims, tuple(d1, drest...)))
 drand(d1::Integer, drest::Integer...) = drand(Float64, convert(Dims, tuple(d1, drest...)))
 drand(d::Dims, args...)  = drand(Float64, d, args...)
@@ -425,52 +536,16 @@ drand(d::Dims, args...)  = drand(Float64, d, args...)
      drandn(dims, ...)
 
 Construct a distributed normal random array.
-Trailing arguments are the same as those accepted by `DArray`.
+Trailing arguments are the same as those accepted by `Distributed`.
 """
-drandn(dims::Dims, args...) = DArray(I->randn(map(length,I)), dims, args...)
+drandn(dims::Dims, args...) = Distributed(I->randn(map(length,I)), dims, args...)
 drandn(d1::Integer, drest::Integer...) = drandn(convert(Dims, tuple(d1, drest...)))
 
 ## conversions ##
 
-"""
-     distribute(A[; procs, dist])
+Base.convert{T,N,S<:AbstractArray}(::Type{Distributed{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
 
-Convert a local array to distributed.
-
-`procs` optionally specifies an array of process IDs to use. (defaults to all workers)
-`dist` optionally specifies a vector or tuple of the number of partitions in each dimension
-"""
-function distribute(A::AbstractArray;
-    procs = workers()[1:min(nworkers(), maximum(size(A)))],
-    dist = defaultdist(size(A), procs))
-    np = prod(dist)
-    procs_used = procs[1:np]
-    idxs, _ = chunk_idxs([size(A)...], dist)
-
-    s = verified_destination_serializer(reshape(procs_used, size(idxs)), size(idxs)) do pididx
-        A[idxs[pididx]...]
-    end
-    return DArray(I->localpart(s), size(A), procs_used, dist)
-end
-
-"""
-    distribute(A, DA)
-
-Distribute a local array `A` like the distributed array `DA`.
-
-"""
-function distribute(A::AbstractArray, DA::DArray)
-    size(DA) == size(A) || throw(DimensionMismatch("Distributed array has size $(size(DA)) but array has $(size(A))"))
-
-    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
-        A[DA.indexes[pididx]...]
-    end
-    return DArray(I->localpart(s), DA)
-end
-
-Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
-
-Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
+Base.convert{S,T,N}(::Type{Array{S,N}}, d::Distributed{T,N}) = begin
     a = Array(S, size(d))
     @sync begin
         for i = 1:length(d.pids)
@@ -480,13 +555,13 @@ Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
     return a
 end
 
-Base.convert{S,T,N}(::Type{Array{S,N}}, s::SubDArray{T,N}) = begin
+Base.convert{S,T,N}(::Type{Array{S,N}}, s::SubDistributed{T,N}) = begin
     I = s.indexes
     d = s.parent
     if isa(I,Tuple{Vararg{UnitRange{Int}}}) && S<:T && T<:S
         l = locate(d, map(first, I)...)
         if isequal(d.indexes[l...], I)
-            # SubDArray corresponds to a chunk
+            # SubDistributed corresponds to a chunk
             return chunk(d, l...)
         end
     end
@@ -495,9 +570,9 @@ Base.convert{S,T,N}(::Type{Array{S,N}}, s::SubDArray{T,N}) = begin
     return a
 end
 
-function Base.convert{T,N}(::Type{DArray}, SD::SubArray{T,N})
+function Base.convert{T,N}(::Type{Distributed}, SD::SubArray{T,N})
     D = SD.parent
-    DArray(size(SD), procs(D)) do I
+    Distributed(size(SD), procs(D)) do I
         TR = typeof(SD.indexes[1])
         lindices = Array(TR, 0)
         for (i,r) in zip(I, SD.indexes)
@@ -514,11 +589,11 @@ function Base.convert{T,N}(::Type{DArray}, SD::SubArray{T,N})
     end
 end
 
-Base.reshape{T,S<:Array}(A::DArray{T,1,S}, d::Dims) = begin
+Base.reshape{T,S<:Array}(A::Distributed{T,1,S}, d::Dims) = begin
     if prod(d) != length(A)
         throw(DimensionMismatch("dimensions must be consistent with array size"))
     end
-    return DArray(d) do I
+    return Distributed(d) do I
         sz = map(length,I)
         d1offs = first(I[1])
         nd = length(I)
@@ -541,8 +616,8 @@ end
 
 ## indexing ##
 
-getlocalindex(d::DArray, idx...) = localpart(d)[idx...]
-function getindex_tuple{T}(d::DArray{T}, I::Tuple{Vararg{Int}})
+getlocalindex(d::Distributed, idx...) = localpart(d)[idx...]
+function getindex_tuple{T}(d::Distributed{T}, I::Tuple{Vararg{Int}})
     chidx = locate(d, I...)
     idxs = d.indexes[chidx...]
     localidx = ntuple(i -> (I[i] - first(idxs[i]) + 1), ndims(d))
@@ -550,13 +625,33 @@ function getindex_tuple{T}(d::DArray{T}, I::Tuple{Vararg{Int}})
     return remotecall_fetch(getlocalindex, pid, d, localidx...)::T
 end
 
-Base.getindex(d::DArray, i::Int) = getindex_tuple(d, ind2sub(size(d), i))
-Base.getindex(d::DArray, i::Int...) = getindex_tuple(d, i)
+Base.getindex(d::Distributed, i::Int) = getindex_tuple(d, ind2sub(size(d), i))
+Base.getindex(d::Distributed, i::Int...) = getindex_tuple(d, i)
 
-Base.getindex(d::DArray) = d[1]
-Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
+function Base.getindex{T,N,A,DT}(d::Distributed{T,N,A,DT})
+    if DT == DArray
+        return d[1]::A
+    elseif (DT == BCast) || (DT == DAny)
+        return localpart(d)::A
+    end
+end
+Base.getindex(d::Distributed, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
 
-Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
+# get the localpart from a different worker
+type DPid
+    pid::Int
+end
+
+Base.getindex{T,N,A}(d::Distributed{T,N,A}, pid::DPid) = remotecall_fetch(localpart, pid.pid, d)::A
+
+# shorter syntax for localpart
+function Base.getindex{T,N,A}(d::Distributed{T,N,A}, s::Symbol)
+    s != :L && error("Use d[:L] to access the localpart of a distributed type")
+    localpart(d)::A
+end
+
+
+Base.copy!(dest::SubOrDistributed, src::SubOrDistributed) = begin
     asyncmap(procs(dest)) do p
         remotecall_fetch(p) do
             localpart(dest)[:] = src[localindexes(dest)...]
@@ -566,9 +661,9 @@ Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
 end
 
 # local copies are obtained by convert(Array, ) or assigning from
-# a SubDArray to a local Array.
+# a SubDistributed to a local Array.
 
-function Base.setindex!(a::Array, d::DArray,
+function Base.setindex!(a::Array, d::Distributed,
         I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
     n = length(I)
     @sync for i = 1:length(d.pids)
@@ -578,7 +673,7 @@ function Base.setindex!(a::Array, d::DArray,
     return a
 end
 
-# We also want to optimize setindex! with a SubDArray source, but this is hard
+# We also want to optimize setindex! with a SubDistributed source, but this is hard
 # and only works on 0.5.
 
 # Similar to Base.indexin, but just create a logical mask. Note that this
@@ -670,7 +765,7 @@ import Base: checkbounds_indices
 #
 # I’ve come to the conclusion that the function is utterly insane.
 # There are *6* flavors of indices with four different reference points:
-# 1. Find the indices of each portion of the DArray.
+# 1. Find the indices of each portion of the Distributed.
 # 2. Find the valid subset of indices for the SubArray into that portion.
 # 3. Find the portion of the `I` indices that should be used when you access the
 #    `K` indices in the subarray.  This guy is nasty.  It’s totally backwards
@@ -679,7 +774,7 @@ import Base: checkbounds_indices
 #    (`indexin_mask`) and which dimensions should match up (`restrict_indices`)
 # 4. If `K` doesn’t correspond to an entire chunk, reinterpret `K` in terms of
 #    the local portion of the source array
-function Base.setindex!(a::Array, s::SubDArray,
+function Base.setindex!(a::Array, s::SubDistributed,
         I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
     Base.setindex_shape_check(s, Base.index_lengths(a, I...)...)
     n = length(I)
@@ -706,9 +801,96 @@ function Base.setindex!(a::Array, s::SubDArray,
     return a
 end
 
-Base.fill!(A::DArray, x) = begin
+Base.fill!(A::Distributed, x) = begin
     @sync for p in procs(A)
         @async remotecall_fetch((A,x)->(fill!(localpart(A), x); nothing), p, A, x)
     end
     return A
 end
+
+Base.show{T,N,A,DistType}(io::IO, m::MIME"text/plain", d::Distributed{T,N,A,DistType}) = begin
+    if DistType == DArray
+        invoke(show, (IO, MIME"text/plain", AbstractArray), io, m, d)
+    else
+        print(io, "DistributedArrays.Distributed{$T,$N,$A,$DistType}")
+    end
+end
+
+# MPI type communication enablers
+bcast(x; procs=workers()) = Distributed(x; procs=procs, disttype=BCast)
+sendto(x, pid) = distribute(x, [pid], BCast)
+recvfrom(d::Distributed, pid) = d[DPid(pid)]
+
+#reduce is the regular reduce
+all_reduce(op, d::Distributed) = distribute(reduce(op, d), procs(d), BCast)
+
+# scatter
+function scatter(x, procs=workers())
+    if length(x) > length(procs)
+        error(string("scatter only for works for input items smallet than the number of workers.",
+                     "Use distribute(::DArray) for longer items."))
+    end
+    distribute(x, procs[1:length(x)], DAny)
+end
+
+function gather_data{T,N,A,DT}(d::Distributed{T,N,A,DT})
+    if DT == DArray
+        gv = convert(Array, d)
+    else
+        gv = Array(A, length(procs(d)))
+        @sync for (i,p) in enumerate(procs(d))
+            @async gv[i] = d[DPid(p)]
+        end
+        gv
+    end
+    return gv
+end
+
+gather(d) = Distributed(gather_data(d); disttype=BCast, procs=[myid()])
+
+all_gather(d) = Distributed(I->gather_data(d); disttype=DAny)  # should this be the same disttype as input?
+
+# all_to_all will work on DArray or with DAny. Both require that the localpart is a vector
+# whose length is a multiple of nworkers()
+function all_to_all{T,N,A,DT}(d::Distributed{T,N,A,DT})
+    ((DT != DAny) || (N > 1)) && error("all_to_all in only supported for DAny types where the localpart is a vector")
+
+    # create a DAny to store the results
+    d2 = Distributed(I->Array(eltype(A), length(d[:L])); disttype=DAny, procs=procs(d))
+
+    # run local_all_to_all part on all pids
+    @sync for p in procs(d)
+        @async remotecall_wait(local_all_to_all, p, d, d2)
+    end
+    d2
+end
+
+function local_all_to_all{T,N,A,DT}(d::Distributed{T,N,A,DT}, d2)
+    lp = localpart(d)
+    lp2 = localpart(d2)
+
+    @assert isa(lp, AbstractArray) && (rem(length(lp), length(d.pids)) == 0)
+
+    csz = div(length(lp), length(d.pids))
+
+    # Higher pids exchange with lower pids
+    np = length(procs(d))
+    j = localpartindex(d)
+    @sync for (i,p) in enumerate(procs(d)[1:j-1])
+        send_ith_data = lp[1+(i-1)*csz : i*csz]
+
+        @async begin
+            lp2[1+(i-1)*csz : i*csz] = remotecall_fetch((d,d2,data,i,j) -> begin
+                                                localpart(d2)[1+(j-1)*csz : j*csz] = data
+                                                localpart(d)[1+(j-1)*csz : j*csz]
+                                            end, p, d, d2, send_ith_data, i, j)
+        end
+    end
+    # copy diag values
+    lp2[1+(j-1)*csz : j*csz] = lp[1+(j-1)*csz : j*csz]
+    nothing
+end
+
+
+export DArray, BCast, DAny, DPid, bcast, sendto, recvfrom, all_reduce, scatter, gather, all_to_all, all_gather
+

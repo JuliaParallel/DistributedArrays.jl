@@ -1,114 +1,154 @@
-Experimental code to figure out what a good API using the underlying infrastructure of darrays to distribute types other than DArrays can be.
-
-- distribute ranges
-- distribute variables which are constant over a period of computation
-- distribute one item per worker ( can hold the result of a computation which needn't be an array)
-- distributed dictionaries
-
-Ignoring API names and performance considerations for now, some sample code
-
 ```
-julia> addprocs(2)
-2-element Array{Int64,1}:
+julia> addprocs(4)
+4-element Array{Int64,1}:
  2
  3
+ 4
+ 5
 
 julia> @everywhere using DistributedArrays
 WARNING: replacing module DistributedArrays.
 WARNING: replacing module DistributedArrays.
+WARNING: replacing module DistributedArrays.
+WARNING: replacing module DistributedArrays.
 
-julia> # distribute a unit range - this does not create an darray like
-       # the current DArray implementation does. Returns a Distributed
-       # type
-       d=distribute(1:99)
-DistributedArrays.Distributed{UnitRange}((1,1),[2,3],Nullable{UnitRange{T<:Real}}(1:99),Nullable{Array{UnitRange,1}}(UnitRange[1:49,50:99]),0,true)
-
-julia> println(d[DPid(2)])  # Fetch the range on worker 2
-1:49
-
-julia> println(d[])         # Fetch the local range
-1:0
-
-julia> # Create a new Distributed type
-       d2=map(x->x*2, d)
-DistributedArrays.Distributed{Any}((1,2),[2,3],Nullable{Any}(),Nullable{Array{Any,1}}(),0,true)
-
-julia> println(d2[DPid(2)]) # Fetch the data from worker 2
-[2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98]
-
-julia> try println(d2[]); catch e; println(e); end    # This is an error since a localpart cannot be found locally
-ErrorException("localpart does not exist")
-
-julia> println(collect(d2; element_type=Int)) # collect all parts of d2
-[2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,102,104,106,108,110,112,114,116,118,120,122,124,126,128,130,132,134,136,138,140,142,144,146,148,150,152,154,156,158,160,162,164,166,168,170,172,174,176,178,180,182,184,186,188,190,192,194,196,198]
-
-julia> # Distribute variable d3 on all workers
-       d3=distribute_constant("Hello")
-DistributedArrays.Distributed{String}((1,3),[2,3],Nullable{String}("Hello"),Nullable{Array{String,1}}(),1,true)
-
-julia> println(d3[DPid(2)]) # Value of d3 on worker 2
-Hello
-
-julia> println(d3[])        # Value of d3 locally
-Hello
-
-julia> @everywhere type Foo
+julia> # broadcast data
+       @everywhere type Foo
          foo
        end
 
-julia> # Distribute an instance of Foo on all workers
-       d4=distribute_constant(Foo(1))
-DistributedArrays.Distributed{Foo}((1,4),[2,3],Nullable{Foo}(Foo(1)),Nullable{Array{Foo,1}}(),1,true)
+julia> B_all = bcast(Foo("Hello"))
+DistributedArrays.Distributed{Foo,1,Foo,BCast}
 
-julia> println(d4[DPid(2)])    # Value of d4 on worker 2
-Foo(1)
+julia> # broadcast an array
+       B_all_arr = bcast(rand(2))
+DistributedArrays.Distributed{Array{Float64,1},1,Array{Float64,1},BCast}
 
-julia> println(d4[])           # Value of d4 locally
-Foo(1)
-
-julia> # create a regular distributed array
-       d_arr = drand(10,10);
-
-julia> # convert to distributed type
-       d_converted = convert(Distributed, d_arr)
-DistributedArrays.Distributed{Array{Float64,2}}((1,6),[2,3],Nullable{Array{Float64,2}}(),Nullable{Array{Array{Float64,2},1}}(),0,false)
-
-julia> # Compute sum locally and store it distributed - this is stored as scalar values everywhere
-       d5 = map(x->sum(x), d_converted)
-DistributedArrays.Distributed{Any}((1,7),[2,3],Nullable{Any}(),Nullable{Array{Any,1}}(),0,true)
-
-julia> println(d5[DPid(2)]) # Value of d5 on worker 2
-25.230014303222525
-
-julia> try println(d5[]); catch e; println(e); end        # Value of d5 locally
-ErrorException("localpart does not exist")
-
-julia> reduce(+, d5)
-54.215170122991424
-
-julia> reduce(+, d_converted)
-54.215170122991424
-
-julia> # Distribute a few scalar constants, a Distributed type and a DArray
-       # Perform distributed computations
-       # Perform a final reduction
-       # Wrap everything in a function due to globals not being serialized
-       function foo()
-           i = distribute_constant(42)
-           j = distribute_constant(2.5)
-           d_arr = dones(10,10)
-
-           # perform a computation, the result is stored on the workers
-           # For a darray, [] returns the first element, for a Distributed type
-           # it returns the localpart. For a distributed constant it returns the
-           # global variable.
-           temp_result = distribute_one_per_worker(p->localpart(d_arr) * i[] * j[])
-
-           d_sum = map(sum, temp_result)
-           reduce(+, d_sum)
+julia> # test whether the data is available on all machines
+       for p in workers()
+           println("B_all_arr from $p: ", recvfrom(B_all_arr, p))
+           println("B_all from $p: ", recvfrom(B_all, p))
        end
-foo (generic function with 1 method)
+B_all_arr from 2: [0.540676,0.877029]
+B_all from 2: Foo("Hello")
+B_all_arr from 3: [0.540676,0.877029]
+B_all from 3: Foo("Hello")
+B_all_arr from 4: [0.540676,0.877029]
+B_all from 4: Foo("Hello")
+B_all_arr from 5: [0.540676,0.877029]
+B_all from 5: Foo("Hello")
 
-julia> foo()
-10500.0
+julia> # NOTE:
+       # recvfrom(d, pid) is equivalent to d[DPid(pid)]
+       # d[:L] is equivalent to localpart(d)
+
+       # send to a particular process
+       S1 = sendto(rand(2), 2)
+DistributedArrays.Distributed{Array{Float64,1},1,Array{Float64,1},BCast}
+
+julia> S2 = sendto("World", 3)
+DistributedArrays.Distributed{String,1,String,BCast}
+
+julia> println("S1 from 2: ", recvfrom(S1, 2))
+S1 from 2: [0.93668,0.850998]
+
+julia> println("S2 from 3: ", recvfrom(S2, 3))
+S2 from 3: World
+
+julia> try recvfrom(S1, 3); catch e; println("S1 not found on 3 "); end
+S1 not found on 3
+
+julia> try recvfrom(S2, 2); catch e; println("S2 not found on 2 "); end
+S2 not found on 2
+
+julia> # scatter
+       rv = rand(nworkers())
+4-element Array{Float64,1}:
+ 0.094717
+ 0.666209
+ 0.591417
+ 0.33996
+
+julia> SC1 = scatter(rv)
+DistributedArrays.Distributed{Float64,1,Float64,DAny}
+
+julia> for p in workers()
+           println("localpart of SC1 from $p: ", SC1[DPid(p)])
+       end
+localpart of SC1 from 2: 0.0947170069141472
+localpart of SC1 from 3: 0.666209107235316
+localpart of SC1 from 4: 0.5914166107468701
+localpart of SC1 from 5: 0.33996001426693034
+
+julia> G = gather(SC1)
+DistributedArrays.Distributed{Array{Float64,1},1,Array{Float64,1},BCast}
+
+julia> println(G[:L])
+[0.094717,0.666209,0.591417,0.33996]
+
+julia> @assert G[:L] == rv
+
+julia> AG = all_gather(SC1)
+DistributedArrays.Distributed{Array{Float64,1},1,Array{Float64,1},DAny}
+
+julia> for p in workers()
+           println("localpart of AG from $p: ", AG[DPid(p)])
+       end
+localpart of AG from 2: [0.094717,0.666209,0.591417,0.33996]
+localpart of AG from 3: [0.094717,0.666209,0.591417,0.33996]
+localpart of AG from 4: [0.094717,0.666209,0.591417,0.33996]
+localpart of AG from 5: [0.094717,0.666209,0.591417,0.33996]
+
+julia> v = reduce(+, SC1)
+1.6923027391632637
+
+julia> println("reduced val : ", v)
+reduced val : 1.6923027391632637
+
+julia> RV = all_reduce(+, SC1)
+DistributedArrays.Distributed{Float64,1,Float64,BCast}
+
+julia> println(typeof(RV))
+DistributedArrays.Distributed{Float64,1,Float64,BCast::DistributedArrays.DISTTYPE = 2}
+
+julia> println(RV[:L])
+1.6923027391632637
+
+julia> # MPI all_to_all only on DAny types where the localpart is an array
+       d = Distributed(I->[((I*10):(I*10)+7)...]; disttype=DAny)
+DistributedArrays.Distributed{Array{Int64,1},1,Array{Int64,1},DAny}
+
+julia> d2 = all_to_all(d)
+DistributedArrays.Distributed{Array{Int64,1},1,Array{Int64,1},DAny}
+
+julia> for p in procs(d)
+           println(d[DPid(p)]')
+       end
+[10 11 12 13 14 15 16 17]
+[20 21 22 23 24 25 26 27]
+[30 31 32 33 34 35 36 37]
+[40 41 42 43 44 45 46 47]
+
+julia> for p in procs(d2)
+           println(d2[DPid(p)]')
+       end
+[10 11 20 21 30 31 40 41]
+[12 13 22 23 32 33 42 43]
+[14 15 24 25 34 35 44 45]
+[16 17 26 27 36 37 46 47]
+
+julia> # Differences from MPI
+       # - Each of the MPI like calls returns an instance of a Distributed type.
+       # - A Distributed type is a handle to the distributed object
+       # - There are no global name bindings on any of the workers
+       # - The handles need to be passed around
+       #   - either captured in closures
+       #   - or as explicit arguments to functions
+
+       # Questions:
+       # Assigning to a Bcast type will assign everywhere?
+       # convert from BCast type to DAny type?
+       # scatter of a scalar is a BCast?
+       # Or merge BCast and DAny into a DAny type.
+
 ```

@@ -1,21 +1,21 @@
-function Base.ctranspose{T}(D::DArray{T,2})
-    DArray(reverse(size(D)), procs(D)) do I
+function Base.ctranspose{T}(D::Distributed{T,2})
+    Distributed(reverse(size(D)), procs(D)) do I
         lp = Array(T, map(length, I))
         rp = convert(Array, D[reverse(I)...])
         ctranspose!(lp, rp)
     end
 end
 
-function Base.transpose{T}(D::DArray{T,2})
-    DArray(reverse(size(D)), procs(D)) do I
+function Base.transpose{T}(D::Distributed{T,2})
+    Distributed(reverse(size(D)), procs(D)) do I
         lp = Array(T, map(length, I))
         rp = convert(Array, D[reverse(I)...])
         transpose!(lp, rp)
     end
 end
 
-typealias DVector{T,A} DArray{T,1,A}
-typealias DMatrix{T,A} DArray{T,2,A}
+typealias DVector{T,A} Distributed{T,1,A}
+typealias DMatrix{T,A} Distributed{T,2,A}
 
 # Level 1
 
@@ -56,7 +56,7 @@ function norm(x::DVector, p::Real = 2)
     return norm(results, p)
 end
 
-Base.scale!(A::DArray, x::Number) = begin
+Base.scale!(A::Distributed, x::Number) = begin
     @sync for p in procs(A)
         @async remotecall_fetch((A,x)->(scale!(localpart(A), x); nothing), p, A, x)
     end
@@ -256,22 +256,22 @@ At_mul_B!(C::DMatrix, A::DMatrix, B::AbstractMatrix) = At_mul_B!(one(eltype(C)),
 
 function (*)(A::DMatrix, x::AbstractVector)
     T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(x)))
-    y = DArray(I -> Array(T, map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
+    y = Distributed(I -> Array(T, map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
     return A_mul_B!(one(T), A, x, zero(T), y)
 end
 function (*)(A::DMatrix, B::AbstractMatrix)
     T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(B)))
-    C = DArray(I -> Array(T, map(length, I)), (size(A, 1), size(B, 2)), procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))], (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
+    C = Distributed(I -> Array(T, map(length, I)), (size(A, 1), size(B, 2)), procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))], (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
     return A_mul_B!(one(T), A, B, zero(T), C)
 end
 
 function Ac_mul_B(A::DMatrix, x::AbstractVector)
     T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(x)))
-    y = DArray(I -> Array(T, map(length, I)), (size(A, 2),), procs(A)[1,:], (size(procs(A), 2),))
+    y = Distributed(I -> Array(T, map(length, I)), (size(A, 2),), procs(A)[1,:], (size(procs(A), 2),))
     return Ac_mul_B!(one(T), A, x, zero(T), y)
 end
 function Ac_mul_B(A::DMatrix, B::AbstractMatrix)
     T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(B)))
-    C = DArray(I -> Array(T, map(length, I)), (size(A, 2), size(B, 2)), procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:], (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
+    C = Distributed(I -> Array(T, map(length, I)), (size(A, 2), size(B, 2)), procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:], (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
     return Ac_mul_B!(one(T), A, B, zero(T), C)
 end
