@@ -161,10 +161,10 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
             scatter_n_sort_localparts, p, presorted ? nothing : d, i, refs, boundaries; kwargs...),
                                     local_sort_results, 1:np, pids)
 
-    # Construct a new DArray from the sorted refs. Remove parts with 0-length since
-    # the DArray constructor_from_refs does not yet support it. This implies that
+    # Construct a new Distributed from the sorted refs. Remove parts with 0-length since
+    # the Distributed constructor_from_refs does not yet support it. This implies that
     # the participating workers for the sorted darray may be different from the original
     # for highly non-uniform distributions.
     local_sorted_refs = RemoteChannel[x[1] for x in filter(x->x[2]>0, local_sort_results)]
-    return DArray(local_sorted_refs)
+    return Distributed(local_sorted_refs)
 end

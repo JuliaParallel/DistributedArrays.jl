@@ -10,7 +10,7 @@ import Base.Callable
 import Base.BLAS: axpy!
 
 export (.+), (.-), (.*), (./), (.%), (.<<), (.>>), div, mod, rem, (&), (|), ($)
-export DArray, SubDArray, SubOrDArray, @DArray
+export Distributed, SubDistributed, SubOrDistributed, @Distributed
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, ppeval, samedist
 export close, darray_closeall
 
