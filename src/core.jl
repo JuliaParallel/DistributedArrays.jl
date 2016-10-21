@@ -712,3 +712,18 @@ Base.fill!(A::DArray, x) = begin
     end
     return A
 end
+
+# new work #
+function Base.cumsum(A::DArray)
+    out1 = let ds = ds
+        [remotecall(()->cumsum(localpart(ds),2)[end],p) for p = workers()]
+    end
+    out2 = [0 ; cumsum(fetch.(out1))]
+    out3 = Future[]
+    for i = 1:length(workers())
+        p = workers()[i]
+        out2i = out2[i]
+        push!(out3,remotecall(()->+(out2i,localpart(ds)),p))
+    end
+    return DArray(out3)
+ end
