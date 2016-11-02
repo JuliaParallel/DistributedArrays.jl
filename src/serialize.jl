@@ -1,32 +1,32 @@
-function Base.serialize(S::AbstractSerializer, d::DArray)
+function Base.serialize{T,N,A}(S::AbstractSerializer, d::DArray{T,N,A})
     # Only send the ident for participating workers - we expect the DArray to exist in the
-    # remote registry
+    # remote registry. DO NOT send the localpart.
     destpid = Base.worker_id_from_socket(S.io)
     Serializer.serialize_type(S, typeof(d))
-    if (destpid in d.pids) || (destpid == d.identity[1])
-        serialize(S, (true, d.identity))    # (identity_only, identity)
+    if (destpid in d.pids) || (destpid == d.id[1])
+        serialize(S, (true, d.id))    # (id_only, id)
     else
-        serialize(S, (false, d.identity))
+        serialize(S, (false, d.id))
         for n in [:dims, :pids, :indexes, :cuts]
             serialize(S, getfield(d, n))
         end
+        serialize(S, A)
     end
 end
 
-function Base.deserialize{T<:DArray}(S::AbstractSerializer, t::Type{T})
+function Base.deserialize{DT<:DArray}(S::AbstractSerializer, t::Type{DT})
     what = deserialize(S)
-    identity_only = what[1]
-    identity = what[2]
+    id_only = what[1]
+    id = what[2]
 
-    if identity_only
-        global registry
-        if haskey(registry, (identity, :DARRAY))
-            return registry[(identity, :DARRAY)]
+    if id_only
+        if haskey(registry, id)
+            return registry[id]
         else
             # access to fields will throw an error, at least the deserialization process will not
             # result in worker death
-            d = T()
-            d.identity = identity
+            d = DT()
+            d.id = id
             return d
         end
     else
@@ -35,7 +35,10 @@ function Base.deserialize{T<:DArray}(S::AbstractSerializer, t::Type{T})
         pids = deserialize(S)
         indexes = deserialize(S)
         cuts = deserialize(S)
-        return T(identity, dims, pids, indexes, cuts)
+        A = deserialize(S)
+        T=eltype(DT)
+        N=length(dims)
+        return DT(id, dims, pids, indexes, cuts, empty_localpart(T,N,A))
     end
 end
 
