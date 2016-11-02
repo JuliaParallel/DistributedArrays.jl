@@ -38,30 +38,30 @@ dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 ```
 """
 type DArray{T,N,A} <: AbstractArray{T,N}
-    identity::Tuple
+    id::Tuple
     dims::NTuple{N,Int}
     pids::Array{Int,N}                          # pids[i]==p ⇒ processor p has piece i
     indexes::Array{NTuple{N,UnitRange{Int}},N}  # indexes held by piece i
     cuts::Vector{Vector{Int}}                   # cuts[d][i] = first index of chunk i in dimension d
+    localpart::A
 
     release::Bool
 
-    function DArray(identity, dims, pids, indexes, cuts)
+    function DArray(id, dims, pids, indexes, cuts, lp)
         # check invariants
         if dims != map(last, last(indexes))
             throw(ArgumentError("dimension of DArray (dim) and indexes do not match"))
         end
-        release = (myid() == identity[1])
+        release = (myid() == id[1])
 
-        global registry
-        haskey(registry, (identity, :DARRAY)) && return registry[(identity, :DARRAY)]
+        haskey(registry, id) && return registry[id]
 
-        d = new(identity, dims, pids, indexes, cuts, release)
+        d = new(id, dims, pids, indexes, cuts, lp, release)
         if release
-            push!(refs, identity)
-            registry[(identity, :DARRAY)] = d
+            push!(refs, id)
+            registry[id] = d
 
-#            println("Installing finalizer for : ", d.identity, ", : ", object_id(d), ", isbits: ", isbits(d))
+#            println("Installing finalizer for : ", d.id, ", : ", object_id(d), ", isbits: ", isbits(d))
             finalizer(d, close)
         end
         d
@@ -69,6 +69,9 @@ type DArray{T,N,A} <: AbstractArray{T,N}
 
     DArray() = new()
 end
+
+eltype{T}(::Type{DArray{T}}) = T
+empty_localpart(T,N,A) = convert(A, Array(T, ntuple(zero, N)))
 
 typealias SubDArray{T,N,D<:DArray} SubArray{T,N,D}
 typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
@@ -79,49 +82,51 @@ localtype(A::AbstractArray) = typeof(A)
 
 ## core constructors ##
 
-function DArray(identity, init, dims, pids, idxs, cuts)
+function DArray(id, init, dims, pids, idxs, cuts)
     r=Channel(1)
     @sync begin
         for i = 1:length(pids)
             @async begin
                 local typA
                 if isa(init, Function)
-                    typA=remotecall_fetch(construct_localparts, pids[i], init, identity, dims, pids, idxs, cuts)
+                    typA=remotecall_fetch(construct_localparts, pids[i], init, id, dims, pids, idxs, cuts)
                 else
                     # constructing from an array of remote refs.
-                    typA=remotecall_fetch(construct_localparts, pids[i], init[i], identity, dims, pids, idxs, cuts)
+                    typA=remotecall_fetch(construct_localparts, pids[i], init[i], id, dims, pids, idxs, cuts)
                 end
                 !isready(r) && put!(r, typA)
             end
         end
     end
 
-    typA = take!(r)
+    A = take!(r)
     if myid() in pids
-        d = registry[(identity, :DARRAY)]
+        d = registry[id]
     else
-        d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
+        T = eltype(A)
+        N = length(dims)
+        d = DArray{T,N,A}(id, dims, pids, idxs, cuts, empty_localpart(T,N,A))
     end
     d
 end
 
-function construct_localparts(init, identity, dims, pids, idxs, cuts)
-    A = isa(init, Function) ? init(idxs[localpartindex(pids)]) : fetch(init)
-    global registry
-    registry[(identity, :LOCALPART)] = A
-    typA = typeof(A)
-    d = DArray{eltype(typA),length(dims),typA}(identity, dims, pids, idxs, cuts)
-    registry[(identity, :DARRAY)] = d
-    typA
+function construct_localparts(init, id, dims, pids, idxs, cuts)
+    localpart = isa(init, Function) ? init(idxs[localpartindex(pids)]) : fetch(init)
+    A = typeof(localpart)
+    T = eltype(A)
+    N = length(dims)
+    d = DArray{T,N,A}(id, dims, pids, idxs, cuts, localpart)
+    registry[id] = d
+    A
 end
 
 function DArray(init, dims, procs, dist)
     np = prod(dist)
     procs = reshape(procs[1:np], ntuple(i->dist[i], length(dist)))
     idxs, cuts = chunk_idxs([dims...], dist)
-    identity = next_did()
+    id = next_did()
 
-    return DArray(identity, init, dims, procs, idxs, cuts)
+    return DArray(id, init, dims, procs, idxs, cuts)
 end
 
 function DArray(init, dims, procs)
@@ -140,13 +145,13 @@ DArray(init, dims) = DArray(init, dims, workers()[1:min(nworkers(), maximum(dims
 # FIXME : Empty parts are currently not supported.
 function DArray(refs)
     dimdist = size(refs)
-    identity = next_did()
+    id = next_did()
 
     npids = [r.where for r in refs]
     nsizes = Array(Tuple, dimdist)
     @sync for i in 1:length(refs)
         let i=i
-            @async nsizes[i] = remotecall_fetch(rr_localpart, npids[i], refs[i], identity)
+            @async nsizes[i] = remotecall_fetch(sz_localpart_ref, npids[i], refs[i], id)
         end
     end
 
@@ -170,7 +175,7 @@ function DArray(refs)
     ncuts = Array{Int,1}[unshift!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
     ndims = tuple([sort(unique(lastidxs[x,:]))[end]-1 for x in 1:length(dimdist)]...)
 
-    DArray(identity, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
+    DArray(id, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
 end
 
 macro DArray(ex0::Expr)
@@ -195,57 +200,44 @@ end
 # new DArray similar to an existing one
 DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
 
-function release_localpart(identity)
-    global registry
-    delete!(registry, (identity, :DARRAY))
-    delete!(registry, (identity, :LOCALPART))
-    nothing
-end
-release_localpart(d::DArray) = release_localpart(d.identity)
+release_localpart(id) = (delete!(registry, id); nothing)
+release_localpart(d::DArray) = release_localpart(d.id)
 
-function close_by_identity(identity, pids)
-#   @schedule println("Finalizer for : ", identity)
+function close_by_id(id, pids)
+#   @schedule println("Finalizer for : ", id)
     global refs
     @sync begin
         for p in pids
-            @async remotecall_fetch(release_localpart, p, identity)
+            @async remotecall_fetch(release_localpart, p, id)
         end
         if !(myid() in pids)
-            release_localpart(identity)
+            release_localpart(id)
         end
     end
-    delete!(refs, identity)
+    delete!(refs, id)
     nothing
 end
 
 function close(d::DArray)
-#    @schedule println("close : ", d.identity, ", object_id : ", object_id(d), ", myid : ", myid() )
-    if (myid() == d.identity[1]) && d.release
-        @schedule close_by_identity(d.identity, d.pids)
+#    @schedule println("close : ", d.id, ", object_id : ", object_id(d), ", myid : ", myid() )
+    if (myid() == d.id[1]) && d.release
+        @schedule close_by_id(d.id, d.pids)
         d.release = false
     end
     nothing
 end
 
 function darray_closeall()
-    global registry
-    global refs
     crefs = copy(refs)
-    for identity in crefs
-        if identity[1] ==  myid() # sanity check
-            haskey(registry, (identity, :DARRAY)) && close(registry[(identity, :DARRAY)])
+    for id in crefs
+        if id[1] ==  myid() # sanity check
+            haskey(registry, id) && close(registry[id])
             yield()
         end
     end
 end
 
-function rr_localpart(ref, identity)
-    global registry
-    lp = fetch(ref)
-    registry[(identity, :LOCALPART)] = lp
-    return size(lp)
-end
-
+sz_localpart_ref(ref, id) = size(fetch(ref))
 
 Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array(T, map(length,I)), dims, procs(d))
 Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
@@ -335,11 +327,10 @@ Returns an empty array if no local part exists on the calling process.
 function localpart{T,N,A}(d::DArray{T,N,A})
     lpidx = localpartindex(d)
     if lpidx == 0
-        return convert(A, Array(T, ntuple(zero, N)))::A
+        return empty_localpart(T,N,A)::A
     end
 
-    global registry
-    return registry[(d.identity, :LOCALPART)]::A
+    return registry[d.id].localpart::A
 end
 
 localpart(d::DArray, localidx...) = localpart(d)[localidx...]
