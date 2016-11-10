@@ -1,25 +1,3 @@
-const MYID = myid()
-const OTHERIDS = filter(id-> id != MYID, procs())[rand(1:(nprocs()-1))]
-
-function print_test_desc(t, n=0)
-    for t2 in t.results
-        if isa(t2, Base.Test.DefaultTestSet)
-            print_test_desc(t2, n+2)
-        end
-    end
-
-    println(repeat(" ", n), "Passed : ", t.description)
-end
-
-function check_leaks(t=nothing)
-    if length(DistributedArrays.refs) > 0
-        sleep(0.1)  # allow time for any cleanup to complete and test again
-        length(DistributedArrays.refs) > 0 && warn("Probable leak of ", length(DistributedArrays.refs), " darrays")
-    end
-
-    isa(t, Base.Test.DefaultTestSet) && print_test_desc(t)
-end
-
 t=@testset "test distribute" begin
     A = rand(1:100, (100,100))
 
@@ -251,7 +229,7 @@ t=@testset "test mapreducedim on DArrays" begin
 
     # close(D)
     # close(D2)
-    darray_closeall()   # temp created by the mapreduce above
+    d_closeall()   # temp created by the mapreduce above
 end
 
 check_leaks(t)
@@ -268,7 +246,7 @@ t=@testset "test mapreducdim, reducedim on DArrays" begin
         @test reducedim(*, A, dms, 2.0) ≈ reducedim(*, DA, dms, 2.0)
     end
     close(DA)
-    darray_closeall()   # temp created by the mapreduce above
+    d_closeall()   # temp created by the mapreduce above
 end
 
 check_leaks(t)
@@ -284,7 +262,7 @@ t=@testset "test statistical functions on DArrays" begin
     end
 
     close(DA)
-    darray_closeall()   # temporaries created above
+    d_closeall()   # temporaries created above
 end
 
 check_leaks(t)
@@ -328,7 +306,7 @@ t=@testset "test sum on DArrays" begin
     @test sum(DA,2) ≈ sum(A,2)
     @test sum(DA,3) ≈ sum(A,3)
     close(DA)
-    darray_closeall()   # temporaries created above
+    d_closeall()   # temporaries created above
 end
 
 check_leaks(t)
@@ -645,7 +623,7 @@ t=@testset "test c/transpose" begin
         close(A)
     end
 
-    darray_closeall()  # close the temporaries created above
+    d_closeall()  # close the temporaries created above
 end
 
 check_leaks(t)
@@ -661,7 +639,7 @@ t=@testset "test convert from subdarray" begin
     @test isa(s, SubDArray)
     @test s == convert(DArray, s)
     close(a)
-    darray_closeall()  # close the temporaries created above
+    d_closeall()  # close the temporaries created above
 end
 
 check_leaks(t)
@@ -690,7 +668,7 @@ t=@testset "test scalar math" begin
         @test f.(a) == f.(b)
     end
     close(a)
-    darray_closeall()  # close the temporaries created above
+    d_closeall()  # close the temporaries created above
 end
 
 check_leaks(t)
@@ -731,7 +709,7 @@ t=@testset "test mapslices" begin
     @test (size(n1) == (6,1,4,5) && size(n2) == (6,3,1,5) && size(n3) == (2,6,1,5))
     close(D)
     close(c)
-    darray_closeall()  # close the temporaries created above
+    d_closeall()  # close the temporaries created above
 end
 
 check_leaks(t)
@@ -766,7 +744,7 @@ t=@testset "test scalar ops" begin
     end
     close(a)
     close(c)
-    darray_closeall()  # close the temporaries created above
+    d_closeall()  # close the temporaries created above
 end
 
 check_leaks(t)
@@ -781,7 +759,7 @@ t=@testset "test broadcast ops" begin
     c = a .- m
     d = convert(Array, a) .- convert(Array, m)
     @test c == d
-    darray_closeall()
+    d_closeall()
 end
 
 check_leaks(t)
@@ -798,7 +776,7 @@ t=@testset "test matrix multiplication" begin
     close(A)
     close(b)
     close(B)
-    darray_closeall()  # close the temporaries created above
+    d_closeall()  # close the temporaries created above
 end
 
 check_leaks(t)
@@ -823,7 +801,7 @@ t=@testset "test axpy!" begin
     @test_throws DimensionMismatch LinAlg.axpy!(2.0, x, zeros(length(x) + 1))
     close(x)
     close(y)
-    darray_closeall()  # close the temporaries created above
+    d_closeall()  # close the temporaries created above
 end
 
 check_leaks(t)
@@ -840,7 +818,7 @@ t=@testset "test ppeval" begin
     @test sum(ppeval(eigvals, A)) ≈ sum(ppeval(eigvals, A, eye(10, 10)))
     close(A)
     close(B)
-    darray_closeall()  # close the temporaries created above
+    d_closeall()  # close the temporaries created above
 end
 
 check_leaks(t)
@@ -867,7 +845,7 @@ t=@testset "test matmatmul" begin
     @test AB ≈ ab
     @test AtB ≈ atb
     @test AcB ≈ acb
-    darray_closeall()  # close the temporaries created above
+    d_closeall()  # close the temporaries created above
 end
 
 t=@testset "sort, T = $T" for i in 0:6, T in [Int, Float64]
@@ -878,12 +856,41 @@ t=@testset "sort, T = $T" for i in 0:6, T in [Int, Float64]
         @test length(d) == length(d2)
         @test sort(convert(Array, d)) == convert(Array, d2)
     end
-    darray_closeall()  # close the temporaries created above
+    d_closeall()  # close the temporaries created above
 end
 
 check_leaks(t)
 
-darray_closeall()
+t=@testset "ddata" begin
+    d = ddata(;T=Int, init=I->myid())
+    for p in workers()
+        @test p == remotecall_fetch(d->d[:L], p, d)
+    end
+    @test Int[workers()...] == gather(d)
+
+    close(d)
+
+    d = ddata(;T=Int, data=workers())
+    for p in workers()
+        @test p == remotecall_fetch(d->d[:L], p, d)
+    end
+    @test Int[workers()...] == gather(d)
+
+    close(d)
+
+    d = ddata(;T=Any, init=I->"Hello World!")
+    for p in workers()
+        @test "Hello World!" == remotecall_fetch(d->d[:L], p, d)
+    end
+    Any["Hello World!" for p in workers()] == gather(d)
+
+
+    close(d)
+end
+
+check_leaks(t)
+
+d_closeall()
 
 t=@testset "test for any leaks" begin
     sleep(1.0)     # allow time for any cleanup to complete
@@ -893,3 +900,4 @@ t=@testset "test for any leaks" begin
     allregistrieszero = Bool[remotecall_fetch(()->length(DistributedArrays.registry) == 0, p) for p in procs()]
     @test all(allregistrieszero)
 end
+

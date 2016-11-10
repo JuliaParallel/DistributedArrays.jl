@@ -68,8 +68,13 @@ equal the number of processes.
 
 * `distribute(a::Array)` converts a local array to a distributed array.
 
-* `localpart(a::DArray)` obtains the locally-stored portion
+* `localpart(d::DArray)` obtains the locally-stored portion
 of a  `DArray`.
+
+* Localparts can be retrived and set via the indexing syntax too.
+Indexing via symbols is used for this, specifically symbols `:L`,`:LP`,`:l`,`:lp` which
+are all equivalent. For example, `d[:L]` returns the localpart of `d`
+while `d[:L]=v` sets `v` as the localpart of `d`.
 
 * `localindexes(a::DArray)` gives a tuple of the index ranges owned by the
 local process.
@@ -238,3 +243,135 @@ a reference to a DArray object on the creating process for as long as it is bein
 
 `darray_closeall()` is another useful function to manage distributed memory. It releases all darrays created from
 the calling process, including any temporaries created during computation.
+
+Working with distributed non-array data
+---------------------------------------
+
+The function `ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Vector=[])` can be used
+to created a distributed vector whose localparts need not be Arrays.
+
+It returns a `DArray{T,1,T}`, i.e., the element type and localtype of the array are the same.
+
+`ddata()` constructs a distributed vector of length `nworkers()` where each localpart can hold any value,
+initially initialized to `nothing`.
+
+Argument `data` if supplied is distributed over the `pids`. `length(data)` must be a multiple of `length(pids)`.
+If the multiple is 1, returns a `DArray{T,1,T}` where T is `eltype(data)`. If the multiple is greater than 1,
+returns a `DArray{T,1,Array{T,1}}`, i.e., it is equivalent to calling `distribute(data)`.
+
+`gather{T}(d::DArray{T,1,T})` returns an Array{T,1} consisting of all distributed elements of `d`
+
+Given a `DArray{T,1,T}` object `d`, `d[:L]` returns the localpart on a worker. `d[i]` returns the `localpart`
+on the ith worker that `d` is distributed over.
+
+SPMD Mode (An MPI Style SPMD mode with MPI like primitives)
+------------------------------------------------------------
+
+We can easily run the same block of code on all workers in an SPMD mode using the `spmd` function.
+
+```
+# define foo() on all workers
+@everywhere function foo(arg1, arg2)
+    ....
+end
+
+# call foo() everywhere using the `spmd` function
+d_in=DArray(.....)
+d_out=ddata()
+spmd(foo,d_in,d_out; pids=workers()) # executes on all workers
+```
+
+`spmd` is defined as `spmd(f, args...; pids=procs(), context=nothing)`
+
+`args` is one or more arguments to be passed to `f`. `pids` identifies the workers
+that `f` needs to be run on. `context` identifies a run context, which is explained
+later.
+
+The following primitives can be used in SPMD mode.
+
+`sendto(pid, data; tag=nothing)` - sends `data` to `pid`
+`recvfrom(pid; tag=nothing)` - receives data from `pid`
+`recvfrom_any(; tag=nothing)` - receives data from any `pid`
+`barrier(;pids=procs(), tag=nothing)` - all tasks wait and then proceeed
+`bcast(data, pid; tag=nothing, pids=procs())` - broadcasts the same data over `pids` from `pid`
+`scatter(x, pid; tag=nothing, pids=procs())` - distributes `x` over `pids` from `pid`
+`gather(x, pid; tag=nothing, pids=procs())` - collects data from `pids` onto worker `pid`
+
+Tag `tag` should be used to differentiate between consecutive calls of the same type, for example,
+consecutive `bcast` calls.
+
+`spmd` and spmd related functions are defined in submodule `DistributedArrays.SPMD`. You will need to
+import it explcitly, or prefix functions that can can only be used in spmd mode with `SPMD.`, for example,
+`SPMD.sendto`.
+
+NOTE: It is not a good idea to instantiate `DArray` objects within an SPMD function/block, as this will
+result in `N` copies of the the object. Similarly calling `@everywhere` or `spmd` from within a an SPMD
+function/block will result in `N*N` parallel runs. In SPMD mode the function/block is executed concurrently
+on all workers.
+
+Example
+-------
+
+This toy example exchanges data with each of its neighbors `n` times.
+
+```
+using DistributedArrays
+addprocs(8)
+@everywhere importall DistributedArrays
+@everywhere importall DistributedArrays.SPMD
+
+d_in=d=DArray(I->fill(myid(), (map(length,I)...)), (nworkers(), 2), workers(), [nworkers(),1])
+d_out=ddata()
+
+# define the function everywhere
+@everywhere function foo_spmd(d_in, d_out, n)
+    pids = sort(vec(procs(d_in)))
+    pididx = findfirst(pids, myid())
+    mylp = d_in[:L]
+    localsum = 0
+
+    # Have each worker exchange data with its neighbors
+    n_pididx = pididx+1 > length(pids) ? 1 : pididx+1
+    p_pididx = pididx-1 < 1 ? length(pids) : pididx-1
+
+    for i in 1:n
+        sendto(pids[n_pididx], mylp[2])
+        sendto(pids[p_pididx], mylp[1])
+
+        mylp[2] = recvfrom(pids[p_pididx])
+        mylp[1] = recvfrom(pids[n_pididx])
+
+        barrier(;pids=pids)
+        localsum = localsum + mylp[1] + mylp[2]
+    end
+
+    # finally store the sum in d_out
+    d_out[:L] = localsum
+end
+
+# run foo_spmd on all workers
+spmd(foo_spmd, d_in, d_out, 10)
+
+# print values of d_in and d_out after the run
+println(d_in)
+println(d_out)
+```
+
+SPMD Context
+------------
+
+Each SPMD run is implictly executed in a different context. This allows for multiple `spmd` calls to
+be active at the same time. A SPMD context can be explicitly specified via keyword arg `context` to `spmd`.
+
+`context(pids=procs())` returns a new SPMD context.
+
+A SPMD context also provides a context local storage, a dict, which can be used to store
+key-value pairs between spmd runs under the same context.
+
+`context_local_storage()` returns the dictionary associated with the context.
+
+NOTE: Implicitly defined contexts, i.e., `spmd` calls without specifying a `context` create a context
+which live only for the duration of the call. Explictly created context objects can be released
+early by calling `close(stxt::SPMDContext)`. This will release the local storage dictionaries
+on all participating `pids`. Else they will be released when the context object is gc'ed
+on the node that created it.
