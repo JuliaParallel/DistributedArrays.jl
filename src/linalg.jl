@@ -254,24 +254,35 @@ Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix) = _
 At_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix) = _matmatmul!(α, A, B, β, C, 'T')
 At_mul_B!(C::DMatrix, A::DMatrix, B::AbstractMatrix) = At_mul_B!(one(eltype(C)), A, B, zero(eltype(C)), C)
 
+_matmul_op = (t,s) -> t*s + t*s
+
 function (*)(A::DMatrix, x::AbstractVector)
-    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(x)))
+    T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
     y = DArray(I -> Array(T, map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
     return A_mul_B!(one(T), A, x, zero(T), y)
 end
 function (*)(A::DMatrix, B::AbstractMatrix)
-    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(B)))
-    C = DArray(I -> Array(T, map(length, I)), (size(A, 1), size(B, 2)), procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))], (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
+    T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
+    C = DArray(I -> Array(T, map(length, I)),
+            (size(A, 1), size(B, 2)),
+            procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))],
+            (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
     return A_mul_B!(one(T), A, B, zero(T), C)
 end
 
 function Ac_mul_B(A::DMatrix, x::AbstractVector)
-    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(x)))
-    y = DArray(I -> Array(T, map(length, I)), (size(A, 2),), procs(A)[1,:], (size(procs(A), 2),))
+    T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
+    y = DArray(I -> Array(T, map(length, I)),
+            (size(A, 2),),
+            procs(A)[1,:],
+            (size(procs(A), 2),))
     return Ac_mul_B!(one(T), A, x, zero(T), y)
 end
 function Ac_mul_B(A::DMatrix, B::AbstractMatrix)
-    T = promote_type(Base.LinAlg.arithtype(eltype(A)), Base.LinAlg.arithtype(eltype(B)))
-    C = DArray(I -> Array(T, map(length, I)), (size(A, 2), size(B, 2)), procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:], (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
+    T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
+    C = DArray(I -> Array(T, map(length, I)), (size(A, 2),
+        size(B, 2)),
+        procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:],
+        (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
     return Ac_mul_B!(one(T), A, B, zero(T), C)
 end
