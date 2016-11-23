@@ -703,3 +703,30 @@ Base.fill!(A::DArray, x) = begin
     end
     return A
 end
+
+# new work #
+
+function star(f1,f2,f3,args::DistributedArrays.DArray...)
+        let ds = ds
+            out1 = [remotecall( ()-> f1( DistributedArrays.localpart(ds),2 )[end],p ) for p = workers()]
+
+            out2 = [0; f2(map(fetch,out1))]
+
+            out3 = Future[]
+                    for i = 1:length(workers())
+                        p = workers()[i]
+                        out2i = out2[i]
+                        push!(out3,remotecall(()->f3(out2i,f1( DistributedArrays.localpart(ds),2) ),p))
+                    end
+
+            tmp = [out3[1] out3[2] out3[3] out3[4]]
+
+            return DArray(tmp)
+        end
+end
+
+import Base.cumsum
+
+function cumsum(args::DistributedArrays.DArray...)
+    return star(cumsum,cumsum,+,args)
+end
