@@ -28,5 +28,6 @@ include("linalg.jl")
 include("sort.jl")
 
 include("spmd.jl")
+export SPMD
 
 end # module
