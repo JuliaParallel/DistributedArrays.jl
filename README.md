@@ -304,11 +304,6 @@ consecutive `bcast` calls.
 import it explcitly, or prefix functions that can can only be used in spmd mode with `SPMD.`, for example,
 `SPMD.sendto`.
 
-NOTE: It is not a good idea to instantiate `DArray` objects within an SPMD function/block, as this will
-result in `N` copies of the the object. Similarly calling `@everywhere` or `spmd` from within a an SPMD
-function/block will result in `N*N` parallel runs. In SPMD mode the function/block is executed concurrently
-on all workers.
-
 Example
 -------
 
@@ -375,3 +370,56 @@ which live only for the duration of the call. Explictly created context objects 
 early by calling `close(stxt::SPMDContext)`. This will release the local storage dictionaries
 on all participating `pids`. Else they will be released when the context object is gc'ed
 on the node that created it.
+
+
+Nested `spmd` calls
+-------------------
+As `spmd` executes the the specified function on all participating nodes, we need to be careful with nesting `spmd` calls.
+
+An example of an unsafe(wrong) way:
+```
+function foo(.....)
+    ......
+    spmd(bar, ......)
+    ......
+end
+
+function bar(....)
+    ......
+    spmd(baz, ......)
+    ......
+end
+
+spmd(foo,....)
+```
+In the above example, `foo`, `bar` and `baz` are all functions wishing to leverage distributed computation. However, they themselves may be currenty part of a `spmd` call. A safe way to handle such a scenario is to only drive parallel computation from the master process.
+
+The correct way (only have the driver process initiate `spmd` calls):
+```
+function foo()
+    ......
+    myid()==1 && spmd(bar, ......)
+    ......
+end
+
+function bar()
+    ......
+    myid()==1 && spmd(baz, ......)
+    ......
+end
+
+spmd(foo,....)
+```
+
+This is also true of functions which automatically distribute computation on DArrays.
+```
+function foo(d::DArray)
+    ......
+    myid()==1 && map!(bar, d)
+    ......
+end
+spmd(foo,....)
+```
+Without the `myid()` check, the `spmd` call to `foo` would execute `map!` from all nodes, which is not what we probably want. 
+
+Similarly `@everywhere` from within a SPMD run should also be driven from the master node only.
