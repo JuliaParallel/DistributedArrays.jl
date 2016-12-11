@@ -289,13 +289,19 @@ later.
 
 The following primitives can be used in SPMD mode.
 
-`sendto(pid, data; tag=nothing)` - sends `data` to `pid`
-`recvfrom(pid; tag=nothing)` - receives data from `pid`
-`recvfrom_any(; tag=nothing)` - receives data from any `pid`
-`barrier(;pids=procs(), tag=nothing)` - all tasks wait and then proceeed
-`bcast(data, pid; tag=nothing, pids=procs())` - broadcasts the same data over `pids` from `pid`
-`scatter(x, pid; tag=nothing, pids=procs())` - distributes `x` over `pids` from `pid`
-`gather(x, pid; tag=nothing, pids=procs())` - collects data from `pids` onto worker `pid`
+- `sendto(pid, data; tag=nothing)` - sends `data` to `pid`
+
+- `recvfrom(pid; tag=nothing)` - receives data from `pid`
+
+- `recvfrom_any(; tag=nothing)` - receives data from any `pid`
+
+- `barrier(;pids=procs(), tag=nothing)` - all tasks wait and then proceeed
+
+- `bcast(data, pid; tag=nothing, pids=procs())` - broadcasts the same data over `pids` from `pid`
+
+- `scatter(x, pid; tag=nothing, pids=procs())` - distributes `x` over `pids` from `pid`
+
+- `gather(x, pid; tag=nothing, pids=procs())` - collects data from `pids` onto worker `pid`
 
 Tag `tag` should be used to differentiate between consecutive calls of the same type, for example,
 consecutive `bcast` calls.
