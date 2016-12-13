@@ -266,8 +266,9 @@ on the ith worker that `d` is distributed over.
 
 SPMD Mode (An MPI Style SPMD mode with MPI like primitives)
 ------------------------------------------------------------
+SPMD, i.e., a Single Program Multiple Data mode is implemented by submodule `DistributedArrays.SPMD`. In this mode the same function is executed in parallel on all participating nodes. This is a typical style of MPI programs where the same program is executed on all processors. A basic subset of MPI-like primitives are currently supported. As a programming model it should be familiar to folks with an MPI background.
 
-We can easily run the same block of code on all workers in an SPMD mode using the `spmd` function.
+The same block of code is executed concurrently on all workers using the `spmd` function.
 
 ```
 # define foo() on all workers
@@ -373,7 +374,7 @@ key-value pairs between spmd runs under the same context.
 
 NOTE: Implicitly defined contexts, i.e., `spmd` calls without specifying a `context` create a context
 which live only for the duration of the call. Explictly created context objects can be released
-early by calling `close(stxt::SPMDContext)`. This will release the local storage dictionaries
+early by calling `close(ctxt::SPMDContext)`. This will release the local storage dictionaries
 on all participating `pids`. Else they will be released when the context object is gc'ed
 on the node that created it.
 
