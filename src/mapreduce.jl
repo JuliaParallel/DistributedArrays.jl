@@ -141,7 +141,6 @@ for (fn, fr) in ((:any, :|),
                  (:count, :+))
     @eval begin
         (Base.$fn)(f::typeof(identity), d::DArray) = mapreduce(f, $fr, d)
-        (Base.$fn)(f::Base.Predicate{1}, d::DArray) = mapreduce(f, $fr, d)
         (Base.$fn)(f::Callable, d::DArray) = mapreduce(f, $fr, d)
     end
 end
