@@ -2,11 +2,11 @@
 
 Base.map(f, d::DArray) = DArray(I->map(f, localpart(d)), d)
 
-Base.map!{F}(f::F, d::DArray) = begin
-    @sync for p in procs(d)
-        @async remotecall_fetch((f,d)->(map!(f, localpart(d)); nothing), p, f, d)
+Base.map!{F}(f::F, dest::DArray, src::DArray) = begin
+    @sync for p in procs(dest)
+        @async remotecall_fetch(() -> (map!(f, localpart(dest), src[localindexes(dest)...]); nothing), p)
     end
-    return d
+    return dest
 end
 
 Base.Broadcast.containertype{D<:DArray}(::Type{D}) = DArray
