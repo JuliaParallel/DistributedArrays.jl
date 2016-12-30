@@ -9,8 +9,31 @@ Base.map!{F}(f::F, d::DArray) = begin
     return d
 end
 
-# FixMe! We'll have to handle the general n args case but it seems tricky
-Base.broadcast(f, d::DArray) = DArray(I -> broadcast(f, localpart(d)), d)
+Base.Broadcast.containertype{D<:DArray}(::Type{D}) = DArray
+
+Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{DArray}) = DArray
+Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{Array})  = DArray
+Base.Broadcast.promote_containertype(::Type{DArray}, ct)             = DArray
+Base.Broadcast.promote_containertype(::Type{Array}, ::Type{DArray})  = DArray
+Base.Broadcast.promote_containertype(ct, ::Type{DArray})             = DArray
+
+Base.Broadcast.broadcast_indices(::Type{DArray}, A)      = indices(A)
+Base.Broadcast.broadcast_indices(::Type{DArray}, A::Ref) = ()
+
+# FixMe!
+## 1. Support for arbitrary indices including OneTo
+## 2. This is as type unstable as it can be. Overhead might not matter too much for DArrays though.
+function Base.Broadcast.broadcast_c(f, ::Type{DArray}, As...)
+    T     = Base.Broadcast._broadcast_eltype(f, As...)
+    shape = Base.Broadcast.broadcast_indices(As...)
+    iter  = Base.CartesianRange(shape)
+    D     = DArray(map(length, shape)) do I
+        Base.Broadcast.broadcast_c(f, Array,
+            map(a -> isa(a, Union{Number,Ref}) ? a :
+                localtype(a)(a[ntuple(i -> i > ndims(a) ? 1 : (size(a, i) == 1 ? (1:1) : I[i]), length(shape))...]), As)...)
+    end
+    return D
+end
 
 function Base.reduce(f, d::DArray)
     results=[]
@@ -148,15 +171,17 @@ end
 # Unary vector functions
 (-)(D::DArray) = map(-, D)
 
-# scalar ops
-(+)(A::DArray{Bool}, x::Bool) = A .+ x
-(+)(x::Bool, A::DArray{Bool}) = x .+ A
-(-)(A::DArray{Bool}, x::Bool) = A .- x
-(-)(x::Bool, A::DArray{Bool}) = x .- A
-(+)(A::DArray, x::Number) = A .+ x
-(+)(x::Number, A::DArray) = x .+ A
-(-)(A::DArray, x::Number) = A .- x
-(-)(x::Number, A::DArray) = x .- A
+@static if VERSION < v"0.6.0-dev.1731"
+    # scalar ops
+    (+)(A::DArray{Bool}, x::Bool) = A .+ x
+    (+)(x::Bool, A::DArray{Bool}) = x .+ A
+    (-)(A::DArray{Bool}, x::Bool) = A .- x
+    (-)(x::Bool, A::DArray{Bool}) = x .- A
+    (+)(A::DArray, x::Number) = A .+ x
+    (+)(x::Number, A::DArray) = x .+ A
+    (-)(A::DArray, x::Number) = A .- x
+    (-)(x::Number, A::DArray) = x .- A
+end
 
 map_localparts(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
 map_localparts(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
@@ -192,10 +217,12 @@ end
 # the same size and distribution
 map_localparts(f::Callable, As::DArray...) = DArray(I->f(map(localpart, As)...), As[1])
 
-for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
-    @eval begin
-        ($f){T}(A::DArray{T}, B::Number) = map_localparts(r->($f)(r, B), A)
-        ($f){T}(A::Number, B::DArray{T}) = map_localparts(r->($f)(A, r), B)
+@static if VERSION < v"0.6.0-dev.1632"
+    for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
+        @eval begin
+            ($f){T}(A::DArray{T}, B::Number) = map_localparts(r->($f)(r, B), A)
+            ($f){T}(A::Number, B::DArray{T}) = map_localparts(r->($f)(A, r), B)
+        end
     end
 end
 
@@ -217,13 +244,15 @@ for f in (:+, :-, :div, :mod, :rem, :&, :|, :$)
         ($f){T}(A::Array{T}, B::DArray{T}) = map_localparts($f, A, B)
     end
 end
-for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
-    @eval begin
-        function ($f){T}(A::DArray{T}, B::DArray{T})
-            map_localparts($f, A, B)
+@static if VERSION < v"0.6.0-dev.1632"
+    for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
+        @eval begin
+            function ($f){T}(A::DArray{T}, B::DArray{T})
+                map_localparts($f, A, B)
+            end
+            ($f){T}(A::DArray{T}, B::Array{T}) = map_localparts($f, A, B)
+            ($f){T}(A::Array{T}, B::DArray{T}) = map_localparts($f, A, B)
         end
-        ($f){T}(A::DArray{T}, B::Array{T}) = map_localparts($f, A, B)
-        ($f){T}(A::Array{T}, B::DArray{T}) = map_localparts($f, A, B)
     end
 end
 

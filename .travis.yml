@@ -3,11 +3,10 @@ os:
   - linux
   - osx
 julia:
-  - 0.5
   - nightly
 matrix:
-  allow_failures:
-    - julia: nightly
+  # allow_failures:
+    # - julia: nightly
 notifications:
   email: false
 before_install:
