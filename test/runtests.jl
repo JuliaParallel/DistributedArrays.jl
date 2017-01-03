@@ -20,8 +20,6 @@ const OTHERIDS = filter(id-> id != MYID, procs())[rand(1:(nprocs()-1))]
 
 # On 0.6, @testset does not display the test description automatically anymore.
 function print_test_desc(t, n=0)
-    VERSION < v"0.6-" && return
-
     println(repeat(" ", n), "Passed : ", t.description)
     for t2 in t.results
         if isa(t2, Base.Test.DefaultTestSet)

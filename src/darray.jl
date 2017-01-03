@@ -61,7 +61,9 @@ empty_localpart(T,N,A) = convert(A, Array(T, ntuple(zero, N)))
 typealias SubDArray{T,N,D<:DArray} SubArray{T,N,D}
 typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
 
-localtype{T,N,S}(A::DArray{T,N,S}) = S
+localtype{T,N,S}(::Type{DArray{T,N,S}}) = S
+localtype{T,N,D}(::Type{SubDArray{T,N,D}}) = localtype(D)
+localtype(A::SubOrDArray) = localtype(typeof(A))
 localtype(A::AbstractArray) = typeof(A)
 
 ## core constructors ##
@@ -272,7 +274,7 @@ end
 # get array of start indexes for dividing sz into nc chunks
 function defaultdist(sz::Int, nc::Int)
     if sz >= nc
-        return round(Int, linspace(1, sz+1, nc+1))
+        return round.(Int, linspace(1, sz+1, nc+1))
     else
         return [[1:(sz+1);], zeros(Int, nc-sz);]
     end

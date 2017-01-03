@@ -171,7 +171,7 @@ t=@testset "test DArray reduce" begin
     end
 
     @testset "test map! / reduce" begin
-        map!(x->1, D)
+        map!(x->1, D, D)
         @test reduce(+, D) == 100
     end
     close(D)
@@ -343,16 +343,16 @@ end
 check_leaks(t)
 
 t=@testset "test max / min / sum" begin
-    a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
+    a = map(x -> Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
     d = distribute(a)
 
-    @test sum(d) == sum(a)
-    @test maximum(d) == maximum(a)
-    @test minimum(d) == minimum(a)
-    @test maxabs(d) == maxabs(a)
-    @test minabs(d) == minabs(a)
-    @test sumabs(d) == sumabs(a)
-    @test sumabs2(d) == sumabs2(a)
+    @test sum(d)          == sum(a)
+    @test maximum(d)      == maximum(a)
+    @test minimum(d)      == minimum(a)
+    @test maximum(abs, d) == maximum(abs, a)
+    @test minimum(abs, d) == minimum(abs, a)
+    @test sum(abs, d)     == sum(abs, a)
+    @test sum(abs2, d)    == sum(abs2, a)
     close(d)
 end
 
@@ -720,11 +720,11 @@ t=@testset "test scalar ops" begin
     c = drand(20,20)
     d = convert(Array, c)
 
-    @testset "$f" for f in (+, -, .+, .-, .*, ./, .%, div, mod)
+    @testset "$f" for f in (:+, :-, :.+, :.-, :.*, :./, :.%)
         x = rand()
-        @test f(a, x) == f(b, x)
-        @test f(x, a) == f(x, b)
-        @test f(a, c) == f(b, d)
+        @test @eval ($f)($a, $x) == ($f)($b, $x)
+        @test @eval ($f)($x, $a) == ($f)($x, $b)
+        @test @eval ($f)($a, $c) == ($f)($b, $d)
     end
 
     close(a)
@@ -732,10 +732,10 @@ t=@testset "test scalar ops" begin
 
     a = dones(Int, 20, 20)
     b = convert(Array, a)
-    @testset "$f" for f in (.<<, .>>)
-        @test f(a, 2) == f(b, 2)
-        @test f(2, a) == f(2, b)
-        @test f(a, a) == f(b, b)
+    @testset "$f" for f in (:.<<, :.>>)
+        @test @eval ($f)($a, 2)  == ($f)($b, 2)
+        @test @eval ($f)(2, $a)  == ($f)(2, $b)
+        @test @eval ($f)($a, $a) == ($f)($b, $b)
     end
 
     @testset "$f" for f in (rem,)
