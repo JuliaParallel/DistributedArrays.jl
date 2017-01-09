@@ -401,8 +401,8 @@ dfill(v, d1::Integer, drest::Integer...) = dfill(v, convert(Dims, tuple(d1, dres
 Construct a distributed uniform random array.
 Trailing arguments are the same as those accepted by `DArray`.
 """
-drand{T}(::Type{T}, dims::Dims, args...) = DArray(I->rand(T,map(length,I)), dims, args...)
-drand{T}(::Type{T}, d1::Integer, drest::Integer...) = drand(T, convert(Dims, tuple(d1, drest...)))
+drand(r, dims::Dims, args...) = DArray(I -> rand(r, map(length,I)), dims, args...)
+drand(r, d1::Integer, drest::Integer...) = drand(r, convert(Dims, tuple(d1, drest...)))
 drand(d1::Integer, drest::Integer...) = drand(Float64, convert(Dims, tuple(d1, drest...)))
 drand(d::Dims, args...)  = drand(Float64, d, args...)
 
