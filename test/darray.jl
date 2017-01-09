@@ -543,6 +543,20 @@ t=@testset "test drand" begin
         close(A)
     end
 
+    @testset "1D drand, UnitRange" begin
+        A = drand(1:10, 100)
+        @test eltype(A) == Int
+        @test size(A) == (100,)
+        close(A)
+    end
+
+    @testset "1D drand, Array" begin
+        A = drand([-1,0,1], 100)
+        @test eltype(A) == Int
+        @test size(A) == (100,)
+        close(A)
+    end
+
     @testset "2D drand, Dims constructor" begin
         A = drand((50,50))
         @test eltype(A) == Float64
