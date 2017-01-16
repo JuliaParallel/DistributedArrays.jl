@@ -667,16 +667,17 @@ import Base: checkbounds_indices
 #    the local portion of the source array
 function Base.setindex!(a::Array, s::SubDArray,
         I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
-    Base.setindex_shape_check(s, Base.index_lengths(a, I...)...)
-    n = length(I)
+    Inew = Base.to_indices(a, I)
+    Base.setindex_shape_check(s, Base.index_lengths(Inew...)...)
+    n = length(Inew)
     d = s.parent
-    J = Base.decolon(d, s.indexes...)
+    J = Base.to_indices(d, s.indexes)
     @sync for i = 1:length(d.pids)
         K_c = d.indexes[i]
         K = map(intersect, J, K_c)
         if !any(isempty, K)
             K_mask = map(indexin_mask, J, K_c)
-            idxs = restrict_indices(Base.decolon(a, I...), K_mask)
+            idxs = restrict_indices(Inew, K_mask)
             if isequal(K, K_c)
                 # whole chunk
                 @async a[idxs...] = chunk(d, i)
