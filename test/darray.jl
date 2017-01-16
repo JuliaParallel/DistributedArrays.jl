@@ -752,9 +752,9 @@ t=@testset "test scalar ops" begin
         @test @eval ($f)($a, $a) == ($f)($b, $b)
     end
 
-    @testset "$f" for f in (rem,)
+    @testset "$f" for f in (:rem,)
         x = rand()
-        @test f(a, x) == f(b, x)
+        @test @eval ($f).($a, $x) == ($f).($b, $x)
     end
     close(a)
     close(c)
