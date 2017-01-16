@@ -1,6 +1,6 @@
 function Base.ctranspose{T}(D::DArray{T,2})
     DArray(reverse(size(D)), procs(D)) do I
-        lp = Array(T, map(length, I))
+        lp = Array{T}(map(length, I))
         rp = convert(Array, D[reverse(I)...])
         ctranspose!(lp, rp)
     end
@@ -8,7 +8,7 @@ end
 
 function Base.transpose{T}(D::DArray{T,2})
     DArray(reverse(size(D)), procs(D)) do I
-        lp = Array(T, map(length, I))
+        lp = Array{T}(map(length, I))
         rp = convert(Array, D[reverse(I)...])
         transpose!(lp, rp)
     end
@@ -91,7 +91,7 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
     end
 
     # Multiply on each tile of A
-    R = Array(Future, size(A.pids)...)
+    R = Array{Future}(size(A.pids)...)
     for j = 1:size(A.pids, 2)
         xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
         for i = 1:size(A.pids, 1)
@@ -135,7 +135,7 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     end
 
     # Multiply on each tile of A
-    R = Array(Future, reverse(size(A.pids))...)
+    R = Array{Future}(reverse(size(A.pids))...)
     for j = 1:size(A.pids, 1)
         xj = x[A.cuts[1][j]:A.cuts[1][j + 1] - 1]
         for i = 1:size(A.pids, 2)
@@ -201,9 +201,9 @@ function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::D
 
     # Multiply on each tile of A
     if tA == 'N'
-        R = Array(Future, size(procs(A))..., size(procs(C), 2))
+        R = Array{Future}(size(procs(A))..., size(procs(C), 2))
     else
-        R = Array(Future, reverse(size(procs(A)))..., size(procs(C), 2))
+        R = Array{Future}(reverse(size(procs(A)))..., size(procs(C), 2))
     end
     for j = 1:size(A.pids, Ad2)
         for k = 1:size(C.pids, 2)
@@ -258,12 +258,12 @@ _matmul_op = (t,s) -> t*s + t*s
 
 function (*)(A::DMatrix, x::AbstractVector)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
-    y = DArray(I -> Array(T, map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
+    y = DArray(I -> Array{T}(map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
     return A_mul_B!(one(T), A, x, zero(T), y)
 end
 function (*)(A::DMatrix, B::AbstractMatrix)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
-    C = DArray(I -> Array(T, map(length, I)),
+    C = DArray(I -> Array{T}(map(length, I)),
             (size(A, 1), size(B, 2)),
             procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))],
             (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
@@ -272,7 +272,7 @@ end
 
 function Ac_mul_B(A::DMatrix, x::AbstractVector)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
-    y = DArray(I -> Array(T, map(length, I)),
+    y = DArray(I -> Array{T}(map(length, I)),
             (size(A, 2),),
             procs(A)[1,:],
             (size(procs(A), 2),))
@@ -280,7 +280,7 @@ function Ac_mul_B(A::DMatrix, x::AbstractVector)
 end
 function Ac_mul_B(A::DMatrix, B::AbstractMatrix)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
-    C = DArray(I -> Array(T, map(length, I)), (size(A, 2),
+    C = DArray(I -> Array{T}(map(length, I)), (size(A, 2),
         size(B, 2)),
         procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:],
         (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))

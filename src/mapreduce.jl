@@ -9,7 +9,7 @@ Base.map!{F}(f::F, dest::DArray, src::DArray) = begin
     return dest
 end
 
-Base.Broadcast.containertype{D<:DArray}(::Type{D}) = DArray
+Base.Broadcast._containertype{D<:DArray}(::Type{D}) = DArray
 
 Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{DArray}) = DArray
 Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{Array})  = DArray
@@ -131,7 +131,7 @@ Base.mapreducedim(f, op, R::DArray, A::DArray) = begin
 end
 
 function nnz(A::DArray)
-    B = Array(Any, size(A.pids))
+    B = Array{Any}(size(A.pids))
     @sync begin
         for i in eachindex(A.pids)
             @async B[i...] = remotecall_fetch(x -> nnz(localpart(x)), A.pids[i...], A)
@@ -301,7 +301,7 @@ function _ppeval(f, A...; dim = map(ndims, A))
     push!(ridx, 1)
     Rsize = map(last, ridx)
     Rsize[end] = dimlength
-    R = Array(eltype(R1), Rsize...)
+    R = Array{eltype(R1)}(Rsize...)
 
     for i = 1:dimlength
         for j = 1:narg

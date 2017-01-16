@@ -343,7 +343,7 @@ end
 check_leaks(t)
 
 t=@testset "test max / min / sum" begin
-    a = map(x -> Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
+    a = map(x -> Int(round(rand() * 100)) - 50, Array{Int}(100,1000))
     d = distribute(a)
 
     @test sum(d)          == sum(a)
@@ -359,7 +359,7 @@ end
 check_leaks(t)
 
 t=@testset "test all / any" begin
-    a = map(x->Int(round(rand() * 100)) - 50, Array(Int, 100,1000))
+    a = map(x->Int(round(rand() * 100)) - 50, Array{Int}(100,1000))
     a = [true for i in 1:100]
     d = distribute(a)
 
@@ -752,9 +752,9 @@ t=@testset "test scalar ops" begin
         @test @eval ($f)($a, $a) == ($f)($b, $b)
     end
 
-    @testset "$f" for f in (rem,)
+    @testset "$f" for f in (:rem,)
         x = rand()
-        @test f(a, x) == f(b, x)
+        @test @eval ($f).($a, $x) == ($f).($b, $x)
     end
     close(a)
     close(c)
