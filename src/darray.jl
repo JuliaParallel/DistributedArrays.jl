@@ -56,7 +56,7 @@ type DArray{T,N,A} <: AbstractArray{T,N}
 end
 
 eltype{T}(::Type{DArray{T}}) = T
-empty_localpart(T,N,A) = convert(A, Array(T, ntuple(zero, N)))
+empty_localpart(T,N,A) = convert(A, Array{T}(ntuple(zero, N)))
 
 typealias SubDArray{T,N,D<:DArray} SubArray{T,N,D}
 typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
@@ -177,14 +177,14 @@ function DArray(refs)
     id = next_did()
 
     npids = [r.where for r in refs]
-    nsizes = Array(Tuple, dimdist)
+    nsizes = Array{Tuple}(dimdist)
     @sync for i in 1:length(refs)
         let i=i
             @async nsizes[i] = remotecall_fetch(sz_localpart_ref, npids[i], refs[i], id)
         end
     end
 
-    nindexes = Array(NTuple{length(dimdist),UnitRange{Int}}, dimdist...)
+    nindexes = Array{NTuple{length(dimdist),UnitRange{Int}}}(dimdist...)
 
     for i in 1:length(nindexes)
         subidx = ind2sub(dimdist, i)
@@ -231,7 +231,7 @@ DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indexes,
 
 sz_localpart_ref(ref, id) = size(fetch(ref))
 
-Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array(T, map(length,I)), dims, procs(d))
+Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array{T}(map(length,I)), dims, procs(d))
 Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
 Base.similar{T}(d::DArray{T}, dims::Dims) = similar(d, T, dims)
 Base.similar{T}(d::DArray{T}) = similar(d, T, size(d))
@@ -284,7 +284,7 @@ end
 function chunk_idxs(dims, chunks)
     cuts = map(defaultdist, dims, chunks)
     n = length(dims)
-    idxs = Array(NTuple{n,UnitRange{Int}},chunks...)
+    idxs = Array{NTuple{n,UnitRange{Int}}}(chunks...)
     for cidx in CartesianRange(tuple(chunks...))
         idxs[cidx.I...] = ntuple(i -> (cuts[i][cidx[i]]:cuts[i][cidx[i] + 1] - 1), n)
     end
@@ -456,7 +456,7 @@ end
 Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
 
 Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
-    a = Array(S, size(d))
+    a = Array{S}(size(d))
     @sync begin
         for i = 1:length(d.pids)
             @async a[d.indexes[i]...] = chunk(d, i)
@@ -475,7 +475,7 @@ Base.convert{S,T,N}(::Type{Array{S,N}}, s::SubDArray{T,N}) = begin
             return chunk(d, l...)
         end
     end
-    a = Array(S, size(s))
+    a = Array{S}(size(s))
     a[[1:size(a,i) for i=1:N]...] = s
     return a
 end
@@ -484,7 +484,7 @@ function Base.convert{T,N}(::Type{DArray}, SD::SubArray{T,N})
     D = SD.parent
     DArray(size(SD), procs(D)) do I
         TR = typeof(SD.indexes[1])
-        lindices = Array(TR, 0)
+        lindices = Array{TR}(0)
         for (i,r) in zip(I, SD.indexes)
             st = step(r)
             lrstart = first(r) + st*(first(i)-1)
@@ -508,7 +508,7 @@ Base.reshape{T,S<:Array}(A::DArray{T,1,S}, d::Dims) = begin
         d1offs = first(I[1])
         nd = length(I)
 
-        B = Array(T,sz)
+        B = Array{T}(sz)
         nr = size(B,1)
         sztail = size(B)[2:end]
 
