@@ -9,7 +9,7 @@ Base.map!{F}(f::F, dest::DArray, src::DArray) = begin
     return dest
 end
 
-Base.Broadcast.containertype{D<:DArray}(::Type{D}) = DArray
+Base.Broadcast._containertype{D<:DArray}(::Type{D}) = DArray
 
 Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{DArray}) = DArray
 Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{Array})  = DArray
