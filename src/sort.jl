@@ -14,7 +14,7 @@ function sample_n_setup_ref(d::DVector, sample_size; kwargs...)
 end
 
 
-function scatter_n_sort_localparts{T}(d, myidx, refs::Array{RemoteChannel}, boundaries::Array{T}; by = identity, kwargs...)
+function scatter_n_sort_localparts{T}(d, myidx, refs, boundaries::Array{T}; by = identity, kwargs...)
     if d==nothing
         sorted = take!(refs[myidx])  # First entry in the remote channel is sorted localpart
     else
@@ -73,7 +73,7 @@ function compute_boundaries{T}(d::DVector{T}; kwargs...)
     sort!(samples; kwargs...)
     samples[1] = typemin(T)
 
-    refs=RemoteChannel[x[2] for x in results]
+    refs=[x[2] for x in results]
 
     boundaries = samples[[1+(x-1)*div(length(samples), np) for x in 1:np]]
     push!(boundaries, typemax(T))
@@ -150,7 +150,7 @@ function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
         push!(boundaries, typemax(T))
         presorted=false
 
-        refs=RemoteChannel[RemoteChannel(p) for p in procs(d)]
+        refs=[RemoteChannel(p) for p in procs(d)]
     else
         throw(ArgumentError("keyword arg `sample` must be Boolean, Tuple(Min,Max) or an actual sample of data : " * string(sample)))
     end
