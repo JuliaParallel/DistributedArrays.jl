@@ -1,4 +1,4 @@
-t=@testset "test distribute" begin
+@testset "test distribute" begin
     A = rand(1:100, (100,100))
 
     @testset "test default distribute" begin
@@ -40,9 +40,9 @@ t=@testset "test distribute" begin
     end
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test DArray equality" begin
+@testset "test DArray equality" begin
     D = drand((200,200), [MYID, OTHERIDS])
     DC = copy(D)
 
@@ -59,9 +59,9 @@ t=@testset "test DArray equality" begin
     close(DC)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test DArray similar" begin
+@testset "test DArray similar" begin
     D = drand((200,200), [MYID, OTHERIDS])
     DS = similar(D,Float16)
 
@@ -76,9 +76,9 @@ t=@testset "test DArray similar" begin
     close(DS)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test DArray reshape" begin
+@testset "test DArray reshape" begin
     D = drand((200,200), [MYID, OTHERIDS])
 
     @testset "Test error-throwing in reshape" begin
@@ -92,9 +92,9 @@ t=@testset "test DArray reshape" begin
     close(D)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test @DArray comprehension constructor" begin
+@testset "test @DArray comprehension constructor" begin
 
     @testset "test valid use of @DArray" begin
         D = @DArray [i+j for i=1:10, j=1:10]
@@ -107,9 +107,9 @@ t=@testset "test @DArray comprehension constructor" begin
     end
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test DArray / Array conversion" begin
+@testset "test DArray / Array conversion" begin
     D = drand((200,200), [MYID, OTHERIDS])
 
     @testset "test convert(::Array, ::(Sub)DArray)" begin
@@ -142,9 +142,9 @@ t=@testset "test DArray / Array conversion" begin
     close(D)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "copy!" begin
+@testset "copy!" begin
     D1 = dzeros((10,10))
     r1 = remotecall_wait(() -> randn(3,10), workers()[1])
     r2 = remotecall_wait(() -> randn(7,10), workers()[2])
@@ -155,9 +155,9 @@ t=@testset "copy!" begin
     close(D2)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test DArray reduce" begin
+@testset "test DArray reduce" begin
     D = DArray(id->fill(myid(), map(length,id)), (10,10), [MYID, OTHERIDS])
 
     @testset "test reduce" begin
@@ -177,18 +177,18 @@ t=@testset "test DArray reduce" begin
     close(D)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test scale" begin
+@testset "test scale" begin
     A = randn(100,100)
     DA = distribute(A)
     @test scale!(DA, 2) == scale!(A, 2)
     close(DA)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test scale!(b, A)" begin
+@testset "test scale!(b, A)" begin
     A = randn(100, 100)
     b = randn(100)
     DA = distribute(A)
@@ -201,9 +201,9 @@ t=@testset "test scale!(b, A)" begin
     close(DA)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test mapreduce on DArrays" begin
+@testset "test mapreduce on DArrays" begin
     for _ = 1:25, f = [x -> Int128(2x), x -> Int128(x^2), x -> Int128(x^2 + 2x - 1)], opt = [+, *]
         A = rand(1:5, rand(2:30))
         DA = distribute(A)
@@ -212,9 +212,9 @@ t=@testset "test mapreduce on DArrays" begin
     end
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test mapreducedim on DArrays" begin
+@testset "test mapreducedim on DArrays" begin
     D = DArray(I->fill(myid(), map(length,I)), (73,73), [MYID, OTHERIDS])
     D2 = map(x->1, D)
     @test mapreducedim(t -> t*t, +, D2, 1) == mapreducedim(t -> t*t, +, convert(Array, D2), 1)
@@ -232,9 +232,9 @@ t=@testset "test mapreducedim on DArrays" begin
     d_closeall()   # temp created by the mapreduce above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test mapreducdim, reducedim on DArrays" begin
+@testset "test mapreducdim, reducedim on DArrays" begin
     dims = (20,20,20)
     DA = drandn(dims)
     A = convert(Array, DA)
@@ -249,9 +249,9 @@ t=@testset "test mapreducdim, reducedim on DArrays" begin
     d_closeall()   # temp created by the mapreduce above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test statistical functions on DArrays" begin
+@testset "test statistical functions on DArrays" begin
     dims = (20,20,20)
     DA = drandn(dims)
     A = convert(Array, DA)
@@ -265,9 +265,9 @@ t=@testset "test statistical functions on DArrays" begin
     d_closeall()   # temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test sum on DArrays" begin
+@testset "test sum on DArrays" begin
     A = randn(100,100)
     DA = distribute(A)
 
@@ -309,9 +309,9 @@ t=@testset "test sum on DArrays" begin
     d_closeall()   # temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test size on DArrays" begin
+@testset "test size on DArrays" begin
 
     A = randn(100,100)
     DA = distribute(A)
@@ -323,10 +323,10 @@ t=@testset "test size on DArrays" begin
     close(DA)
 end
 
-check_leaks(t)
+check_leaks()
 
 # test length / endof
-t=@testset "test collections API" begin
+@testset "test collections API" begin
     A = randn(23,23)
     DA = distribute(A)
 
@@ -340,9 +340,9 @@ t=@testset "test collections API" begin
     close(DA)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test max / min / sum" begin
+@testset "test max / min / sum" begin
     a = map(x -> Int(round(rand() * 100)) - 50, Array{Int}(100,1000))
     d = distribute(a)
 
@@ -356,9 +356,9 @@ t=@testset "test max / min / sum" begin
     close(d)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test all / any" begin
+@testset "test all / any" begin
     a = map(x->Int(round(rand() * 100)) - 50, Array{Int}(100,1000))
     a = [true for i in 1:100]
     d = distribute(a)
@@ -398,9 +398,9 @@ t=@testset "test all / any" begin
     close(d)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test count"  begin
+@testset "test count"  begin
     a = ones(10,10)
     a[10] = 2.0
     d = distribute(a)
@@ -412,9 +412,9 @@ t=@testset "test count"  begin
     close(d)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test prod" begin
+@testset "test prod" begin
     a = fill(2, 10);
     d = distribute(a);
     @test prod(d) == 2^10
@@ -422,9 +422,9 @@ t=@testset "test prod" begin
     close(d)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test zeros" begin
+@testset "test zeros" begin
     @testset "1D dzeros default element type" begin
         A = dzeros(10)
         @test A == zeros(10)
@@ -474,9 +474,9 @@ t=@testset "test zeros" begin
     end
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test dones" begin
+@testset "test dones" begin
     @testset "1D dones default element type" begin
         A = dones(10)
         @test A == ones(10)
@@ -525,9 +525,9 @@ t=@testset "test dones" begin
     end
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test drand" begin
+@testset "test drand" begin
     @testset "1D drand" begin
         A = drand(100)
         @test eltype(A) == Float64
@@ -588,9 +588,9 @@ t=@testset "test drand" begin
     end
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test randn" begin
+@testset "test randn" begin
     @testset "1D drandn" begin
         A = drandn(100)
         @test eltype(A) == Float64
@@ -613,9 +613,9 @@ t=@testset "test randn" begin
     end
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test c/transpose" begin
+@testset "test c/transpose" begin
     @testset "test ctranspose real" begin
         A = drand(Float64, 100, 200)
         @test A' == Array(A)'
@@ -640,9 +640,9 @@ t=@testset "test c/transpose" begin
     d_closeall()  # close the temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test convert from subdarray" begin
+@testset "test convert from subdarray" begin
     a = drand(20, 20);
 
     s = view(a, 1:5, 5:8)
@@ -656,9 +656,9 @@ t=@testset "test convert from subdarray" begin
     d_closeall()  # close the temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test scalar math" begin
+@testset "test scalar math" begin
     a = drand(20, 20);
     b = convert(Array, a)
     @testset "$f" for f in (-, abs, abs2, acos, acosd, acot,
@@ -685,9 +685,9 @@ t=@testset "test scalar math" begin
     d_closeall()  # close the temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test mapslices" begin
+@testset "test mapslices" begin
     A = randn(5,5,5)
     D = distribute(A, procs = workers(), dist = [1, 1, min(nworkers(), 5)])
     @test mapslices(svdvals, D, (1,2)) ≈ mapslices(svdvals, A, (1,2))
@@ -726,9 +726,9 @@ t=@testset "test mapslices" begin
     d_closeall()  # close the temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test scalar ops" begin
+@testset "test scalar ops" begin
     a = drand(20,20)
     b = convert(Array, a)
     c = drand(20,20)
@@ -761,9 +761,9 @@ t=@testset "test scalar ops" begin
     d_closeall()  # close the temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test broadcast ops" begin
+@testset "test broadcast ops" begin
     wrkrs = workers()
     nwrkrs = length(wrkrs)
     nrows = 20 * nwrkrs
@@ -776,9 +776,9 @@ t=@testset "test broadcast ops" begin
     d_closeall()
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test matrix multiplication" begin
+@testset "test matrix multiplication" begin
     A = drandn(20,20)
     b = drandn(20)
     B = drandn(20,20)
@@ -793,9 +793,9 @@ t=@testset "test matrix multiplication" begin
     d_closeall()  # close the temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test norm" begin
+@testset "test norm" begin
     x = drandn(20)
 
     @test abs(norm(x) - norm(convert(Array, x))) < sqrt(eps())
@@ -805,9 +805,9 @@ t=@testset "test norm" begin
     close(x)
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test axpy!" begin
+@testset "test axpy!" begin
     x = drandn(20)
     y = drandn(20)
 
@@ -818,9 +818,9 @@ t=@testset "test axpy!" begin
     d_closeall()  # close the temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test ppeval" begin
+@testset "test ppeval" begin
     A = drandn((10, 10, nworkers()), workers(), [1, 1, nworkers()])
     B = drandn((10, nworkers()), workers(), [1, nworkers()])
 
@@ -835,14 +835,14 @@ t=@testset "test ppeval" begin
     d_closeall()  # close the temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "test nnz" begin
+@testset "test nnz" begin
     A = sprandn(10, 10, 0.5)
     @test nnz(distribute(A)) == nnz(A)
 end
 
-t=@testset "test matmatmul" begin
+@testset "test matmatmul" begin
     A = drandn(30, 30)
     B = drandn(30, 20)
     a = convert(Array, A)
@@ -862,7 +862,7 @@ t=@testset "test matmatmul" begin
     d_closeall()  # close the temporaries created above
 end
 
-t=@testset "sort, T = $T" for i in 0:6, T in [Int, Float64]
+@testset "sort, T = $T" for i in 0:6, T in [Int, Float64]
     d = DistributedArrays.drand(T, 10^i)
     @testset "sample = $sample" for sample in Any[true, false, (minimum(d),maximum(d)), rand(T, 10^i>512 ? 512 : 10^i)]
         d2 = DistributedArrays.sort(d; sample=sample)
@@ -873,9 +873,9 @@ t=@testset "sort, T = $T" for i in 0:6, T in [Int, Float64]
     d_closeall()  # close the temporaries created above
 end
 
-check_leaks(t)
+check_leaks()
 
-t=@testset "ddata" begin
+@testset "ddata" begin
     d = ddata(;T=Int, init=I->myid())
     for p in workers()
         @test p == remotecall_fetch(d->d[:L], p, d)
@@ -902,11 +902,11 @@ t=@testset "ddata" begin
     close(d)
 end
 
-check_leaks(t)
+check_leaks()
 
 d_closeall()
 
-t=@testset "test for any leaks" begin
+@testset "test for any leaks" begin
     sleep(1.0)     # allow time for any cleanup to complete
     allrefszero = Bool[remotecall_fetch(()->length(DistributedArrays.refs) == 0, p) for p in procs()]
     @test all(allrefszero)

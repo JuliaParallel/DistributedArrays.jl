@@ -18,23 +18,11 @@ end
 const MYID = myid()
 const OTHERIDS = filter(id-> id != MYID, procs())[rand(1:(nprocs()-1))]
 
-# On 0.6, @testset does not display the test description automatically anymore.
-function print_test_desc(t, n=0)
-    println(repeat(" ", n), "Passed : ", t.description)
-    for t2 in t.results
-        if isa(t2, Base.Test.DefaultTestSet)
-            print_test_desc(t2, n+2)
-        end
-    end
-end
-
-function check_leaks(t=nothing)
+function check_leaks()
     if length(DistributedArrays.refs) > 0
         sleep(0.1)  # allow time for any cleanup to complete and test again
         length(DistributedArrays.refs) > 0 && warn("Probable leak of ", length(DistributedArrays.refs), " darrays")
     end
-
-    isa(t, Base.Test.DefaultTestSet) && print_test_desc(t)
 end
 
 include("darray.jl")
