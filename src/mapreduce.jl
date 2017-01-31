@@ -288,7 +288,7 @@ function _ppeval(f, A...; dim = map(ndims, A))
     args = []
     for i = 1:narg
         push!(dims, ndims(A[i]))
-        push!(idx, Any[1:size(A[i], d) for d in 1:dims[i]])
+        push!(idx, Any[Colon() for d in 1:dims[i]])
         if dim[i] > 0
             idx[i][dim[i]] = 1
             push!(args, view(A[i], idx[i]...))
