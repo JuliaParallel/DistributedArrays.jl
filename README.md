@@ -244,8 +244,8 @@ a reference to a DArray object on the creating process for as long as it is bein
 `darray_closeall()` is another useful function to manage distributed memory. It releases all darrays created from
 the calling process, including any temporaries created during computation.
 
-Working with distributed non-array data
----------------------------------------
+Working with distributed non-array data (requires Julia 0.6)
+------------------------------------------------------------
 
 The function `ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Vector=[])` can be used
 to created a distributed vector whose localparts need not be Arrays.
@@ -264,8 +264,8 @@ returns a `DArray{T,1,Array{T,1}}`, i.e., it is equivalent to calling `distribut
 Given a `DArray{T,1,T}` object `d`, `d[:L]` returns the localpart on a worker. `d[i]` returns the `localpart`
 on the ith worker that `d` is distributed over.
 
-SPMD Mode (An MPI Style SPMD mode with MPI like primitives)
-------------------------------------------------------------
+SPMD Mode (An MPI Style SPMD mode with MPI like primitives, requires Julia 0.6)
+-------------------------------------------------------------------------------
 SPMD, i.e., a Single Program Multiple Data mode is implemented by submodule `DistributedArrays.SPMD`. In this mode the same function is executed in parallel on all participating nodes. This is a typical style of MPI programs where the same program is executed on all processors. A basic subset of MPI-like primitives are currently supported. As a programming model it should be familiar to folks with an MPI background.
 
 The same block of code is executed concurrently on all workers using the `spmd` function.
