@@ -32,7 +32,7 @@ type DArray{T,N,A} <: AbstractArray{T,N}
 
     release::Bool
 
-    function DArray(id, dims, pids, indexes, cuts, lp)
+    function DArray{T,N,A}(id, dims, pids, indexes, cuts, lp) where {T,N,A}
         # check invariants
         if dims != map(last, last(indexes))
             throw(ArgumentError("dimension of DArray (dim) and indexes do not match"))
@@ -52,7 +52,7 @@ type DArray{T,N,A} <: AbstractArray{T,N}
         d
     end
 
-    DArray() = new()
+    DArray{T,N,A}() where {T,N,A} = new()
 end
 
 eltype{T}(::Type{DArray{T}}) = T
