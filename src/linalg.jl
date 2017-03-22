@@ -14,8 +14,8 @@ function Base.transpose{T}(D::DArray{T,2})
     end
 end
 
-typealias DVector{T,A} DArray{T,1,A}
-typealias DMatrix{T,A} DArray{T,2,A}
+const DVector{T,A} = DArray{T,1,A}
+const DMatrix{T,A} = DArray{T,2,A}
 
 # Level 1
 

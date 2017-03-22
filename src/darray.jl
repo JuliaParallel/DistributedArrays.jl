@@ -58,8 +58,8 @@ end
 eltype{T}(::Type{DArray{T}}) = T
 empty_localpart(T,N,A) = convert(A, Array{T}(ntuple(zero, N)))
 
-typealias SubDArray{T,N,D<:DArray} SubArray{T,N,D}
-typealias SubOrDArray{T,N} Union{DArray{T,N}, SubDArray{T,N}}
+const SubDArray{T,N,D<:DArray} = SubArray{T,N,D}
+const SubOrDArray{T,N} = Union{DArray{T,N}, SubDArray{T,N}}
 
 localtype{T,N,S}(::Type{DArray{T,N,S}}) = S
 localtype{T,N,D}(::Type{SubDArray{T,N,D}}) = localtype(D)
@@ -639,9 +639,9 @@ Base.@propagate_inbounds Base.getindex{_,N}(M::MergedIndices{_,N}, I::Vararg{Int
 # farther and say that even restricted views of MergedIndices must be valid
 # over the entire array. This is overly strict in general, but in this
 # use-case all the merged indices must be valid at some point, so it's ok.
-typealias ReshapedMergedIndices{T,N,M<:MergedIndices} Base.ReshapedArray{T,N,M}
-typealias SubMergedIndices{T,N,M<:Union{MergedIndices, ReshapedMergedIndices}} SubArray{T,N,M}
-typealias MergedIndicesOrSub Union{MergedIndices, ReshapedMergedIndices, SubMergedIndices}
+const ReshapedMergedIndices{T,N,M<:MergedIndices} = Base.ReshapedArray{T,N,M}
+const SubMergedIndices{T,N,M<:Union{MergedIndices, ReshapedMergedIndices}} = SubArray{T,N,M}
+const MergedIndicesOrSub = Union{MergedIndices, ReshapedMergedIndices, SubMergedIndices}
 import Base: checkbounds_indices
 @inline checkbounds_indices(::Type{Bool}, inds::Tuple{}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
     checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
