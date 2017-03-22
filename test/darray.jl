@@ -1,3 +1,5 @@
+using SpecialFunctions
+
 @testset "test distribute" begin
     A = rand(1:100, (100,100))
 
