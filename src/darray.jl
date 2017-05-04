@@ -66,6 +66,8 @@ localtype{T,N,D}(::Type{SubDArray{T,N,D}}) = localtype(D)
 localtype(A::SubOrDArray) = localtype(typeof(A))
 localtype(A::AbstractArray) = typeof(A)
 
+Base.hash(d::DArray, h::UInt) = Base.hash(d.id, h)
+
 ## core constructors ##
 
 function DArray(id, init, dims, pids, idxs, cuts)
