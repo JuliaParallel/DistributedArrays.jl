@@ -672,7 +672,7 @@ check_leaks()
               deg2rad, digamma, erf, erfc, erfcinv,
               erfcx, erfi, erfinv, exp, exp10, exp2,
               expm1, exponent, float, floor, gamma, imag,
-              invdigamma, isfinite, isinf, isnan, lfact,
+              invdigamma, isfinite, isinf, isnan,
               lgamma, log, log10, log1p, log2, rad2deg, real,
               sec, secd, sech, sign, sin, sinc, sind,
               sinh, sinpi, sqrt, tan, tand, tanh, trigamma)
