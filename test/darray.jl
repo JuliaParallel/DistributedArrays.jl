@@ -1,6 +1,6 @@
 using SpecialFunctions
 
-@testset "test distribute" begin
+@testset "test distribute and other constructors" begin
     A = rand(1:100, (100,100))
 
     @testset "test default distribute" begin
@@ -39,6 +39,11 @@ using SpecialFunctions
 
         close(DA1)
         close(DA2)
+    end
+
+    @testset "Global DArray serialization issue #134" begin
+        global A134 = drandn(1)
+        @test DArray(I -> DistributedArrays.localpart(A134), A134) == A134
     end
 end
 
