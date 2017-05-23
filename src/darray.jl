@@ -56,7 +56,7 @@ type DArray{T,N,A} <: AbstractArray{T,N}
 end
 
 eltype{T}(::Type{DArray{T}}) = T
-empty_localpart(T,N,A) = convert(A, Array{T}(ntuple(zero, N)))
+empty_localpart(T,N,A) = A(Array{T}(ntuple(zero, N)))
 
 const SubDArray{T,N,D<:DArray} = SubArray{T,N,D}
 const SubOrDArray{T,N} = Union{DArray{T,N}, SubDArray{T,N}}

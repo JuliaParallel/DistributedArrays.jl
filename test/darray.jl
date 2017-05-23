@@ -45,6 +45,11 @@ using SpecialFunctions
         global A134 = drandn(1)
         @test DArray(I -> DistributedArrays.localpart(A134), A134) == A134
     end
+
+    @testset "empty_localpart should work when only constructor (not conversion is defined)" begin
+        @test DistributedArrays.empty_localpart(Float64,2,LowerTriangular{Float64,Matrix{Float64}}) isa
+                LowerTriangular
+    end
 end
 
 check_leaks()
