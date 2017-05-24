@@ -43,7 +43,10 @@ using SpecialFunctions
 
     @testset "Global DArray serialization issue #134" begin
         global A134 = drandn(1)
-        @test DArray(I -> DistributedArrays.localpart(A134), A134) == A134
+        D2 = DArray(I -> DistributedArrays.localpart(A134), A134)
+        @test D2 == A134
+        close(A134)
+        close(D2)
     end
 
     @testset "empty_localpart should work when only constructor (not conversion is defined)" begin
@@ -156,7 +159,7 @@ end
 
 check_leaks()
 
-@testset "copy!" begin
+@testset "test copy!" begin
     D1 = dzeros((10,10))
     r1 = remotecall_wait(() -> randn(3,10), workers()[1])
     r2 = remotecall_wait(() -> randn(7,10), workers()[2])

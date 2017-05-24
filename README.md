@@ -241,7 +241,7 @@ It is also important to note that the localparts of the DArray is collected from
 when the DArray object on the process creating the DArray is collected. It is therefore important to maintain
 a reference to a DArray object on the creating process for as long as it is being computed upon.
 
-`darray_closeall()` is another useful function to manage distributed memory. It releases all darrays created from
+`d_closeall()` is another useful function to manage distributed memory. It releases all darrays created from
 the calling process, including any temporaries created during computation.
 
 Working with distributed non-array data (requires Julia 0.6)
@@ -427,6 +427,6 @@ function foo(d::DArray)
 end
 spmd(foo,....)
 ```
-Without the `myid()` check, the `spmd` call to `foo` would execute `map!` from all nodes, which is not what we probably want. 
+Without the `myid()` check, the `spmd` call to `foo` would execute `map!` from all nodes, which is not what we probably want.
 
 Similarly `@everywhere` from within a SPMD run should also be driven from the master node only.
