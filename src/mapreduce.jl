@@ -150,6 +150,15 @@ for (fn, fr) in ((:sum, :+),
     @eval (Base.$fn)(d::DArray) = reduce($fr, d)
 end
 
+function Base.extrema(d::DArray)
+    r = asyncmap(procs(d)) do p
+        remotecall_fetch(p) do
+            extrema(localpart(d))
+        end
+    end
+    return reduce((t,s) -> (min(t[1], s[1]), max(t[2], s[2])), r)
+end
+
 # mapreduce like
 for (fn, fr1, fr2) in ((:maxabs, :abs, :max),
                        (:minabs, :abs, :min),

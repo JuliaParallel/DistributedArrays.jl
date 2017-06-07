@@ -368,6 +368,7 @@ check_leaks()
     @test minimum(abs, d) == minimum(abs, a)
     @test sum(abs, d)     == sum(abs, a)
     @test sum(abs2, d)    == sum(abs2, a)
+    @test extrema(d)      == extrema(a)
     close(d)
 end
 
