@@ -19,12 +19,15 @@ const DMatrix{T,A} = DArray{T,2,A}
 
 # Level 1
 
-function axpy!(α, x::DVector, y::DVector)
+function axpy!(α, x::DArray, y::DArray)
     if length(x) != length(y)
         throw(DimensionMismatch("vectors must have same length"))
     end
-    @sync for p in procs(y)
-        @async remotecall_fetch(() -> (Base.axpy!(α, localpart(x), localpart(y)); nothing), p)
+    asyncmap(procs(y)) do p
+        @async remotecall_fetch(p) do
+            Base.axpy!(α, localpart(x), localpart(y))
+            return nothing
+        end
     end
     return y
 end

@@ -824,13 +824,15 @@ end
 check_leaks()
 
 @testset "test axpy!" begin
-    x = drandn(20)
-    y = drandn(20)
+    for (x, y) in ((drandn(20), drandn(20)),
+                   (drandn(20, 2), drandn(20, 2)))
 
-    @test norm(convert(Array, LinAlg.axpy!(2.0, x, copy(y))) - LinAlg.axpy!(2.0, convert(Array, x), convert(Array, y))) < sqrt(eps())
-    @test_throws DimensionMismatch LinAlg.axpy!(2.0, x, zeros(length(x) + 1))
-    close(x)
-    close(y)
+        @test Array(LinAlg.axpy!(2.0, x, copy(y))) ≈ LinAlg.axpy!(2.0, Array(x), Array(y))
+        @test_throws DimensionMismatch LinAlg.axpy!(2.0, x, zeros(length(x) + 1))
+        close(x)
+        close(y)
+    end
+
     d_closeall()  # close the temporaries created above
 end
 
