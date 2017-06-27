@@ -2,7 +2,7 @@
     barrier(;tag=:b1)
 
     if myid() == 1
-        @assert recvfrom(2) == "Hello from 2"
+        @assert SPMD.recvfrom(2) == "Hello from 2"
         println("SPMD: Passed send/recv")
     elseif myid() == 2
         data = "Hello from 2"
@@ -22,7 +22,7 @@
     bcast_val = bcast(bcast_val, 1)
 
     if myid() == 1
-        @assert bcast_val == recvfrom(2)
+        @assert bcast_val == SPMD.recvfrom(2)
         println("SPMD: Passed broadcast")
     elseif myid() == 2
         sendto(1, bcast_val)
@@ -37,7 +37,7 @@
     lp = scatter(scatter_data, 1, tag=1)
 
     if myid() == 1
-        @assert scatter_data[2:2] == recvfrom(2)
+        @assert scatter_data[2:2] == SPMD.recvfrom(2)
         println("SPMD: Passed scatter 1")
     elseif myid() == 2
         sendto(1, lp)
@@ -50,7 +50,7 @@
     lp = scatter(scatter_data, 1, tag=2)
 
     if myid() == 1
-        @assert scatter_data[3:4] == recvfrom(2)
+        @assert scatter_data[3:4] == SPMD.recvfrom(2)
         println("SPMD: Passed scatter 2")
     elseif myid() == 2
         sendto(1, lp)
@@ -91,8 +91,8 @@ spmd(spmd_test1)
         sendto(pids[n_pididx], mylp[2])
         sendto(pids[p_pididx], mylp[1])
 
-        mylp[2] = recvfrom(pids[p_pididx])
-        mylp[1] = recvfrom(pids[n_pididx])
+        mylp[2] = SPMD.recvfrom(pids[p_pididx])
+        mylp[1] = SPMD.recvfrom(pids[n_pididx])
 
 #        println(mylp)
 
@@ -138,8 +138,8 @@ println("SPMD: Passed testing of spmd function run concurrently")
         sendto(pids[n_pididx], mylp[2])
         sendto(pids[p_pididx], mylp[1])
 
-        mylp[2] = recvfrom(pids[p_pididx])
-        mylp[1] = recvfrom(pids[n_pididx])
+        mylp[2] = SPMD.recvfrom(pids[p_pididx])
+        mylp[1] = SPMD.recvfrom(pids[n_pididx])
 
         barrier(;pids=pids)
         localsum = localsum + mylp[1] + mylp[2]
