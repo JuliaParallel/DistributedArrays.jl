@@ -1,7 +1,6 @@
 module SPMD
 
 import DistributedArrays: gather, next_did, close
-import Base.recvfrom  # UDP socket
 export sendto, recvfrom, recvfrom_any, barrier, bcast, scatter, gather
 export context_local_storage, context, spmd, close
 
