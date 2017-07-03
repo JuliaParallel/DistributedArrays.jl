@@ -20,15 +20,14 @@ function Base.deserialize{DT<:DArray}(S::AbstractSerializer, t::Type{DT})
     id = what[2]
 
     if id_only
-        if haskey(registry, id)
-            return registry[id]
-        else
+        d = d_from_weakref_or_d(id)
+        if d === nothing
             # access to fields will throw an error, at least the deserialization process will not
             # result in worker death
             d = DT()
             d.id = id
-            return d
         end
+        return d
     else
         # We are not a participating worker, deser fields and instantiate locally.
         dims = deserialize(S)

@@ -39,12 +39,14 @@ type DArray{T,N,A} <: AbstractArray{T,N}
         end
         release = (myid() == id[1])
 
-        haskey(registry, id) && return registry[id]
+        d = d_from_weakref_or_d(id)
+        if d === nothing
+            d = new(id, dims, pids, indexes, cuts, lp, release)
+        end
 
-        d = new(id, dims, pids, indexes, cuts, lp, release)
         if release
             push!(refs, id)
-            registry[id] = d
+            registry[id] = WeakRef(d)
 
 #            println("Installing finalizer for : ", d.id, ", : ", object_id(d), ", isbits: ", isbits(d))
             finalizer(d, close)
@@ -53,6 +55,12 @@ type DArray{T,N,A} <: AbstractArray{T,N}
     end
 
     DArray{T,N,A}() where {T,N,A} = new()
+end
+
+function d_from_weakref_or_d(id)
+    d = get(registry, id, nothing)
+    isa(d, WeakRef) && return d.value
+    return d
 end
 
 eltype{T}(::Type{DArray{T}}) = T
@@ -90,6 +98,7 @@ function DArray(id, init, dims, pids, idxs, cuts)
     A = take!(r)
     if myid() in pids
         d = registry[id]
+        d = isa(d, WeakRef) ? d.value : d
     else
         T = eltype(A)
         N = length(dims)
@@ -137,6 +146,7 @@ function ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Ve
 
     if myid() in pids
         d = registry[id]
+        d = isa(d, WeakRef) ? d.value : d
     else
         d = DArray{T,1,T}(id, (npids,), pids, idxs, cuts, Nullable{T}())
     end
@@ -320,7 +330,7 @@ function localpart{T,N,A}(d::DArray{T,N,A})
         return empty_localpart(T,N,A)::A
     end
 
-    return get(registry[d.id].localpart)::A
+    return get(d.localpart)::A
 end
 
 localpart(d::DArray, localidx...) = localpart(d)[localidx...]
