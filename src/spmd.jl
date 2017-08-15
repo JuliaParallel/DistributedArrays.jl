@@ -5,7 +5,7 @@ export sendto, recvfrom, recvfrom_any, barrier, bcast, scatter, gather
 export context_local_storage, context, spmd, close
 
 
-type WorkerDataChannel
+mutable struct WorkerDataChannel
     pid::Int
     rc::Nullable{RemoteChannel}
     lock::ReentrantLock
@@ -13,7 +13,7 @@ type WorkerDataChannel
     WorkerDataChannel(pid) = new(pid, Nullable{RemoteChannel}(), ReentrantLock())
 end
 
-type SPMDContext
+mutable struct SPMDContext
     id::Tuple
     chnl::Channel
     store::Dict{Any,Any}

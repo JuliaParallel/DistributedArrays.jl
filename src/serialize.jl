@@ -1,4 +1,4 @@
-function Base.serialize{T,N,A}(S::AbstractSerializer, d::DArray{T,N,A})
+function Base.serialize(S::AbstractSerializer, d::DArray{T,N,A}) where {T,N,A}
     # Only send the ident for participating workers - we expect the DArray to exist in the
     # remote registry. DO NOT send the localpart.
     destpid = Base.worker_id_from_socket(S.io)
@@ -14,7 +14,7 @@ function Base.serialize{T,N,A}(S::AbstractSerializer, d::DArray{T,N,A})
     end
 end
 
-function Base.deserialize{DT<:DArray}(S::AbstractSerializer, t::Type{DT})
+function Base.deserialize(S::AbstractSerializer, t::Type{DT}) where DT<:DArray
     what = deserialize(S)
     id_only = what[1]
     id = what[2]
@@ -42,7 +42,7 @@ function Base.deserialize{DT<:DArray}(S::AbstractSerializer, t::Type{DT})
 end
 
 # Serialize only those parts of the object as required by the destination worker.
-type DestinationSerializer
+mutable struct DestinationSerializer
     generate::Nullable{Function}     # Function to generate the part to be serialized
     pids::Nullable{Array}            # MUST have the same shape as the distribution
 
@@ -68,7 +68,7 @@ function Base.serialize(S::AbstractSerializer, s::DestinationSerializer)
     serialize(S, get(s.generate)(pididx))
 end
 
-function Base.deserialize{T<:DestinationSerializer}(S::AbstractSerializer, t::Type{T})
+function Base.deserialize(S::AbstractSerializer, t::Type{T}) where T<:DestinationSerializer
     lpart = deserialize(S)
     return DestinationSerializer(lpart)
 end

@@ -14,7 +14,7 @@ function sample_n_setup_ref(d::DVector, sample_size; kwargs...)
 end
 
 
-function scatter_n_sort_localparts{T}(d, myidx, refs, boundaries::Array{T}; by = identity, kwargs...)
+function scatter_n_sort_localparts(d, myidx, refs, boundaries::Array{T}; by = identity, kwargs...) where T
     if d==nothing
         sorted = take!(refs[myidx])  # First entry in the remote channel is sorted localpart
     else
@@ -59,7 +59,7 @@ function scatter_n_sort_localparts{T}(d, myidx, refs, boundaries::Array{T}; by =
     return (sorted_ref, length(lp_sorting))
 end
 
-function compute_boundaries{T}(d::DVector{T}; kwargs...)
+function compute_boundaries(d::DVector{T}; kwargs...) where T
     pids = procs(d)
     np = length(pids)
     sample_sz_on_wrkr = 512
@@ -100,7 +100,7 @@ Keyword argument `sample` can take values:
 
 Keyword argument `alg` takes the same options `Base.sort`
 """
-function Base.sort{T}(d::DVector{T}; sample=true, kwargs...)
+function Base.sort(d::DVector{T}; sample=true, kwargs...) where T
     pids = procs(d)
     np = length(pids)
 
