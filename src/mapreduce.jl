@@ -2,14 +2,14 @@
 
 Base.map(f, d::DArray) = DArray(I->map(f, localpart(d)), d)
 
-Base.map!{F}(f::F, dest::DArray, src::DArray) = begin
+Base.map!(f::F, dest::DArray, src::DArray) where {F} = begin
     @sync for p in procs(dest)
         @async remotecall_fetch(() -> (map!(f, localpart(dest), src[localindexes(dest)...]); nothing), p)
     end
     return dest
 end
 
-Base.Broadcast._containertype{D<:DArray}(::Type{D}) = DArray
+Base.Broadcast._containertype(::Type{D}) where {D<:DArray} = DArray
 
 Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{DArray}) = DArray
 Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{Array})  = DArray
@@ -61,7 +61,7 @@ Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, opt, d)
 Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
 
 # mapreducedim
-Base.reducedim_initarray{R}(A::DArray, region, v0, ::Type{R}) = begin
+Base.reducedim_initarray(A::DArray, region, v0, ::Type{R}) where {R} = begin
     # Store reduction on lowest pids
     pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
     chunks = similar(pids, Future)
@@ -70,9 +70,9 @@ Base.reducedim_initarray{R}(A::DArray, region, v0, ::Type{R}) = begin
     end
     return DArray(chunks)
 end
-Base.reducedim_initarray{T}(A::DArray, region, v0::T) = Base.reducedim_initarray(A, region, v0, T)
+Base.reducedim_initarray(A::DArray, region, v0::T) where {T} = Base.reducedim_initarray(A, region, v0, T)
 
-Base.reducedim_initarray0{R}(A::DArray, region, v0, ::Type{R}) = begin
+Base.reducedim_initarray0(A::DArray, region, v0, ::Type{R}) where {R} = begin
     # Store reduction on lowest pids
     pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
     chunks = similar(pids, Future)
@@ -81,7 +81,7 @@ Base.reducedim_initarray0{R}(A::DArray, region, v0, ::Type{R}) = begin
     end
     return DArray(chunks)
 end
-Base.reducedim_initarray0{T}(A::DArray, region, v0::T) = Base.reducedim_initarray0(A, region, v0, T)
+Base.reducedim_initarray0(A::DArray, region, v0::T) where {T} = Base.reducedim_initarray0(A, region, v0, T)
 
 # Compute mapreducedim of each localpart and store the result in a new DArray
 mapreducedim_within(f, op, A::DArray, region) = begin
@@ -180,17 +180,6 @@ end
 # Unary vector functions
 (-)(D::DArray) = map(-, D)
 
-@static if VERSION < v"0.6.0-dev.1731"
-    # scalar ops
-    (+)(A::DArray{Bool}, x::Bool) = A .+ x
-    (+)(x::Bool, A::DArray{Bool}) = x .+ A
-    (-)(A::DArray{Bool}, x::Bool) = A .- x
-    (-)(x::Bool, A::DArray{Bool}) = x .- A
-    (+)(A::DArray, x::Number) = A .+ x
-    (+)(x::Number, A::DArray) = x .+ A
-    (-)(A::DArray, x::Number) = A .- x
-    (-)(x::Number, A::DArray) = x .- A
-end
 
 map_localparts(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
 map_localparts(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
@@ -226,14 +215,6 @@ end
 # the same size and distribution
 map_localparts(f::Callable, As::DArray...) = DArray(I->f(map(localpart, As)...), As[1])
 
-@static if VERSION < v"0.6.0-dev.1632"
-    for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>, :div, :mod, :rem, :&, :|, :$)
-        @eval begin
-            ($f){T}(A::DArray{T}, B::Number) = map_localparts(r->($f)(r, B), A)
-            ($f){T}(A::Number, B::DArray{T}) = map_localparts(r->($f)(A, r), B)
-        end
-    end
-end
 
 function samedist(A::DArray, B::DArray)
     (size(A) == size(B)) || throw(DimensionMismatch())
@@ -245,27 +226,16 @@ end
 
 for f in (:+, :-, :div, :mod, :rem, :&, :|, :$)
     @eval begin
-        function ($f){T}(A::DArray{T}, B::DArray{T})
+        function ($f)(A::DArray{T}, B::DArray{T}) where T
             B = samedist(A, B)
             map_localparts($f, A, B)
         end
-        ($f){T}(A::DArray{T}, B::Array{T}) = map_localparts($f, A, B)
-        ($f){T}(A::Array{T}, B::DArray{T}) = map_localparts($f, A, B)
-    end
-end
-@static if VERSION < v"0.6.0-dev.1632"
-    for f in (:.+, :.-, :.*, :./, :.%, :.<<, :.>>)
-        @eval begin
-            function ($f){T}(A::DArray{T}, B::DArray{T})
-                map_localparts($f, A, B)
-            end
-            ($f){T}(A::DArray{T}, B::Array{T}) = map_localparts($f, A, B)
-            ($f){T}(A::Array{T}, B::DArray{T}) = map_localparts($f, A, B)
-        end
+        ($f)(A::DArray{T}, B::Array{T}) where {T} = map_localparts($f, A, B)
+        ($f)(A::Array{T}, B::DArray{T}) where {T} = map_localparts($f, A, B)
     end
 end
 
-function mapslices{T,N,A}(f::Function, D::DArray{T,N,A}, dims::AbstractVector)
+function mapslices(f::Function, D::DArray{T,N,A}, dims::AbstractVector) where {T,N,A}
     if !all(t -> t == 1, size(D.indexes)[dims])
         p = ones(Int, ndims(D))
         nondims = filter(t -> !(t in dims), 1:ndims(D))

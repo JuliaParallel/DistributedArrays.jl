@@ -1,4 +1,4 @@
-function Base.ctranspose{T}(D::DArray{T,2})
+function Base.ctranspose(D::DArray{T,2}) where T
     DArray(reverse(size(D)), procs(D)) do I
         lp = Array{T}(map(length, I))
         rp = convert(Array, D[reverse(I)...])
@@ -6,7 +6,7 @@ function Base.ctranspose{T}(D::DArray{T,2})
     end
 end
 
-function Base.transpose{T}(D::DArray{T,2})
+function Base.transpose(D::DArray{T,2}) where T
     DArray(reverse(size(D)), procs(D)) do I
         lp = Array{T}(map(length, I))
         rp = convert(Array, D[reverse(I)...])

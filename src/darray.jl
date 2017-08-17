@@ -22,7 +22,7 @@ For example, the `dfill` function that creates a distributed array and fills it 
 dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 ```
 """
-type DArray{T,N,A} <: AbstractArray{T,N}
+mutable struct DArray{T,N,A} <: AbstractArray{T,N}
     id::Tuple
     dims::NTuple{N,Int}
     pids::Array{Int,N}                          # pids[i]==p ⇒ processor p has piece i
@@ -63,14 +63,14 @@ function d_from_weakref_or_d(id)
     return d
 end
 
-eltype{T}(::Type{DArray{T}}) = T
+eltype(::Type{DArray{T}}) where {T} = T
 empty_localpart(T,N,A) = A(Array{T}(ntuple(zero, N)))
 
 const SubDArray{T,N,D<:DArray} = SubArray{T,N,D}
 const SubOrDArray{T,N} = Union{DArray{T,N}, SubDArray{T,N}}
 
-localtype{T,N,S}(::Type{DArray{T,N,S}}) = S
-localtype{T,N,D}(::Type{SubDArray{T,N,D}}) = localtype(D)
+localtype(::Type{DArray{T,N,S}}) where {T,N,S} = S
+localtype(::Type{SubDArray{T,N,D}}) where {T,N,D} = localtype(D)
 localtype(A::SubOrDArray) = localtype(typeof(A))
 localtype(A::AbstractArray) = typeof(A)
 
@@ -153,7 +153,7 @@ function ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Ve
     d
 end
 
-function gather{T}(d::DArray{T,1,T})
+function gather(d::DArray{T,1,T}) where T
     a=Array{T}(length(procs(d)))
     @sync for (i,p) in enumerate(procs(d))
         @async a[i] = remotecall_fetch(localpart, p, d)
@@ -245,12 +245,12 @@ sz_localpart_ref(ref, id) = size(fetch(ref))
 
 Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array{T}(map(length,I)), dims, procs(d))
 Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
-Base.similar{T}(d::DArray{T}, dims::Dims) = similar(d, T, dims)
-Base.similar{T}(d::DArray{T}) = similar(d, T, size(d))
+Base.similar(d::DArray{T}, dims::Dims) where {T} = similar(d, T, dims)
+Base.similar(d::DArray{T}) where {T} = similar(d, T, size(d))
 
 Base.size(d::DArray) = d.dims
 
-chunktype{T,N,A}(d::DArray{T,N,A}) = A
+chunktype(d::DArray{T,N,A}) where {T,N,A} = A
 
 ## chunk index utilities ##
 
@@ -324,7 +324,7 @@ d[:L], d[:l], d[:LP], d[:lp] are an alternative means to get localparts.
 This syntaxt can also be used for assignment. For example,
 `d[:L]=v` will assign `v` to the localpart of `d`.
 """
-function localpart{T,N,A}(d::DArray{T,N,A})
+function localpart(d::DArray{T,N,A}) where {T,N,A}
     lpidx = localpartindex(d)
     if lpidx == 0
         return empty_localpart(T,N,A)::A
@@ -341,7 +341,7 @@ function Base.getindex(d::DArray, s::Symbol)
     return localpart(d)
 end
 
-function Base.setindex!{T,N,A}(d::DArray{T,N,A}, new_lp::A, s::Symbol)
+function Base.setindex!(d::DArray{T,N,A}, new_lp::A, s::Symbol) where {T,N,A}
     @assert s in [:L, :l, :LP, :lp]
     d.localpart = new_lp
     new_lp
@@ -349,7 +349,7 @@ end
 
 
 # fetch localpart of d at pids[i]
-fetch{T,N,A}(d::DArray{T,N,A}, i) = remotecall_fetch(localpart, d.pids[i], d)
+fetch(d::DArray{T,N,A}, i) where {T,N,A} = remotecall_fetch(localpart, d.pids[i], d)
 
 """
     localindexes(d)
@@ -369,7 +369,7 @@ end
 locate(d::DArray, I::Int...) =
     ntuple(i -> searchsortedlast(d.cuts[i], I[i]), ndims(d))
 
-chunk{T,N,A}(d::DArray{T,N,A}, i...) = remotecall_fetch(localpart, d.pids[i...], d)::A
+chunk(d::DArray{T,N,A}, i...) where {T,N,A} = remotecall_fetch(localpart, d.pids[i...], d)::A
 
 ## convenience constructors ##
 
@@ -380,8 +380,8 @@ Construct a distributed array of zeros.
 Trailing arguments are the same as those accepted by `DArray`.
 """
 dzeros(dims::Dims, args...) = DArray(I->zeros(map(length,I)), dims, args...)
-dzeros{T}(::Type{T}, dims::Dims, args...) = DArray(I->zeros(T,map(length,I)), dims, args...)
-dzeros{T}(::Type{T}, d1::Integer, drest::Integer...) = dzeros(T, convert(Dims, tuple(d1, drest...)))
+dzeros(::Type{T}, dims::Dims, args...) where {T} = DArray(I->zeros(T,map(length,I)), dims, args...)
+dzeros(::Type{T}, d1::Integer, drest::Integer...) where {T} = dzeros(T, convert(Dims, tuple(d1, drest...)))
 dzeros(d1::Integer, drest::Integer...) = dzeros(Float64, convert(Dims, tuple(d1, drest...)))
 dzeros(d::Dims) = dzeros(Float64, d)
 
@@ -393,8 +393,8 @@ Construct a distributed array of ones.
 Trailing arguments are the same as those accepted by `DArray`.
 """
 dones(dims::Dims, args...) = DArray(I->ones(map(length,I)), dims, args...)
-dones{T}(::Type{T}, dims::Dims, args...) = DArray(I->ones(T,map(length,I)), dims, args...)
-dones{T}(::Type{T}, d1::Integer, drest::Integer...) = dones(T, convert(Dims, tuple(d1, drest...)))
+dones(::Type{T}, dims::Dims, args...) where {T} = DArray(I->ones(T,map(length,I)), dims, args...)
+dones(::Type{T}, d1::Integer, drest::Integer...) where {T} = dones(T, convert(Dims, tuple(d1, drest...)))
 dones(d1::Integer, drest::Integer...) = dones(Float64, convert(Dims, tuple(d1, drest...)))
 dones(d::Dims) = dones(Float64, d)
 
@@ -465,9 +465,9 @@ function distribute(A::AbstractArray, DA::DArray)
     return DArray(I->localpart(s), DA)
 end
 
-Base.convert{T,N,S<:AbstractArray}(::Type{DArray{T,N,S}}, A::S) = distribute(convert(AbstractArray{T,N}, A))
+Base.convert(::Type{DArray{T,N,S}}, A::S) where {T,N,S<:AbstractArray} = distribute(convert(AbstractArray{T,N}, A))
 
-Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
+Base.convert(::Type{Array{S,N}}, d::DArray{T,N}) where {S,T,N} = begin
     a = Array{S}(size(d))
     @sync begin
         for i = 1:length(d.pids)
@@ -477,7 +477,7 @@ Base.convert{S,T,N}(::Type{Array{S,N}}, d::DArray{T,N}) = begin
     return a
 end
 
-Base.convert{S,T,N}(::Type{Array{S,N}}, s::SubDArray{T,N}) = begin
+Base.convert(::Type{Array{S,N}}, s::SubDArray{T,N}) where {S,T,N} = begin
     I = s.indexes
     d = s.parent
     if isa(I,Tuple{Vararg{UnitRange{Int}}}) && S<:T && T<:S
@@ -492,7 +492,7 @@ Base.convert{S,T,N}(::Type{Array{S,N}}, s::SubDArray{T,N}) = begin
     return a
 end
 
-function Base.convert{T,N}(::Type{DArray}, SD::SubArray{T,N})
+function Base.convert(::Type{DArray}, SD::SubArray{T,N}) where {T,N}
     D = SD.parent
     DArray(size(SD), procs(D)) do I
         TR = typeof(SD.indexes[1])
@@ -511,7 +511,7 @@ function Base.convert{T,N}(::Type{DArray}, SD::SubArray{T,N})
     end
 end
 
-Base.reshape{T,S<:Array}(A::DArray{T,1,S}, d::Dims) = begin
+Base.reshape(A::DArray{T,1,S}, d::Dims) where {T,S<:Array} = begin
     if prod(d) != length(A)
         throw(DimensionMismatch("dimensions must be consistent with array size"))
     end
@@ -539,7 +539,7 @@ end
 ## indexing ##
 
 getlocalindex(d::DArray, idx...) = localpart(d)[idx...]
-function getindex_tuple{T}(d::DArray{T}, I::Tuple{Vararg{Int}})
+function getindex_tuple(d::DArray{T}, I::Tuple{Vararg{Int}}) where T
     chidx = locate(d, I...)
     idxs = d.indexes[chidx...]
     localidx = ntuple(i -> (I[i] - first(idxs[i]) + 1), ndims(d))
@@ -626,22 +626,22 @@ function restrict_indices(a::Tuple{Any, Any, Vararg{Any}}, b::Tuple{Any})
     end
 end
 
-immutable ProductIndices{I,N} <: AbstractArray{Bool, N}
+struct ProductIndices{I,N} <: AbstractArray{Bool, N}
     indices::I
     sz::NTuple{N,Int}
 end
 Base.size(P::ProductIndices) = P.sz
 # This gets passed to map to avoid breaking propagation of inbounds
 Base.@propagate_inbounds propagate_getindex(A, I...) = A[I...]
-Base.@propagate_inbounds Base.getindex{_,N}(P::ProductIndices{_,N}, I::Vararg{Int, N}) =
+Base.@propagate_inbounds Base.getindex(P::ProductIndices{_,N}, I::Vararg{Int, N}) where {_,N} =
     Bool((&)(map(propagate_getindex, P.indices, I)...))
 
-immutable MergedIndices{I,N} <: AbstractArray{CartesianIndex{N}, N}
+struct MergedIndices{I,N} <: AbstractArray{CartesianIndex{N}, N}
     indices::I
     sz::NTuple{N,Int}
 end
 Base.size(M::MergedIndices) = M.sz
-Base.@propagate_inbounds Base.getindex{_,N}(M::MergedIndices{_,N}, I::Vararg{Int, N}) =
+Base.@propagate_inbounds Base.getindex(M::MergedIndices{_,N}, I::Vararg{Int, N}) where {_,N} =
     CartesianIndex(map(propagate_getindex, M.indices, I))
 # Additionally, we optimize bounds checking when using MergedIndices as an
 # array index since checking, e.g., A[1:500, 1:500] is *way* faster than
