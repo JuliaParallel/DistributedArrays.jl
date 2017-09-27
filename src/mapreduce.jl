@@ -182,7 +182,8 @@ end
 
 
 function map_localparts(f::Callable, d::DArray)
-    r = Base.asyncmap!(similar(procs(d), Future), procs(d)) do p
+    r = similar(procs(d), Future)
+    Base.asyncmap!(r, procs(d)) do p
         remotecall_wait(p) do
             f(localpart(d))
         end
@@ -191,7 +192,8 @@ function map_localparts(f::Callable, d::DArray)
 end
 
 function map_localparts(f::Callable, d1::DArray, d2::DArray)
-    r = Base.asyncmap!(similar(procs(d1), Future), procs(d1)) do p
+    r = similar(procs(d1), Future)
+    Base.asyncmap!(r, procs(d1)) do p
         remotecall_wait(p) do
             f(localpart(d1), localpart(d2))
         end
@@ -203,7 +205,8 @@ function map_localparts(f::Callable, DA::DArray, A::Array)
     s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
         A[DA.indexes[pididx]...]
     end
-    r = Base.asyncmap!(similar(procs(DA), Future), procs(DA)) do p
+    r = similar(procs(DA), Future)
+    Base.asyncmap!(r, procs(DA)) do p
         remotecall_wait(p) do
             f(localpart(DA), localpart(s))
         end
@@ -215,7 +218,8 @@ function map_localparts(f::Callable, A::Array, DA::DArray)
     s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
         A[DA.indexes[pididx]...]
     end
-    r = Base.asyncmap!(similar(procs(DA), Future), procs(DA)) do p
+    r = similar(procs(DA), Future)
+    Base.asyncmap!(r, procs(DA)) do p
         remotecall_wait(p) do
             f(localpart(s), localpart(DA))
         end
@@ -231,7 +235,8 @@ function map_localparts!(f::Callable, d::DArray)
 end
 
 function map_localparts(f::Callable, As::DArray...)
-    r = Base.asyncmap!(similar(procs(As[1]), Future), procs(As[1])) do p
+    r = similar(procs(As[1]), Future)
+    Base.asyncmap!(r, procs(As[1])) do p
         remotecall_wait(p) do
             f(map(localpart, As)...)
         end
