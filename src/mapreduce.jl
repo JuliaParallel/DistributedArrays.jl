@@ -1,6 +1,6 @@
 ## higher-order functions ##
 
-Base.map(f, d::DArray) = DArray(I->map(f, localpart(d)), d)
+Base.map(f, d0::DArray, ds::AbstractArray...) = broadcast(f, d0, ds...)
 
 Base.map!(f::F, dest::DArray, src::DArray) where {F} = begin
     @sync for p in procs(dest)
