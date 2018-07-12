@@ -118,7 +118,8 @@ check_leaks()
     end
 
     @testset "test invalid use of @DArray" begin
-        @test_throws ArgumentError eval(:((@DArray [1,2,3,4])))
+        #@test_throws ArgumentError eval(:((@DArray [1,2,3,4])))
+        @test_throws LoadError eval(:((@DArray [1,2,3,4])))
     end
 end
 

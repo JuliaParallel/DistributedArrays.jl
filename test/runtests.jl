@@ -11,6 +11,7 @@ end
 @everywhere using DistributedArrays
 @everywhere using DistributedArrays.SPMD
 @everywhere using Random
+@everywhere using LinearAlgebra
 
 @everywhere srand(1234 + myid())
 

@@ -1,5 +1,7 @@
 ## higher-order functions ##
 
+import Base: +, -, div, mod, rem, &, |, xor
+
 Base.map(f, d0::DArray, ds::AbstractArray...) = broadcast(f, d0, ds...)
 
 function Base.map!(f::F, dest::DArray, src::DArray) where {F}
@@ -12,14 +14,13 @@ function Base.map!(f::F, dest::DArray, src::DArray) where {F}
     return dest
 end
 
-# Base.Broadcast._containertype(::Type{D}) where {D<:DArray} = DArray
-Base.BroadcastStyle(::Type{<:DArray}) = Broadcast.ArrayStyle{DArray}()
+#Base.Broadcast._containertype(::Type{D}) where {D<:DArray} = DArray
 
-Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{DArray}) = DArray
-Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{Array})  = DArray
-Base.Broadcast.promote_containertype(::Type{DArray}, ct)             = DArray
-Base.Broadcast.promote_containertype(::Type{Array}, ::Type{DArray})  = DArray
-Base.Broadcast.promote_containertype(ct, ::Type{DArray})             = DArray
+Base.BroadcastStyle(::Type{DArray}, ::Type{DArray}) = DArray
+Base.BroadcastStyle(::Type{DArray}, ::Type{Array})  = DArray
+Base.BroadcastStyle(::Type{DArray}, ct)             = DArray
+#Base.Broadcast.promote_containertype(::Type{Array}, ::Type{DArray})  = DArray
+#Base.Broadcast.promote_containertype(ct, ::Type{DArray})             = DArray
 
 Base.Broadcast.broadcast_indices(::Type{DArray}, A)      = indices(A)
 Base.Broadcast.broadcast_indices(::Type{DArray}, A::Ref) = ()
@@ -27,7 +28,7 @@ Base.Broadcast.broadcast_indices(::Type{DArray}, A::Ref) = ()
 # FixMe!
 ## 1. Support for arbitrary indices including OneTo
 ## 2. This is as type unstable as it can be. Overhead might not matter too much for DArrays though.
-function Base.Broadcast.broadcast_c(f, ::Type{DArray}, As...)
+function Base.broadcast(f, ::Type{DArray}, ::Nothing, ::Nothing, As...)
     T     = Base.Broadcast._broadcast_eltype(f, As...)
     shape = Base.Broadcast.broadcast_indices(As...)
     iter  = Base.CartesianIndices(shape)
@@ -89,7 +90,8 @@ function mapreducedim_within(f, op, A::DArray, region)
     gridsize = [size(A.indices)...]
     arraysize[[region...]] = gridsize[[region...]]
     indx = similar(A.indices)
-    for i in CartesianIndices(size(indx))
+
+    for i in CartesianIndices(indx)
         indx[i] = ntuple(j -> j in region ? (i.I[j]:i.I[j]) : A.indices[i][j], ndims(A))
     end
     cuts = [i in region ? collect(1:arraysize[i] + 1) : A.cuts[i] for i in 1:ndims(A)]
@@ -156,24 +158,6 @@ function Base.extrema(d::DArray)
     end
     return reduce((t,s) -> (min(t[1], s[1]), max(t[2], s[2])), r)
 end
-
-# mapreduce like
-# for (fn, fr1, fr2) in ((:abs, :max),
-#                        (:minabs, :abs, :min),
-#                        (:sumabs, :abs, :+),
-#                        (:sumabs2, :abs2, :+))
-#     @eval (Base.$fn)(d::DArray) = mapreduce($fr1, $fr2, d)
-# end
-
-# semi mapreduce
-# for (fn, fr) in ((:any, :|),
-#                  (:all, :&),
-#                  (:count, :+))
-#     @eval begin
-#         (Base.$fn)(f::typeof(identity), d::DArray) = mapreduce(f, $fr, d)
-#         (Base.$fn)(f::Callable, d::DArray) = mapreduce(f, $fr, d)
-#     end
-# end
 
 # Unary vector functions
 (-)(D::DArray) = map(-, D)
@@ -361,5 +345,5 @@ function ppeval(f, D...; dim::NTuple = map(t -> isa(t, DArray) ? ndims(t) : 0, D
     # the DArray constructor.
     sd = [size(D[1].pids)...]
     nd = remotecall_fetch((r)->ndims(fetch(r)), refs[1].where, refs[1])
-    DArray(reshape(refs, tuple([sd[1:nd - 1]; sd[end];]...)))
+    DArray(reshape(refs, tuple([sd[1:nd - 1]; sd[end]]...)))
 end

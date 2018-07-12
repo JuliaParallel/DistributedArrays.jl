@@ -1,8 +1,8 @@
 function Serialization.serialize(S::AbstractSerializer, d::DArray{T,N,A}) where {T,N,A}
     # Only send the ident for participating workers - we expect the DArray to exist in the
     # remote registry. DO NOT send the localpart.
-    destpid = Distributed.worker_id_from_socket(S.io)
-    Serializer.serialize_type(S, typeof(d))
+    destpid = worker_id_from_socket(S.io)
+    serialize_type(S, typeof(d))
     if (destpid in d.pids) || (destpid == d.id[1])
         serialize(S, (true, d.id))    # (id_only, id)
     else
@@ -43,15 +43,14 @@ end
 
 # Serialize only those parts of the object as required by the destination worker.
 mutable struct DestinationSerializer
-    generate::Union{Function,Missing}     # Function to generate the part to be serialized
-    pids::Union{Array,Missing}            # MUST have the same shape as the distribution
-
-    deser_obj::Union{Any,Missing}         # Deserialized part
+    generate::Union{Function,Nothing}  # Function to generate the part to be serialized
+    pids::Union{Array,Nothing}         # MUST have the same shape as the distribution
+    deser_obj::Any                     # Deserialized part
 
     DestinationSerializer(f,p,d) = new(f,p,d)
 end
 
-DestinationSerializer(f::Function, pids::Array) = DestinationSerializer(f, pids, missing)
+DestinationSerializer(f::Function, pids::Array) = DestinationSerializer(f, pids, nothing)
 
 # contructs a DestinationSerializer after verifying that the shape of pids.
 function verified_destination_serializer(f::Function, pids::Array, verify_size)
@@ -59,12 +58,13 @@ function verified_destination_serializer(f::Function, pids::Array, verify_size)
     return DestinationSerializer(f, pids)
 end
 
-DestinationSerializer(deser_obj::Any) = DestinationSerializer(missing, missing, deser_obj)
+DestinationSerializer(deser_obj::Any) = DestinationSerializer(nothing, nothing, deser_obj)
 
 function Serialization.serialize(S::AbstractSerializer, s::DestinationSerializer)
-    pid = Distributed.worker_id_from_socket(S.io)
+    pid = worker_id_from_socket(S.io)
     pididx = findfirst(isequal(pid), s.pids)
-    Serialization.serialize_type(S, typeof(s))
+    @assert pididx !== nothing
+    serialize_type(S, typeof(s))
     serialize(S, s.generate(pididx))
 end
 
@@ -75,9 +75,9 @@ end
 
 
 function localpart(s::DestinationSerializer)
-    if !ismissing(s.deser_obj)
+    if s.deser_obj !== nothing
         return s.deser_obj
-    elseif  !ismissing(s.generate) && (myid() in s.pids)
+    elseif s.generate !== nothing && (myid() in s.pids)
         # Handle the special case where myid() is part of s.pids.
         # In this case serialize/deserialize is not called as the remotecall is executed locally
         return s.generate(findfirst(isequal(myid()), s.pids))

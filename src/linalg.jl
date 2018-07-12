@@ -221,7 +221,7 @@ function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::D
                     if tA == 'T'
                         return transpose(localpart(A))*convert(localtype(B), Bjk)
                     elseif tA == 'C'
-                        return localpart(A)'*convert(localtype(B), Bjk)
+                        return ctranspose(localpart(A))*convert(localtype(B), Bjk)
                     else
                         return localpart(A)*convert(localtype(B), Bjk)
                     end

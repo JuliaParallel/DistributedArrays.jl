@@ -8,7 +8,7 @@ using LinearAlgebra
 
 import Base: +, -, *, div, mod, rem, &, |, xor
 import Base.Callable
-import LinearAlgebra.BLAS: axpy!
+import LinearAlgebra: axpy!, dot, norm,
 
 import Primes
 import Primes: factor

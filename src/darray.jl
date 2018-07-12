@@ -28,8 +28,7 @@ mutable struct DArray{T,N,A} <: AbstractArray{T,N}
     pids::Array{Int,N}                          # pids[i]==p ⇒ processor p has piece i
     indices::Array{NTuple{N,UnitRange{Int}},N}  # indices held by piece i
     cuts::Vector{Vector{Int}}                   # cuts[d][i] = first index of chunk i in dimension d
-    localpart::Union{A,Missing}
-
+    localpart::Union{A,Nothing}
     release::Bool
 
     function DArray{T,N,A}(id, dims, pids, indices, cuts, lp) where {T,N,A}
@@ -64,7 +63,7 @@ function d_from_weakref_or_d(id)
 end
 
 Base.eltype(::Type{DArray{T}}) where {T} = T
-empty_localpart(T,N,A) = A(Array{T}(ntuple(zero, N)))
+empty_localpart(T,N,A) = A(Array{T}(undef, ntuple(zero, N)))
 
 const SubDArray{T,N,D<:DArray} = SubArray{T,N,D}
 const SubOrDArray{T,N} = Union{DArray{T,N}, SubDArray{T,N}}
@@ -148,7 +147,7 @@ function ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Ve
         d = registry[id]
         d = isa(d, WeakRef) ? d.value : d
     else
-        d = DArray{T,1,T}(id, (npids,), pids, idxs, cuts, missing)
+        d = DArray{T,1,T}(id, (npids,), pids, idxs, cuts, nothing)
     end
     d
 end
@@ -196,10 +195,10 @@ function DArray(refs)
         end
     end
 
-    nindices = Array{NTuple{length(dimdist),UnitRange{Int}}}(dimdist...)
+    nindices = Array{NTuple{length(dimdist),UnitRange{Int}}}(undef, dimdist...)
 
     for i in 1:length(nindices)
-        subidx = CartesianIndices(dimdist)[i]
+        subidx = CartesianIndices(dimdist)[i] #ind2sub(dimdist, i)
         nindices[i] = ntuple(length(subidx)) do x
             idx_in_dim = subidx[x]
             startidx = 1
@@ -243,7 +242,7 @@ DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indices,
 
 sz_localpart_ref(ref, id) = size(fetch(ref))
 
-Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array{T}(map(length,I)), dims, procs(d))
+Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array{T}(undef, map(length,I)), dims, procs(d))
 Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
 Base.similar(d::DArray{T}, dims::Dims) where {T} = similar(d, T, dims)
 Base.similar(d::DArray{T}) where {T} = similar(d, T, size(d))
@@ -288,7 +287,7 @@ function defaultdist(sz::Int, nc::Int)
     if sz >= nc
         return round.(Int, range(1, stop=sz+1, length=nc+1))
     else
-        return [[1:(sz+1);]; zeros(Int, nc-sz);]
+        return [[1:(sz+1);]; zeros(Int, nc-sz)]
     end
 end
 
@@ -488,7 +487,7 @@ function (::Type{Array{S,N}})(s::SubDArray{T,N}) where {S,T,N}
         end
     end
     a = Array{S}(undef, size(s))
-    a[[1:size(a,i) for i=1:N]...] = s
+    a[[1:size(a,i) for i=1:N]...] .= s
     return a
 end
 
@@ -509,7 +508,7 @@ function Base.reshape(A::DArray{T,1,S}, d::Dims) where {T,S<:Array}
         d1offs = first(I[1])
         nd = length(I)
 
-        B = Array{T}(sz)
+        B = Array{T}(undef, sz)
         nr = size(B,1)
         sztail = size(B)[2:end]
 
@@ -565,7 +564,7 @@ function Base.isassigned(D::DArray, i::Integer...)
 end
 
 
-function Base.copy!(dest::SubOrDArray, src::SubOrDArray)
+Base.copyto!(dest::SubOrDArray, src::SubOrDArray) = begin
     asyncmap(procs(dest)) do p
         remotecall_fetch(p) do
             localpart(dest)[:] = src[localindices(dest)...]
@@ -573,6 +572,7 @@ function Base.copy!(dest::SubOrDArray, src::SubOrDArray)
     end
     return dest
 end
+Base.copy!(dest::SubOrDArray, src::SubOrDArray) = copyto!(dest, src)
 
 # local copies are obtained by convert(Array, ) or assigning from
 # a SubDArray to a local Array.

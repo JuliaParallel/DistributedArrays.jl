@@ -4,15 +4,15 @@ using Distributed
 
 import DistributedArrays: gather, next_did, close
 export sendto, recvfrom, recvfrom_any, barrier, bcast, scatter, gather
-export context_local_storage, context, spmd, close
+export context_local_storage, context, spmd
 
 
 mutable struct WorkerDataChannel
     pid::Int
-    rc::Union{RemoteChannel,Missing}
+    rc::Union{RemoteChannel,Nothing}
     lock::ReentrantLock
 
-    WorkerDataChannel(pid) = new(pid, missing, ReentrantLock())
+    WorkerDataChannel(pid) = new(pid, nothing, ReentrantLock())
 end
 
 mutable struct SPMDContext
@@ -61,7 +61,7 @@ const map_ctxts = Dict{Tuple, SPMDContext}()
 function get_dc(wc::WorkerDataChannel)
     lock(wc.lock)
     try
-        if ismissing(wc.rc)
+        if wc.rc === nothing
             if wc.pid == myid()
                 myrc = RemoteChannel(()->Channel(typemax(Int)))
                 wc.rc = myrc
@@ -254,7 +254,7 @@ function delete_ctxt_id(ctxt_id)
     nothing
 end
 
-function close(ctxt::SPMDContext)
+function Base.close(ctxt::SPMDContext)
     for p in ctxt.pids
         Base.remote_do(delete_ctxt_id, p, ctxt.id)
     end
