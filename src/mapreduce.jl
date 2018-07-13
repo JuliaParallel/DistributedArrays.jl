@@ -73,17 +73,6 @@ function Base.reducedim_initarray(A::DArray, region, v0, ::Type{R}) where {R}
 end
 Base.reducedim_initarray(A::DArray, region, v0::T) where {T} = Base.reducedim_initarray(A, region, v0, T)
 
-# function Base.reducedim_initarray0(A::DArray, region, v0, ::Type{R}) where {R}
-#     # Store reduction on lowest pids
-#     pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
-#     chunks = similar(pids, Future)
-#     @sync for i in eachindex(pids)
-#         @async chunks[i...] = remotecall_wait(() -> Base.reducedim_initarray0(localpart(A), region, v0, R), pids[i...])
-#     end
-#     return DArray(chunks)
-# end
-# Base.reducedim_initarray0(A::DArray, region, v0::T) where {T} = Base.reducedim_initarray0(A, region, v0, T)
-
 # Compute mapreducedim of each localpart and store the result in a new DArray
 function mapreducedim_within(f, op, A::DArray, region)
     arraysize = [size(A)...]
