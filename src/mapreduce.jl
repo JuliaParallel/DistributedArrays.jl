@@ -14,31 +14,41 @@ function Base.map!(f::F, dest::DArray, src::DArray) where {F}
     return dest
 end
 
-#Base.Broadcast._containertype(::Type{D}) where {D<:DArray} = DArray
+# new broadcasting implementation for julia-0.7
 
-Base.BroadcastStyle(::Type{DArray}, ::Type{DArray}) = DArray
-Base.BroadcastStyle(::Type{DArray}, ::Type{Array})  = DArray
-Base.BroadcastStyle(::Type{DArray}, ct)             = DArray
-#Base.Broadcast.promote_containertype(::Type{Array}, ::Type{DArray})  = DArray
-#Base.Broadcast.promote_containertype(ct, ::Type{DArray})             = DArray
+Base.BroadcastStyle(::Type{<:DArray}) = Broadcast.ArrayStyle{DArray}()
+Base.BroadcastStyle(::Type{<:DArray}, ::Any) = Broadcast.ArrayStyle{DArray}()
 
-Base.Broadcast.broadcast_indices(::Type{DArray}, A)      = indices(A)
-Base.Broadcast.broadcast_indices(::Type{DArray}, A::Ref) = ()
-
-# FixMe!
-## 1. Support for arbitrary indices including OneTo
-## 2. This is as type unstable as it can be. Overhead might not matter too much for DArrays though.
-function Base.broadcast(f, ::Type{DArray}, ::Nothing, ::Nothing, As...)
-    T     = Base.Broadcast._broadcast_eltype(f, As...)
-    shape = Base.Broadcast.broadcast_indices(As...)
-    iter  = Base.CartesianIndices(shape)
-    D     = DArray(map(length, shape)) do I
-        Base.Broadcast.broadcast_c(f, Array,
-            map(a -> isa(a, Union{Number,Ref}) ? a :
-                localtype(a)(a[ntuple(i -> i > ndims(a) ? 1 : (size(a, i) == 1 ? (1:1) : I[i]), length(shape))...]), As)...)
-    end
-    return D
+function Base.similar(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}}, ::Type{ElType}) where {ElType}
+   DA = find_darray(bc)
+   similar(DA, ElType)
 end
+
+"`DA = find_darray(As)` returns the first DArray among the arguments."
+find_darray(bc::Base.Broadcast.Broadcasted) = find_darray(bc.args)
+find_darray(args::Tuple) = find_darray(find_darray(args[1]), Base.tail(args))
+find_darray(x) = x
+find_darray(a::DArray, rest) = a
+find_darray(::Any, rest) = find_darray(rest)
+
+function Base.copyto!(dest::DArray, bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}})
+    @sync for p in procs(dest)
+       @async remotecall_fetch(p) do
+          copyto!(localpart(dest), rewrite_local(bc))
+       end
+    end
+    dest
+end
+
+"""
+Transform a Broadcasted{Broadcast.ArrayStyle{DArray}} object into an equivalent
+Broadcasted{Broadcast.DefaultArrayStyle} object for the localparts.
+"""
+rewrite_local(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}}) = Broadcast.broadcasted(bc.f, rewrite_local(bc.args)...)
+rewrite_local(args::Tuple) = map(rewrite_local, args)
+rewrite_local(a::DArray) = localpart(a)
+rewrite_local(x) = x
+
 
 function Base.reduce(f, d::DArray)
     results = asyncmap(procs(d)) do p
@@ -127,17 +137,6 @@ function nnz(A::DArray)
     end
     return reduce(+, B)
 end
-
-# reduce like
-# for (fn, fr) in ((:sum, :+),
-#                  (:prod, :*),
-#                  (:maximum, :max),
-#                  (:minimum, :min),
-#                  (:any, :|),
-#                  (:all, :&))
-#     @eval (Base.$fn)(d::DArray)    = reduce($fr, d)
-#     @eval (Base.$fn)(f, d::DArray) = mapreduce(f, $fr, d)
-# end
 
 function Base.extrema(d::DArray)
     r = asyncmap(procs(d)) do p

@@ -708,7 +708,7 @@ function Base.setindex!(a::Array, s::SubDArray,
                 # partial chunk
                 @async a[idxs...] =
                     remotecall_fetch(d.pids[i]) do
-                        view(localpart(d), [K[j]-first(K_c[j])+1 for j=1:length(J)]...)
+                        view(localpart(d), [K[j].-first(K_c[j]).+1 for j=1:length(J)]...)
                     end
             end
         end

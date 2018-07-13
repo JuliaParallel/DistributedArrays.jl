@@ -182,6 +182,7 @@ check_leaks()
 
     @testset "test map / reduce" begin
         D2 = map(x->1, D)
+        @test D2 isa DArray
         @test reduce(+, D2) == 100
         close(D2)
     end
