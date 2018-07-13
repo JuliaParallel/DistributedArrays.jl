@@ -66,7 +66,7 @@ function compute_boundaries(d::DVector{T}; kwargs...) where T
 
     results = asyncmap(p -> remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr; kwargs...), pids)
 
-    samples = Array{T}(0)
+    samples = Array{T}(undef, 0)
     for x in results
         append!(samples, x[1])
     end

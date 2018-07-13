@@ -2,7 +2,7 @@ function Base.copy(D::Adjoint{T,<:DArray{T,2}}) where T
     DArray(reverse(size(D)), procs(D)) do I
         lp = Array{T}(map(length, I))
         rp = convert(Array, D[reverse(I)...])
-        ctranspose!(lp, rp)
+        adjoint!(lp, rp)
     end
 end
 

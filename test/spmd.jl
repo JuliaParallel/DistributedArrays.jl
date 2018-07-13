@@ -105,7 +105,7 @@ spmd(spmd_test1)
 end
 
 # run foo_spmd on all workers, many of them, all concurrently using implictly different contexts.
-in_arrays = map(x->DArray(I->fill(myid(), (map(length,I)...)), (nworkers(), 2), workers(), [nworkers(),1]), 1:8)
+in_arrays = map(x->DArray(I->fill(myid(), (map(length,I)...,)), (nworkers(), 2), workers(), [nworkers(),1]), 1:8)
 out_arrays = map(x->ddata(), 1:8)
 
 @sync for i in 1:8
@@ -151,7 +151,7 @@ println("SPMD: Passed testing of spmd function run concurrently")
 end
 
 
-in_arrays = map(x->DArray(I->fill(myid(), (map(length,I)...)), (nworkers(), 2), workers(), [nworkers(),1]), 1:8)
+in_arrays = map(x->DArray(I->fill(myid(), (map(length,I)...,)), (nworkers(), 2), workers(), [nworkers(),1]), 1:8)
 out_arrays = map(x->ddata(), 1:8)
 contexts = map(x->context(workers()), 1:8)
 
