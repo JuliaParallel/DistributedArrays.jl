@@ -1,4 +1,6 @@
-using Test, Distributed
+using Test
+using Distributed
+using DistributedArrays
 
 # add at least 3 worker processes
 if nworkers() < 3
