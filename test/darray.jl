@@ -1,4 +1,9 @@
+<<<<<<< HEAD
 using Test, LinearAlgebra, SpecialFunctions
+=======
+using SpecialFunctions
+using LinearAlgebra
+>>>>>>> scale! -> [lr]mul!
 
 @testset "test distribute and other constructors" begin
     A = rand(1:100, (100,100))
@@ -196,7 +201,7 @@ end
 
 check_leaks()
 
-@testset "test scale" begin
+@testset "test rmul" begin
     A = randn(100,100)
     DA = distribute(A)
     @test rmul!(DA, 2) == rmul!(A, 2)
@@ -205,17 +210,29 @@ end
 
 check_leaks()
 
+<<<<<<< HEAD
 @testset "test rmul!(Diagonal, A)" begin
+=======
+@testset "test [lr]mul!(b, A)" begin
+>>>>>>> scale! -> [lr]mul!
     A = randn(100, 100)
     b = randn(100)
     D = Diagonal(b)
     DA = distribute(A)
+<<<<<<< HEAD
     @test lmul!(D, A) == lmul!(D, DA)
+=======
+    @test lmul!(Diagonal(b), A) == lmul!(Diagonal(b), DA)
+>>>>>>> scale! -> [lr]mul!
     close(DA)
     A = randn(100, 100)
     b = randn(100)
     DA = distribute(A)
+<<<<<<< HEAD
     @test rmul!(A, D) == rmul!(DA, D)
+=======
+    @test rmul!(A, Diagonal(b)) == rmul!(A, Diagonal(b))
+>>>>>>> scale! -> [lr]mul!
     close(DA)
 end
 
