@@ -1,6 +1,6 @@
 function Base.copy(D::Adjoint{T,<:DArray{T,2}}) where T
     DArray(reverse(size(D)), procs(D)) do I
-        lp = Array{T}(map(length, I))
+        lp = Array{T}(undef, map(length, I))
         rp = convert(Array, D[reverse(I)...])
         adjoint!(lp, rp)
     end
@@ -8,7 +8,7 @@ end
 
 function Base.copy(D::Transpose{T,<:DArray{T,2}}) where T
     DArray(reverse(size(D)), procs(D)) do I
-        lp = Array{T}(map(length, I))
+        lp = Array{T}(undef, map(length, I))
         rp = convert(Array, D[reverse(I)...])
         transpose!(lp, rp)
     end
@@ -94,7 +94,7 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
     end
 
     # Multiply on each tile of A
-    R = Array{Future}(size(A.pids)...)
+    R = Array{Future}(undef, size(A.pids))
     for j = 1:size(A.pids, 2)
         xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
         for i = 1:size(A.pids, 1)
@@ -138,7 +138,7 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     end
 
     # Multiply on each tile of A
-    R = Array{Future}(reverse(size(A.pids))...)
+    R = Array{Future}(undef, reverse(size(A.pids)))
     for j = 1:size(A.pids, 1)
         xj = x[A.cuts[1][j]:A.cuts[1][j + 1] - 1]
         for i = 1:size(A.pids, 2)
@@ -206,9 +206,9 @@ function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::D
 
     # Multiply on each tile of A
     if tA == 'N'
-        R = Array{Future}(size(procs(A))..., size(procs(C), 2))
+        R = Array{Future}(undef, size(procs(A))..., size(procs(C), 2))
     else
-        R = Array{Future}(reverse(size(procs(A)))..., size(procs(C), 2))
+        R = Array{Future}(undef, reverse(size(procs(A)))..., size(procs(C), 2))
     end
     for j = 1:size(A.pids, Ad2)
         for k = 1:size(C.pids, 2)
@@ -221,7 +221,7 @@ function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::D
                     if tA == 'T'
                         return transpose(localpart(A))*convert(localtype(B), Bjk)
                     elseif tA == 'C'
-                        return ctranspose(localpart(A))*convert(localtype(B), Bjk)
+                        return adjoint(localpart(A))*convert(localtype(B), Bjk)
                     else
                         return localpart(A)*convert(localtype(B), Bjk)
                     end
@@ -261,12 +261,12 @@ At_mul_B!(C::DMatrix, A::DMatrix, B::AbstractMatrix) = At_mul_B!(one(eltype(C)),
 
 _matmul_op = (t,s) -> t*s + t*s
 
-function (*)(A::DMatrix, x::AbstractVector)
+function Base.:*(A::DMatrix, x::AbstractVector)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
     y = DArray(I -> Array{T}(map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
     return A_mul_B!(one(T), A, x, zero(T), y)
 end
-function (*)(A::DMatrix, B::AbstractMatrix)
+function Base.:*(A::DMatrix, B::AbstractMatrix)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
     C = DArray(I -> Array{T}(map(length, I)),
             (size(A, 1), size(B, 2)),

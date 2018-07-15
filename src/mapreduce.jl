@@ -127,10 +127,6 @@ function Base.mapreducedim!(f, op, R::DArray, A::DArray)
     return mapreducedim_between!(identity, op, R, B, region)
 end
 
-# function Base.mapreducedim(f, op, R::DArray, A::DArray)
-#     Base.mapreducedim!(f, op, Base.reducedim_initarray(A, region, v0), A)
-# end
-
 function nnz(A::DArray)
     B = asyncmap(A.pids) do p
         remotecall_fetch(nnz∘localpart, p, A)

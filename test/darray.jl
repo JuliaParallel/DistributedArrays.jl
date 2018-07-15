@@ -1,9 +1,6 @@
-<<<<<<< HEAD
 using Test, LinearAlgebra, SpecialFunctions
-=======
-using SpecialFunctions
-using LinearAlgebra
->>>>>>> scale! -> [lr]mul!
+using Statistics: mean
+@everywhere using SparseArrays: sprandn
 
 @testset "test distribute and other constructors" begin
     A = rand(1:100, (100,100))
@@ -210,29 +207,17 @@ end
 
 check_leaks()
 
-<<<<<<< HEAD
 @testset "test rmul!(Diagonal, A)" begin
-=======
-@testset "test [lr]mul!(b, A)" begin
->>>>>>> scale! -> [lr]mul!
     A = randn(100, 100)
     b = randn(100)
     D = Diagonal(b)
     DA = distribute(A)
-<<<<<<< HEAD
     @test lmul!(D, A) == lmul!(D, DA)
-=======
-    @test lmul!(Diagonal(b), A) == lmul!(Diagonal(b), DA)
->>>>>>> scale! -> [lr]mul!
     close(DA)
     A = randn(100, 100)
     b = randn(100)
     DA = distribute(A)
-<<<<<<< HEAD
     @test rmul!(A, D) == rmul!(DA, D)
-=======
-    @test rmul!(A, Diagonal(b)) == rmul!(A, Diagonal(b))
->>>>>>> scale! -> [lr]mul!
     close(DA)
 end
 
@@ -242,6 +227,7 @@ check_leaks()
     for _ = 1:25, f = [x -> Int128(2x), x -> Int128(x^2), x -> Int128(x^2 + 2x - 1)], opt = [+, *]
         A = rand(1:5, rand(2:30))
         DA = distribute(A)
+        @test DA isa DArray
         @test mapreduce(f, opt, DA) - mapreduce(f, opt, A) == 0
         close(DA)
     end
@@ -252,15 +238,16 @@ check_leaks()
 @testset "test mapreducedim on DArrays" begin
     D = DArray(I->fill(myid(), map(length,I)), (73,73), [MYID, OTHERIDS])
     D2 = map(x->1, D)
-    @test mapreducedim(t -> t*t, +, D2, 1) == mapreducedim(t -> t*t, +, convert(Array, D2), 1)
-    @test mapreducedim(t -> t*t, +, D2, 2) == mapreducedim(t -> t*t, +, convert(Array, D2), 2)
-    @test mapreducedim(t -> t*t, +, D2, (1,2)) == mapreducedim(t -> t*t, +, convert(Array, D2), (1,2))
+    @test D2 isa DArray
+    @test mapreduce(t -> t*t, +, D2, dims=1) == mapreduce(t -> t*t, +, convert(Array, D2), dims=1)
+    @test mapreduce(t -> t*t, +, D2, dims=2) == mapreduce(t -> t*t, +, convert(Array, D2), dims=2)
+    @test mapreduce(t -> t*t, +, D2, dims=(1,2)) == mapreduce(t -> t*t, +, convert(Array, D2), dims=(1,2))
 
     # Test non-regularly chunked DArrays
     r1 = DistributedArrays.remotecall(() -> sprandn(3, 10, 0.1), workers()[1])
     r2 = DistributedArrays.remotecall(() -> sprandn(7, 10, 0.1), workers()[2])
     D = DArray(reshape([r1; r2], (2,1)))
-    @test Array(sum(D, 2)) == sum(Array(D), 2)
+    @test Array(sum(D, dims=2)) == sum(Array(D), dims=2)
 
     # close(D)
     # close(D2)
@@ -275,10 +262,10 @@ check_leaks()
     A = convert(Array, DA)
 
     @testset "dimension $dms" for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
-        @test mapreducedim(t -> t*t, +, A, dms) ≈ mapreducedim(t -> t*t, +, DA, dms)
-        @test mapreducedim(t -> t*t, +, A, dms, 1.0) ≈ mapreducedim(t -> t*t, +, DA, dms, 1.0)
-        @test reducedim(*, A, dms) ≈ reducedim(*, DA, dms)
-        @test reducedim(*, A, dms, 2.0) ≈ reducedim(*, DA, dms, 2.0)
+        @test mapreduce(t -> t*t, +, A, dims=dms) ≈ mapreduce(t -> t*t, +, DA, dims=dms)
+        @test mapreduce(t -> t*t, +, A, dims=dms, init=1.0) ≈ mapreduce(t -> t*t, +, DA, dims=dms, init=1.0)
+        @test reduce(*, A, dims=dms) ≈ reduce(*, DA, dims=dms)
+        @test reduce(*, A, dims=dms, init=2.0) ≈ reduce(*, DA, dims=dms, init=2.0)
     end
     close(DA)
     d_closeall()   # temp created by the mapreduce above
@@ -293,7 +280,7 @@ check_leaks()
 
     @testset "test $f for dimension $dms" for f in (mean, ), dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
         # std is pending implementation
-        @test f(DA,dms) ≈ f(A,dms)
+        @test f(DA, dims=dms) ≈ f(A, dims=dms)
     end
 
     close(DA)
@@ -308,7 +295,7 @@ check_leaks()
 
     # sum either throws an ArgumentError or a CompositeException of ArgumentErrors
     try
-        sum(DA, -1)
+        sum(DA, dims=-1)
     catch err
         if isa(err, CompositeException)
             @test !isempty(err.exceptions)
@@ -322,7 +309,7 @@ check_leaks()
         end
     end
     try
-        sum(DA, 0)
+        sum(DA, dims=0)
     catch err
         if isa(err, CompositeException)
             @test !isempty(err.exceptions)
@@ -337,9 +324,9 @@ check_leaks()
     end
 
     @test sum(DA) ≈ sum(A)
-    @test sum(DA,1) ≈ sum(A,1)
-    @test sum(DA,2) ≈ sum(A,2)
-    @test sum(DA,3) ≈ sum(A,3)
+    @test sum(DA, dims=1) ≈ sum(A, dims=1)
+    @test sum(DA, dims=2) ≈ sum(A, dims=2)
+    @test sum(DA, dims=3) ≈ sum(A, dims=3)
     close(DA)
     d_closeall()   # temporaries created above
 end
@@ -360,7 +347,7 @@ end
 
 check_leaks()
 
-# test length / endof
+# test length / lastindex
 @testset "test collections API" begin
     A = randn(23,23)
     DA = distribute(A)
@@ -369,8 +356,8 @@ check_leaks()
         @test length(DA) == length(A)
     end
 
-    @testset "test endof" begin
-        @test endof(DA) == endof(A)
+    @testset "test lastindex" begin
+        @test lastindex(DA) == lastindex(A)
     end
     close(DA)
 end
@@ -378,7 +365,7 @@ end
 check_leaks()
 
 @testset "test max / min / sum" begin
-    a = map(x -> Int(round(rand() * 100)) - 50, Array{Int}(100,1000))
+    a = map(x -> Int(round(rand() * 100)) - 50, Array{Int}(undef,100,1000))
     d = distribute(a)
 
     @test sum(d)          == sum(a)
@@ -395,7 +382,7 @@ end
 check_leaks()
 
 @testset "test all / any" begin
-    a = map(x->Int(round(rand() * 100)) - 50, Array{Int}(100,1000))
+    a = map(x->Int(round(rand() * 100)) - 50, Array{Int}(undef,100,1000))
     a = [true for i in 1:100]
     d = distribute(a)
 
@@ -651,25 +638,25 @@ end
 
 check_leaks()
 
-@testset "test c/transpose" begin
-    @testset "test ctranspose real" begin
-        A = drand(Float64, 100, 200)
-        @test A' == Array(A)'
-        close(A)
-    end
-    @testset "test ctranspose complex" begin
-        A = drand(Complex128, 200, 100)
-        @test A' == Array(A)'
-        close(A)
-    end
+@testset "test transpose/adjoint" begin
     @testset "test transpose real" begin
-        A = drand(Float64, 200, 100)
+        A = drand(Float64, 100, 200)
         @test transpose(A) == transpose(Array(A))
         close(A)
     end
-    @testset "test ctranspose complex" begin
-        A = drand(Complex128, 100, 200)
+    @testset "test transpose complex" begin
+        A = drand(ComplexF64, 200, 100)
         @test transpose(A) == transpose(Array(A))
+        close(A)
+    end
+    @testset "test adjoint real" begin
+        A = drand(Float64, 200, 100)
+        @test adjoint(A) == adjoint(Array(A))
+        close(A)
+    end
+    @testset "test adjoint complex" begin
+        A = drand(ComplexF64, 100, 200)
+        @test adjoint(A) == adjoint(Array(A))
         close(A)
     end
 
@@ -712,8 +699,8 @@ check_leaks()
               sinh, sinpi, sqrt, tan, tand, tanh, trigamma)
         @test f.(a) == f.(b)
     end
-    a = a + 1
-    b = b + 1
+    a = a .+ 1
+    b = b .+ 1
     @testset "$f" for f in (asec, asecd, acosh, acsc, acscd, acoth)
         @test f.(a) == f.(b)
     end
