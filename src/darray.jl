@@ -153,7 +153,7 @@ function ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Ve
 end
 
 function gather(d::DArray{T,1,T}) where T
-    a=Array{T}(length(procs(d)))
+    a=Array{T}(undef, length(procs(d)))
     @sync for (i,p) in enumerate(procs(d))
         @async a[i] = remotecall_fetch(localpart, p, d)
     end

@@ -892,9 +892,10 @@ end
     d = DistributedArrays.drand(T, 10^i)
     @testset "sample = $sample" for sample in Any[true, false, (minimum(d),maximum(d)), rand(T, 10^i>512 ? 512 : 10^i)]
         d2 = DistributedArrays.sort(d; sample=sample)
-
+        a  = convert(Array, d)
+        a2 = convert(Array, d2)
         @test length(d) == length(d2)
-        @test sort(convert(Array, d)) == convert(Array, d2)
+        @test sort(a) == a2
     end
     d_closeall()  # close the temporaries created above
 end
