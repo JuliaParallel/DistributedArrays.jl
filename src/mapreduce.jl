@@ -1,6 +1,7 @@
 ## higher-order functions ##
 
 import Base: +, -, div, mod, rem, &, |, xor
+import SparseArrays: nnz
 
 Base.map(f, d0::DArray, ds::AbstractArray...) = broadcast(f, d0, ds...)
 
@@ -21,7 +22,7 @@ Base.BroadcastStyle(::Type{<:DArray}, ::Any) = Broadcast.ArrayStyle{DArray}()
 
 function Base.similar(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}}, ::Type{ElType}) where {ElType}
    DA = find_darray(bc)
-   similar(DA, ElType)
+   DArray(I -> Array{ElType}(undef, map(length,I)), DA)
 end
 
 "`DA = find_darray(As)` returns the first DArray among the arguments."
@@ -201,7 +202,10 @@ for f in (:+, :-, :div, :mod, :rem, :&, :|, :xor)
     end
 end
 
-function mapslices(f::Function, D::DArray{T,N,A}, dims::AbstractVector) where {T,N,A}
+function Base.mapslices(f, D::DArray{T,N,A}; dims) where {T,N,A}
+    if !(dims isa AbstractVector)
+        dims = [dims...]
+    end
     if !all(t -> t == 1, size(D.indices)[dims])
         p = ones(Int, ndims(D))
         nondims = filter(t -> !(t in dims), 1:ndims(D))
@@ -209,10 +213,10 @@ function mapslices(f::Function, D::DArray{T,N,A}, dims::AbstractVector) where {T
         DD = DArray(size(D), procs(D), p) do I
             return convert(A, D[I...])
         end
-        return mapslices(f, DD, dims)
+        return mapslices(f, DD, dims=dims)
     end
 
-    refs = Future[remotecall((x,y,z)->mapslices(x,localpart(y),z), p, f, D, dims) for p in procs(D)]
+    refs = Future[remotecall((x,y,z)->mapslices(x,localpart(y),dims=z), p, f, D, dims) for p in procs(D)]
 
     DArray(reshape(refs, size(procs(D))))
 end
@@ -246,7 +250,7 @@ function _ppeval(f, A...; dim = map(ndims, A))
     push!(ridx, 1)
     Rsize = map(last, ridx)
     Rsize[end] = dimlength
-    R = Array{eltype(R1)}(Rsize...)
+    R = Array{eltype(R1)}(undef, Rsize...)
 
     for i = 1:dimlength
         for j = 1:narg
@@ -273,7 +277,7 @@ Evaluates the callable argument `f` on slices of the elements of the `D` tuple.
 `f` can be any callable object that accepts sliced or broadcasted elements of `D`.
 The result returned from `f` must be either an array or a scalar.
 
-`D` has any number of elements and the alements can have any type. If an element
+`D` has any number of elements and the elements can have any type. If an element
 of `D` is a distributed array along the dimension specified by `dim`. If an
 element of `D` is not distributed, the element is by default broadcasted and
 applied on all evaluations of `f`.
@@ -286,7 +290,7 @@ broadcasted to all evaluations of `f`.
 
 #### Result
 `ppeval` returns a distributed array of dimension `p+1` where the first `p`
-sizes correspond to the sizes of return values of `f`. The last dimention of
+sizes correspond to the sizes of return values of `f`. The last dimension of
 the return array from `ppeval` has the same length as the dimension over which
 the input arrays are sliced.
 

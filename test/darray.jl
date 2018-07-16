@@ -1,5 +1,6 @@
 using Test, LinearAlgebra, SpecialFunctions
 using Statistics: mean
+using SparseArrays: nnz
 @everywhere using SparseArrays: sprandn
 
 @testset "test distribute and other constructors" begin
@@ -713,35 +714,35 @@ check_leaks()
 @testset "test mapslices" begin
     A = randn(5,5,5)
     D = distribute(A, procs = workers(), dist = [1, 1, min(nworkers(), 5)])
-    @test mapslices(svdvals, D, (1,2)) ≈ mapslices(svdvals, A, (1,2))
-    @test mapslices(svdvals, D, (1,3)) ≈ mapslices(svdvals, A, (1,3))
-    @test mapslices(svdvals, D, (2,3)) ≈ mapslices(svdvals, A, (2,3))
-    @test mapslices(sort, D, (1,)) ≈ mapslices(sort, A, (1,))
-    @test mapslices(sort, D, (2,)) ≈ mapslices(sort, A, (2,))
-    @test mapslices(sort, D, (3,)) ≈ mapslices(sort, A, (3,))
+    @test mapslices(svdvals, D, dims=(1,2)) ≈ mapslices(svdvals, A, dims=(1,2))
+    @test mapslices(svdvals, D, dims=(1,3)) ≈ mapslices(svdvals, A, dims=(1,3))
+    @test mapslices(svdvals, D, dims=(2,3)) ≈ mapslices(svdvals, A, dims=(2,3))
+    @test mapslices(sort, D, dims=(1,)) ≈ mapslices(sort, A, dims=(1,))
+    @test mapslices(sort, D, dims=(2,)) ≈ mapslices(sort, A, dims=(2,))
+    @test mapslices(sort, D, dims=(3,)) ≈ mapslices(sort, A, dims=(3,))
 
     # issue #3613
-    B = mapslices(sum, dones(Float64, (2,3,4), workers(), [1,1,min(nworkers(),4)]), [1,2])
+    B = mapslices(sum, dones(Float64, (2,3,4), workers(), [1,1,min(nworkers(),4)]), dims=[1,2])
     @test size(B) == (1,1,4)
     @test all(B.==6)
 
     # issue #5141
-    C1 = mapslices(x-> maximum(-x), D, [])
+    C1 = mapslices(x-> maximum(-x), D, dims=[])
     @test C1 == -D
 
     # issue #5177
     c = dones(Float64, (2,3,4,5), workers(), [1,1,1,min(nworkers(),5)])
-    m1 = mapslices(x-> ones(2,3), c, [1,2])
-    m2 = mapslices(x-> ones(2,4), c, [1,3])
-    m3 = mapslices(x-> ones(3,4), c, [2,3])
+    m1 = mapslices(x-> ones(2,3), c, dims=[1,2])
+    m2 = mapslices(x-> ones(2,4), c, dims=[1,3])
+    m3 = mapslices(x-> ones(3,4), c, dims=[2,3])
     @test size(m1) == size(m2) == size(m3) == size(c)
 
-    n1 = mapslices(x-> ones(6), c, [1,2])
-    n2 = mapslices(x-> ones(6), c, [1,3])
-    n3 = mapslices(x-> ones(6), c, [2,3])
-    n1a = mapslices(x-> ones(1,6), c, [1,2])
-    n2a = mapslices(x-> ones(1,6), c, [1,3])
-    n3a = mapslices(x-> ones(1,6), c, [2,3])
+    n1 = mapslices(x-> ones(6), c, dims=[1,2])
+    n2 = mapslices(x-> ones(6), c, dims=[1,3])
+    n3 = mapslices(x-> ones(6), c, dims=[2,3])
+    n1a = mapslices(x-> ones(1,6), c, dims=[1,2])
+    n2a = mapslices(x-> ones(1,6), c, dims=[1,3])
+    n3a = mapslices(x-> ones(1,6), c, dims=[2,3])
     @test (size(n1a) == (1,6,4,5) && size(n2a) == (1,3,6,5) && size(n3a) == (2,1,6,5))
     @test (size(n1) == (6,1,4,5) && size(n2) == (6,3,1,5) && size(n3) == (2,6,1,5))
     close(D)
@@ -757,11 +758,11 @@ check_leaks()
     c = drand(20,20)
     d = convert(Array, c)
 
-    @testset "$f" for f in (:+, :-, :.+, :.-, :.*, :./, :.%)
+    @testset "$f" for f in (:+, :-, :*, :/, :%)
         x = rand()
-        @test @eval ($f)($a, $x) == ($f)($b, $x)
-        @test @eval ($f)($x, $a) == ($f)($x, $b)
-        @test @eval ($f)($a, $c) == ($f)($b, $d)
+        @test @eval ($f).($a, $x) == ($f).($b, $x)
+        @test @eval ($f).($x, $a) == ($f).($x, $b)
+        @test @eval ($f).($a, $c) == ($f).($b, $d)
     end
 
     close(a)
@@ -769,10 +770,10 @@ check_leaks()
 
     a = dones(Int, 20, 20)
     b = convert(Array, a)
-    @testset "$f" for f in (:.<<, :.>>)
-        @test @eval ($f)($a, 2)  == ($f)($b, 2)
-        @test @eval ($f)(2, $a)  == ($f)(2, $b)
-        @test @eval ($f)($a, $a) == ($f)($b, $b)
+    @testset "$f" for f in (:<<, :>>)
+        @test @eval ($f).($a, 2)  == ($f).($b, 2)
+        @test @eval ($f).(2, $a)  == ($f).(2, $b)
+        @test @eval ($f).($a, $a) == ($f).($b, $b)
     end
 
     @testset "$f" for f in (:rem,)
@@ -792,7 +793,7 @@ check_leaks()
     nrows = 20 * nwrkrs
     ncols = 10 * nwrkrs
     a = drand((nrows,ncols), wrkrs, (1, nwrkrs))
-    m = mean(a, 1)
+    m = mean(a, dims=1)
     c = a .- m
     d = convert(Array, a) .- convert(Array, m)
     @test c == d
@@ -854,7 +855,7 @@ check_leaks()
         R[:, i] = convert(Array, A)[:, :, i]*convert(Array, B)[:, i]
     end
     @test convert(Array, ppeval(*, A, B)) ≈ R
-    @test sum(ppeval(eigvals, A)) ≈ sum(ppeval(eigvals, A, eye(10, 10)))
+    @test sum(ppeval(eigvals, A)) ≈ sum(ppeval(eigvals, A, Matrix{Float64}(I,10,10)))
     close(A)
     close(B)
     d_closeall()  # close the temporaries created above
@@ -887,7 +888,7 @@ end
     d_closeall()  # close the temporaries created above
 end
 
-@testset "sort, T = $T" for i in 0:6, T in [Int, Float64]
+@testset "sort, T = $T, 10^$i elements" for i in 0:6, T in [Int, Float64]
     d = DistributedArrays.drand(T, 10^i)
     @testset "sample = $sample" for sample in Any[true, false, (minimum(d),maximum(d)), rand(T, 10^i>512 ? 512 : 10^i)]
         d2 = DistributedArrays.sort(d; sample=sample)

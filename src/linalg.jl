@@ -25,7 +25,7 @@ function axpy!(α, x::DArray, y::DArray)
     end
     asyncmap(procs(y)) do p
         @async remotecall_fetch(p) do
-            Base.axpy!(α, localpart(x), localpart(y))
+            axpy!(α, localpart(x), localpart(y))
             return nothing
         end
     end
@@ -192,7 +192,7 @@ end
 function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix, tA)
     # error checks
     Ad1, Ad2 = (tA == 'N') ? (1,2) : (2,1)
-    mA, nA = size(A, Ad1, Ad2)
+    mA, nA = (size(A, Ad1), size(A, Ad2))
     mB, nB = size(B)
     if mB != nA
         throw(DimensionMismatch("matrix A has dimensions ($mA, $nA), matrix B has dimensions ($mB, $nB)"))
@@ -263,12 +263,12 @@ _matmul_op = (t,s) -> t*s + t*s
 
 function Base.:*(A::DMatrix, x::AbstractVector)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
-    y = DArray(I -> Array{T}(map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
+    y = DArray(I -> Array{T}(undef, map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
     return A_mul_B!(one(T), A, x, zero(T), y)
 end
 function Base.:*(A::DMatrix, B::AbstractMatrix)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
-    C = DArray(I -> Array{T}(map(length, I)),
+    C = DArray(I -> Array{T}(undef, map(length, I)),
             (size(A, 1), size(B, 2)),
             procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))],
             (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
@@ -277,7 +277,7 @@ end
 
 function Ac_mul_B(A::DMatrix, x::AbstractVector)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
-    y = DArray(I -> Array{T}(map(length, I)),
+    y = DArray(I -> Array{T}(undef, map(length, I)),
             (size(A, 2),),
             procs(A)[1,:],
             (size(procs(A), 2),))
@@ -285,7 +285,7 @@ function Ac_mul_B(A::DMatrix, x::AbstractVector)
 end
 function Ac_mul_B(A::DMatrix, B::AbstractMatrix)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
-    C = DArray(I -> Array{T}(map(length, I)), (size(A, 2),
+    C = DArray(I -> Array{T}(undef, map(length, I)), (size(A, 2),
         size(B, 2)),
         procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:],
         (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))

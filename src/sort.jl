@@ -38,7 +38,7 @@ function scatter_n_sort_localparts(d, myidx, refs, boundaries::Array{T}; by = id
         end
 
         if p_till == p_sorted
-            @async put!(r, Array{T}(0))
+            @async put!(r, Array{T}(undef,0))
         else
             v = sorted[p_sorted:p_till-1]
             @async put!(r, v)
@@ -66,7 +66,7 @@ function compute_boundaries(d::DVector{T}; kwargs...) where T
 
     results = asyncmap(p -> remotecall_fetch(sample_n_setup_ref, p, d, sample_sz_on_wrkr; kwargs...), pids)
 
-    samples = Array{T}(undef, 0)
+    samples = Array{T}(undef,0)
     for x in results
         append!(samples, x[1])
     end
@@ -128,7 +128,7 @@ function Base.sort(d::DVector{T}; sample=true, kwargs...) where T
 
         @assert lb<=ub
 
-        s = Array{T}(np)
+        s = Array{T}(undef,np)
         part = abs(ub - lb)/np
         (isnan(part) || isinf(part)) && throw(ArgumentError("lower and upper bounds must not be infinities"))
 
@@ -155,7 +155,7 @@ function Base.sort(d::DVector{T}; sample=true, kwargs...) where T
         throw(ArgumentError("keyword arg `sample` must be Boolean, Tuple(Min,Max) or an actual sample of data : " * string(sample)))
     end
 
-    local_sort_results = Array{Tuple}(np)
+    local_sort_results = Array{Tuple}(undef,np)
 
     Base.asyncmap!((i,p) -> remotecall_fetch(
             scatter_n_sort_localparts, p, presorted ? nothing : d, i, refs, boundaries; kwargs...),
