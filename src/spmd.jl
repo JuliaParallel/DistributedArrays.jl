@@ -198,7 +198,7 @@ function scatter(x, pid::Int; tag=nothing, pids=procs())
             p == pid && continue
             send_msg(p, :scatter, x[cnt*(i-1)+1:cnt*i], tag)
         end
-        myidx = findfirst(sort(pids), pid)
+        myidx = findfirst(isequal(pid), sort(pids))
         return x[cnt*(myidx-1)+1:cnt*myidx]
     else
         _, data = get_msg(:scatter, pid, tag)
@@ -208,13 +208,13 @@ end
 
 function gather(x, pid::Int; tag=nothing, pids=procs())
     if myid() == pid
-        gathered_data = Array{Any}(length(pids))
-        myidx = findfirst(sort(pids), pid)
+        gathered_data = Array{Any}(undef, length(pids))
+        myidx = findfirst(isequal(pid), sort(pids))
         gathered_data[myidx] = x
         n = length(pids) - 1
         while n > 0
             from, data_x = get_msg(:gather, false, tag)
-            fromidx = findfirst(sort(pids), from)
+            fromidx = findfirst(isequal(from), sort(pids))
             gathered_data[fromidx] = data_x
             n=n-1
         end
