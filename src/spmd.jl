@@ -24,7 +24,7 @@ mutable struct SPMDContext
 
     function SPMDContext(id)
         ctxt = new(id, Channel(typemax(Int)), Dict{Any,Any}(), [], false)
-        finalizer(ctxt, finalize_ctxt)
+        finalizer(finalize_ctxt, ctxt)
         ctxt
     end
 end
@@ -256,7 +256,7 @@ end
 
 function Base.close(ctxt::SPMDContext)
     for p in ctxt.pids
-        Base.remote_do(delete_ctxt_id, p, ctxt.id)
+        remote_do(delete_ctxt_id, p, ctxt.id)
     end
     ctxt.release = false
 end
