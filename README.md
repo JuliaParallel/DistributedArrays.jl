@@ -7,9 +7,7 @@
 Distributed Arrays for Julia
 
 ***NOTE***
-Distributed Arrays will only work on Julia v0.4.0 or later.
-
-`DArray`s have been removed from Julia Base library in v0.4 so it is now necessary to import the `DistributedArrays` package on all spawned processes.
+This package will only work on Julia v0.7 or later.
 
 ```julia
 using DistributedArrays
@@ -154,7 +152,7 @@ following code accomplishes this::
             left  = mod(first(I[2])-2,size(d,2))+1
             right = mod( last(I[2])  ,size(d,2))+1
 
-            old = Array(Bool, length(I[1])+2, length(I[2])+2)
+            old = Array{Bool}(undef, length(I[1])+2, length(I[2])+2)
             old[1      , 1      ] = d[top , left]   # left side
             old[2:end-1, 1      ] = d[I[1], left]
             old[end    , 1      ] = d[bot , left]
@@ -318,17 +316,18 @@ This toy example exchanges data with each of its neighbors `n` times.
 
 ```
 using Distributed
-addprocs(8)
 using DistributedArrays
-using DistributedArrays.SPMD
+addprocs(8)
+@everywhere using DistributedArrays
+@everywhere using DistributedArrays.SPMD
 
-d_in=d=DArray(I->fill(myid(), (map(length,I)...)), (nworkers(), 2), workers(), [nworkers(),1])
-d_out=ddata()
+d_in=d=DArray(I->fill(myid(), (map(length,I)...,)), (nworkers(), 2), workers(), [nworkers(),1])
+d_out=ddata(); # TODO cannot show
 
 # define the function everywhere
 @everywhere function foo_spmd(d_in, d_out, n)
     pids = sort(vec(procs(d_in)))
-    pididx = findfirst(pids, myid())
+    pididx = findfirst(isequal(myid()), pids)
     mylp = d_in[:L]
     localsum = 0
 
@@ -352,7 +351,7 @@ d_out=ddata()
 end
 
 # run foo_spmd on all workers
-spmd(foo_spmd, d_in, d_out, 10)
+spmd(foo_spmd, d_in, d_out, 10, pids=workers())
 
 # print values of d_in and d_out after the run
 println(d_in)
