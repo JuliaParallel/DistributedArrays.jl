@@ -60,21 +60,51 @@ end
 
 check_leaks()
 
-@testset "test DArray equality" begin
+@testset "test DArray equality/copy/deepcopy" begin
     D = drand((200,200), [MYID, OTHERIDS])
-    DC = copy(D)
 
     @testset "test isequal(::DArray, ::DArray)" begin
+        DC = copy(D)
         @test D == DC
+        close(DC)
     end
 
-    @testset "test copy(::DArray) does a copy of each localpart" begin
+    @testset "test [deep]copy(::DArray) does a copy of each localpart" begin
+        DC = copy(D)
         @spawnat OTHERIDS localpart(DC)[1] = 0
         @test fetch(@spawnat OTHERIDS localpart(D)[1] != 0)
+        DD = deepcopy(D)
+        @spawnat OTHERIDS localpart(DD)[1] = 0
+        @test fetch(@spawnat OTHERIDS localpart(D)[1] != 0)
+        close(DC)
+        close(DD)
+    end
+
+    @testset "test copy(::DArray) is shallow" begin
+        DA = @DArray [rand(100) for i=1:10]
+        DC = copy(DA)
+        id = procs(DC)[1]
+        @test DA == DC
+        fetch(@spawnat id localpart(DC)[1] .= -1.0)
+        @test DA == DC
+        @test fetch(@spawnat id all(localpart(DA)[1] .== -1.0))
+        close(DA)
+        close(DC)
+    end
+
+    @testset "test deepcopy(::DArray) is not shallow" begin
+        DA = @DArray [rand(100) for i=1:10]
+        DC = deepcopy(DA)
+        id = procs(DC)[1]
+        @test DA == DC
+        fetch(@spawnat id localpart(DC)[1] .= -1.0)
+        @test DA != DC
+        @test fetch(@spawnat id all(localpart(DA)[1] .>= 0.0))
+        close(DA)
+        close(DC)
     end
 
     close(D)
-    close(DC)
 end
 
 check_leaks()

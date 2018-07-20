@@ -574,6 +574,16 @@ Base.copyto!(dest::SubOrDArray, src::SubOrDArray) = begin
 end
 Base.copy!(dest::SubOrDArray, src::SubOrDArray) = copyto!(dest, src)
 
+function Base.deepcopy(src::DArray)
+    dest = similar(src)
+    asyncmap(procs(src)) do p
+        remotecall_fetch(p) do
+            dest[:L] = deepcopy(src[:L])
+        end
+    end
+    return dest
+end
+
 # local copies are obtained by convert(Array, ) or assigning from
 # a SubDArray to a local Array.
 
