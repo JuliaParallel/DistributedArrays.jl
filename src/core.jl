@@ -17,7 +17,7 @@ release_localpart(id::Tuple) = (delete!(registry, id); nothing)
 release_localpart(d) = release_localpart(d.id)
 
 function close_by_id(id, pids)
-#   @schedule println("Finalizer for : ", id)
+#   @async println("Finalizer for : ", id)
     global refs
     @sync begin
         for p in pids
@@ -31,10 +31,10 @@ function close_by_id(id, pids)
     nothing
 end
 
-function close(d::DArray)
-#    @schedule println("close : ", d.id, ", object_id : ", object_id(d), ", myid : ", myid() )
+function Base.close(d::DArray)
+#    @async println("close : ", d.id, ", object_id : ", object_id(d), ", myid : ", myid() )
     if (myid() == d.id[1]) && d.release
-        @schedule close_by_id(d.id, d.pids)
+        @async close_by_id(d.id, d.pids)
         d.release = false
     end
     nothing
@@ -55,7 +55,7 @@ end
 
 Get the vector of processes storing pieces of DArray `d`.
 """
-Base.procs(d::DArray) = d.pids
+Distributed.procs(d::DArray) = d.pids
 
 """
     localpart(A)

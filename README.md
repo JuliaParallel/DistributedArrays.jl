@@ -12,7 +12,7 @@ Distributed Arrays will only work on Julia v0.4.0 or later.
 `DArray`s have been removed from Julia Base library in v0.4 so it is now necessary to import the `DistributedArrays` package on all spawned processes.
 
 ```julia
-@everywhere using DistributedArrays
+using DistributedArrays
 ```
 
 Distributed Arrays
@@ -76,12 +76,12 @@ Indexing via symbols is used for this, specifically symbols `:L`,`:LP`,`:l`,`:lp
 are all equivalent. For example, `d[:L]` returns the localpart of `d`
 while `d[:L]=v` sets `v` as the localpart of `d`.
 
-* `localindexes(a::DArray)` gives a tuple of the index ranges owned by the
+* `localindices(a::DArray)` gives a tuple of the index ranges owned by the
 local process.
 
 * `convert(Array, a::DArray)` brings all the data to the local process.
 
-Indexing a `DArray` (square brackets) with ranges of indexes always
+Indexing a `DArray` (square brackets) with ranges of indices always
 creates a `SubArray`, not copying any data.
 
 
@@ -205,7 +205,7 @@ seen in this simple example:
 ```julia
 julia> addprocs(8);
 
-julia> @everywhere using DistributedArrays
+julia> using DistributedArrays
 
 julia> A = fill(1.1, (100,100));
 
@@ -227,7 +227,7 @@ Garbage Collection and DArrays
 ------------------------------
 
 When a DArray is constructed (typically on the master process), the returned DArray objects stores information on how the
-array is distributed, which procesor holds which indexes and so on. When the DArray object
+array is distributed, which procesor holds which indices and so on. When the DArray object
 on the master process is garbage collected, all particpating workers are notified and
 localparts of the DArray freed on each worker.
 
@@ -317,10 +317,10 @@ Example
 This toy example exchanges data with each of its neighbors `n` times.
 
 ```
-using DistributedArrays
+using Distributed
 addprocs(8)
-@everywhere importall DistributedArrays
-@everywhere importall DistributedArrays.SPMD
+using DistributedArrays
+using DistributedArrays.SPMD
 
 d_in=d=DArray(I->fill(myid(), (map(length,I)...)), (nworkers(), 2), workers(), [nworkers(),1])
 d_out=ddata()

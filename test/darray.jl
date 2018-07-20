@@ -1,4 +1,4 @@
-using SpecialFunctions
+using Test, LinearAlgebra, SpecialFunctions
 
 @testset "test distribute and other constructors" begin
     A = rand(1:100, (100,100))
@@ -197,22 +197,23 @@ check_leaks()
 @testset "test scale" begin
     A = randn(100,100)
     DA = distribute(A)
-    @test scale!(DA, 2) == scale!(A, 2)
+    @test rmul!(DA, 2) == rmul!(A, 2)
     close(DA)
 end
 
 check_leaks()
 
-@testset "test scale!(b, A)" begin
+@testset "test rmul!(Diagonal, A)" begin
     A = randn(100, 100)
     b = randn(100)
+    D = Diagonal(b)
     DA = distribute(A)
-    @test scale!(b, A) == scale!(b, DA)
+    @test lmul!(D, A) == lmul!(D, DA)
     close(DA)
     A = randn(100, 100)
     b = randn(100)
     DA = distribute(A)
-    @test scale!(A, b) == scale!(DA, b)
+    @test rmul!(A, D) == rmul!(DA, D)
     close(DA)
 end
 
@@ -644,12 +645,12 @@ check_leaks()
     end
     @testset "test transpose real" begin
         A = drand(Float64, 200, 100)
-        @test A.' == Array(A).'
+        @test transpose(A) == transpose(Array(A))
         close(A)
     end
     @testset "test ctranspose complex" begin
         A = drand(Complex128, 100, 200)
-        @test A.' == Array(A).'
+        @test transpose(A) == transpose(Array(A))
         close(A)
     end
 
@@ -827,8 +828,8 @@ check_leaks()
     for (x, y) in ((drandn(20), drandn(20)),
                    (drandn(20, 2), drandn(20, 2)))
 
-        @test Array(LinAlg.axpy!(2.0, x, copy(y))) ≈ LinAlg.axpy!(2.0, Array(x), Array(y))
-        @test_throws DimensionMismatch LinAlg.axpy!(2.0, x, zeros(length(x) + 1))
+        @test Array(axpy!(2.0, x, copy(y))) ≈ axpy!(2.0, Array(x), Array(y))
+        @test_throws DimensionMismatch axpy!(2.0, x, zeros(length(x) + 1))
         close(x)
         close(y)
     end
@@ -867,11 +868,11 @@ end
     b = convert(Array, B)
 
     AB = A * B
-    AtB = A.' * B
+    AtB = transpose(A) * B
     AcB = A' * B
 
     ab = a * b
-    atb = a.' * b
+    atb = transpose(a) * b
     acb = a' * b
 
     @test AB ≈ ab

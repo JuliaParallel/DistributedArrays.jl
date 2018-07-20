@@ -1,5 +1,7 @@
 module SPMD
 
+using Distributed
+
 import DistributedArrays: gather, next_did, close
 export sendto, recvfrom, recvfrom_any, barrier, bcast, scatter, gather
 export context_local_storage, context, spmd, close
@@ -7,10 +9,10 @@ export context_local_storage, context, spmd, close
 
 mutable struct WorkerDataChannel
     pid::Int
-    rc::Nullable{RemoteChannel}
+    rc::Union{RemoteChannel,Missing}
     lock::ReentrantLock
 
-    WorkerDataChannel(pid) = new(pid, Nullable{RemoteChannel}(), ReentrantLock())
+    WorkerDataChannel(pid) = new(pid, missing, ReentrantLock())
 end
 
 mutable struct SPMDContext
@@ -59,14 +61,14 @@ const map_ctxts = Dict{Tuple, SPMDContext}()
 function get_dc(wc::WorkerDataChannel)
     lock(wc.lock)
     try
-        if isnull(wc.rc)
+        if ismissing(wc.rc)
             if wc.pid == myid()
                 myrc = RemoteChannel(()->Channel(typemax(Int)))
-                wc.rc = Nullable{RemoteChannel}(myrc)
+                wc.rc = myrc
 
                 # start a task to transfer incoming messages into local
                 # channels based on the execution context
-                @schedule begin
+                @async begin
                     while true
                         msg = take!(myrc)
                         ctxt_id = msg[1] # First element of the message tuple is the context id.
@@ -75,13 +77,13 @@ function get_dc(wc::WorkerDataChannel)
                     end
                 end
             else
-                wc.rc = Nullable{RemoteChannel}(remotecall_fetch(()->get_remote_dc(myid()), wc.pid))
+                wc.rc = remotecall_fetch(()->get_remote_dc(myid()), wc.pid)
             end
         end
     finally
         unlock(wc.lock)
     end
-    return get(wc.rc)
+    return wc.rc
 end
 
 function get_ctxt_from_id(ctxt_id)

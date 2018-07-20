@@ -1,4 +1,4 @@
-function Base.ctranspose(D::DArray{T,2}) where T
+function Base.copy(D::Adjoint{T,<:DArray{T,2}}) where T
     DArray(reverse(size(D)), procs(D)) do I
         lp = Array{T}(map(length, I))
         rp = convert(Array, D[reverse(I)...])
@@ -6,7 +6,7 @@ function Base.ctranspose(D::DArray{T,2}) where T
     end
 end
 
-function Base.transpose(D::DArray{T,2}) where T
+function Base.copy(D::Transpose{T,<:DArray{T,2}}) where T
     DArray(reverse(size(D)), procs(D)) do I
         lp = Array{T}(map(length, I))
         rp = convert(Array, D[reverse(I)...])
@@ -59,9 +59,9 @@ function norm(x::DVector, p::Real = 2)
     return norm(results, p)
 end
 
-Base.scale!(A::DArray, x::Number) = begin
+function LinearAlgebra.rmul!(A::DArray, x::Number)
     @sync for p in procs(A)
-        @async remotecall_fetch((A,x)->(scale!(localpart(A), x); nothing), p, A, x)
+        @async remotecall_fetch((A,x)->(rmul!(localpart(A), x); nothing), p, A, x)
     end
     return A
 end
@@ -108,7 +108,7 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
     if β != one(β)
         @sync for p in y.pids
             if β != zero(β)
-                @async remotecall_fetch(y -> (scale!(localpart(y), β); nothing), p, y)
+                @async remotecall_fetch(y -> (rmul!(localpart(y), β); nothing), p, y)
             else
                 @async remotecall_fetch(y -> (fill!(localpart(y), 0); nothing), p, y)
             end
@@ -150,7 +150,7 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     if β != one(β)
         @sync for p in y.pids
             if β != zero(β)
-                @async remotecall_fetch(() -> (scale!(localpart(y), β); nothing), p)
+                @async remotecall_fetch(() -> (rmul!(localpart(y), β); nothing), p)
             else
                 @async remotecall_fetch(() -> (fill!(localpart(y), 0); nothing), p)
             end
@@ -168,21 +168,23 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
     return y
 end
 
-function Base.LinAlg.scale!(b::AbstractVector, DA::DMatrix)
-    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
-        b[DA.indexes[pididx][1]]
+function LinearAlgebra.lmul!(D::Diagonal, DA::DMatrix)
+    d = D.diag
+    s = verified_destination_serializer(procs(DA), size(DA.indices)) do pididx
+        d[DA.indices[pididx][1]]
     end
     map_localparts!(DA) do lDA
-        scale!(localpart(s), lDA)
+        lmul!(Diagonal(localpart(s)), lDA)
     end
 end
 
-function Base.LinAlg.scale!(DA::DMatrix, b::AbstractVector)
-    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
-        b[DA.indexes[pididx][2]]
+function LinearAlgebra.rmul!(DA::DMatrix, D::Diagonal)
+    d = D.diag
+    s = verified_destination_serializer(procs(DA), size(DA.indices)) do pididx
+        d[DA.indices[pididx][2]]
     end
     map_localparts!(DA) do lDA
-        scale!(lDA, localpart(s))
+        rmul!(lDA, Diagonal(localpart(s)))
     end
 end
 
@@ -217,7 +219,7 @@ function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::D
                 p = (tA == 'N') ? procs(A)[i,j] : procs(A)[j,i]
                 R[i,j,k] = remotecall(p) do
                     if tA == 'T'
-                        return localpart(A).'*convert(localtype(B), Bjk)
+                        return transpose(localpart(A))*convert(localtype(B), Bjk)
                     elseif tA == 'C'
                         return localpart(A)'*convert(localtype(B), Bjk)
                     else
@@ -232,7 +234,7 @@ function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::D
     if β != one(β)
         @sync for p in C.pids
             if β != zero(β)
-                @async remotecall_fetch(() -> (scale!(localpart(C), β); nothing), p)
+                @async remotecall_fetch(() -> (rmul!(localpart(C), β); nothing), p)
             else
                 @async remotecall_fetch(() -> (fill!(localpart(C), 0); nothing), p)
             end
