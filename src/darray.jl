@@ -198,7 +198,7 @@ function DArray(refs)
     nindices = Array{NTuple{length(dimdist),UnitRange{Int}}}(undef, dimdist...)
 
     for i in 1:length(nindices)
-        subidx = CartesianIndices(dimdist)[i] #ind2sub(dimdist, i)
+        subidx = CartesianIndices(dimdist)[i]
         nindices[i] = ntuple(length(subidx)) do x
             idx_in_dim = subidx[x]
             startidx = 1
