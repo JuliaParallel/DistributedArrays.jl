@@ -322,7 +322,7 @@ addprocs(8)
 @everywhere using DistributedArrays.SPMD
 
 d_in=d=DArray(I->fill(myid(), (map(length,I)...,)), (nworkers(), 2), workers(), [nworkers(),1])
-d_out=ddata(); # TODO cannot show
+d_out=ddata();
 
 # define the function everywhere
 @everywhere function foo_spmd(d_in, d_out, n)
