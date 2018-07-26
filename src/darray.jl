@@ -516,9 +516,9 @@ function distribute(A::AbstractArray, DA::DArray)
     return DArray(I->localpart(s), DA)
 end
 
-(::Type{DArray{T,N,S}})(A::S) where {T,N,S<:AbstractArray} = distribute(convert(AbstractArray{T,N}, A))
+DArray{T,N,S}(A::S) where {T,N,S<:AbstractArray} = distribute(convert(AbstractArray{T,N}, A))
 
-function (::Type{Array{S,N}})(d::DArray{T,N}) where {S,T,N}
+function Array{S,N}(d::DArray{T,N}) where {S,T,N}
     a = Array{S}(undef, size(d))
     @sync begin
         for i = 1:length(d.pids)
@@ -528,7 +528,7 @@ function (::Type{Array{S,N}})(d::DArray{T,N}) where {S,T,N}
     return a
 end
 
-function (::Type{Array{S,N}})(s::SubDArray{T,N}) where {S,T,N}
+function Array{S,N}(s::SubDArray{T,N}) where {S,T,N}
     I = s.indices
     d = s.parent
     if isa(I,Tuple{Vararg{UnitRange{Int}}}) && S<:T && T<:S && !isempty(s)
@@ -543,7 +543,7 @@ function (::Type{Array{S,N}})(s::SubDArray{T,N}) where {S,T,N}
     return a
 end
 
-function (::Type{DArray})(SD::SubArray{T,N}) where {T,N}
+function DArray(SD::SubArray{T,N}) where {T,N}
     D = SD.parent
     DArray(size(SD), procs(D)) do I
         lindices = Base.reindex(SD, SD.indices, I)
