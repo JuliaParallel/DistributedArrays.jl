@@ -377,13 +377,33 @@ function Base.:(==)(d::DArray{<:Any,<:Any,A}, a::AbstractArray) where A
         return all(b)
     end
 end
-Base.:(==)(d::SubDArray, a::AbstractArray) = copy(d) == a
+function Base.:(==)(d::SubDArray, a::AbstractArray)
+    cd = copy(d)
+    t = cd == a
+    close(cd)
+    return t
+end
 Base.:(==)(a::AbstractArray, d::DArray) = d == a
 Base.:(==)(a::AbstractArray, d::SubDArray) = d == a
 Base.:(==)(d1::DArray, d2::DArray) = invoke(==, Tuple{DArray, AbstractArray}, d1, d2)
-Base.:(==)(d1::SubDArray, d2::DArray) = copy(d1) == d2
-Base.:(==)(d1::DArray, d2::SubDArray) = d1 == copy(d2)
-Base.:(==)(d1::SubDArray, d2::SubDArray) = copy(d1) == copy(d2)
+function Base.:(==)(d1::SubDArray, d2::DArray)
+    cd1 = copy(d1)
+    t = cd1 == d2
+    close(cd1)
+    return t
+end
+function Base.:(==)(d1::DArray, d2::SubDArray)
+    cd2 = copy(d2)
+    t = d1 == cd2
+    close(cd2)
+    return t
+end
+function Base.:(==)(d1::SubDArray, d2::SubDArray)
+    cd1 = copy(d1)
+    t = cd1 == d2
+    close(cd1)
+    return t
+end
 
 """
     locate(d::DArray, I::Int...)
