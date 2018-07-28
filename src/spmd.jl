@@ -1,16 +1,18 @@
 module SPMD
 
+using Distributed
+
 import DistributedArrays: gather, next_did, close
 export sendto, recvfrom, recvfrom_any, barrier, bcast, scatter, gather
-export context_local_storage, context, spmd, close
+export context_local_storage, context, spmd
 
 
 mutable struct WorkerDataChannel
     pid::Int
-    rc::Nullable{RemoteChannel}
+    rc::Union{RemoteChannel,Nothing}
     lock::ReentrantLock
 
-    WorkerDataChannel(pid) = new(pid, Nullable{RemoteChannel}(), ReentrantLock())
+    WorkerDataChannel(pid) = new(pid, nothing, ReentrantLock())
 end
 
 mutable struct SPMDContext
@@ -22,7 +24,7 @@ mutable struct SPMDContext
 
     function SPMDContext(id)
         ctxt = new(id, Channel(typemax(Int)), Dict{Any,Any}(), [], false)
-        finalizer(ctxt, finalize_ctxt)
+        finalizer(finalize_ctxt, ctxt)
         ctxt
     end
 end
@@ -59,14 +61,14 @@ const map_ctxts = Dict{Tuple, SPMDContext}()
 function get_dc(wc::WorkerDataChannel)
     lock(wc.lock)
     try
-        if isnull(wc.rc)
+        if wc.rc === nothing
             if wc.pid == myid()
                 myrc = RemoteChannel(()->Channel(typemax(Int)))
-                wc.rc = Nullable{RemoteChannel}(myrc)
+                wc.rc = myrc
 
                 # start a task to transfer incoming messages into local
                 # channels based on the execution context
-                @schedule begin
+                @async begin
                     while true
                         msg = take!(myrc)
                         ctxt_id = msg[1] # First element of the message tuple is the context id.
@@ -75,13 +77,13 @@ function get_dc(wc::WorkerDataChannel)
                     end
                 end
             else
-                wc.rc = Nullable{RemoteChannel}(remotecall_fetch(()->get_remote_dc(myid()), wc.pid))
+                wc.rc = remotecall_fetch(()->get_remote_dc(myid()), wc.pid)
             end
         end
     finally
         unlock(wc.lock)
     end
-    return get(wc.rc)
+    return wc.rc
 end
 
 function get_ctxt_from_id(ctxt_id)
@@ -196,7 +198,7 @@ function scatter(x, pid::Int; tag=nothing, pids=procs())
             p == pid && continue
             send_msg(p, :scatter, x[cnt*(i-1)+1:cnt*i], tag)
         end
-        myidx = findfirst(sort(pids), pid)
+        myidx = findfirst(isequal(pid), sort(pids))
         return x[cnt*(myidx-1)+1:cnt*myidx]
     else
         _, data = get_msg(:scatter, pid, tag)
@@ -206,13 +208,13 @@ end
 
 function gather(x, pid::Int; tag=nothing, pids=procs())
     if myid() == pid
-        gathered_data = Array{Any}(length(pids))
-        myidx = findfirst(sort(pids), pid)
+        gathered_data = Array{Any}(undef, length(pids))
+        myidx = findfirst(isequal(pid), sort(pids))
         gathered_data[myidx] = x
         n = length(pids) - 1
         while n > 0
             from, data_x = get_msg(:gather, false, tag)
-            fromidx = findfirst(sort(pids), from)
+            fromidx = findfirst(isequal(from), sort(pids))
             gathered_data[fromidx] = data_x
             n=n-1
         end
@@ -252,9 +254,9 @@ function delete_ctxt_id(ctxt_id)
     nothing
 end
 
-function close(ctxt::SPMDContext)
+function Base.close(ctxt::SPMDContext)
     for p in ctxt.pids
-        Base.remote_do(delete_ctxt_id, p, ctxt.id)
+        remote_do(delete_ctxt_id, p, ctxt.id)
     end
     ctxt.release = false
 end

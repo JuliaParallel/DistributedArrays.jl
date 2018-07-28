@@ -1,4 +1,7 @@
-using SpecialFunctions
+using Test, LinearAlgebra, SpecialFunctions
+using Statistics: mean
+using SparseArrays: nnz
+@everywhere using SparseArrays: sprandn
 
 @testset "test distribute and other constructors" begin
     A = rand(1:100, (100,100))
@@ -57,21 +60,51 @@ end
 
 check_leaks()
 
-@testset "test DArray equality" begin
+@testset "test DArray equality/copy/deepcopy" begin
     D = drand((200,200), [MYID, OTHERIDS])
-    DC = copy(D)
 
     @testset "test isequal(::DArray, ::DArray)" begin
+        DC = copy(D)
         @test D == DC
+        close(DC)
     end
 
-    @testset "test copy(::DArray) does a copy of each localpart" begin
+    @testset "test [deep]copy(::DArray) does a copy of each localpart" begin
+        DC = copy(D)
         @spawnat OTHERIDS localpart(DC)[1] = 0
         @test fetch(@spawnat OTHERIDS localpart(D)[1] != 0)
+        DD = deepcopy(D)
+        @spawnat OTHERIDS localpart(DD)[1] = 0
+        @test fetch(@spawnat OTHERIDS localpart(D)[1] != 0)
+        close(DC)
+        close(DD)
+    end
+
+    @testset "test copy(::DArray) is shallow" begin
+        DA = @DArray [rand(100) for i=1:10]
+        DC = copy(DA)
+        id = procs(DC)[1]
+        @test DA == DC
+        fetch(@spawnat id localpart(DC)[1] .= -1.0)
+        @test DA == DC
+        @test fetch(@spawnat id all(localpart(DA)[1] .== -1.0))
+        close(DA)
+        close(DC)
+    end
+
+    @testset "test deepcopy(::DArray) is not shallow" begin
+        DA = @DArray [rand(100) for i=1:10]
+        DC = deepcopy(DA)
+        id = procs(DC)[1]
+        @test DA == DC
+        fetch(@spawnat id localpart(DC)[1] .= -1.0)
+        @test DA != DC
+        @test fetch(@spawnat id all(localpart(DA)[1] .>= 0.0))
+        close(DA)
+        close(DC)
     end
 
     close(D)
-    close(DC)
 end
 
 check_leaks()
@@ -118,7 +151,8 @@ check_leaks()
     end
 
     @testset "test invalid use of @DArray" begin
-        @test_throws ArgumentError eval(:((@DArray [1,2,3,4])))
+        #@test_throws ArgumentError eval(:((@DArray [1,2,3,4])))
+        @test_throws LoadError eval(:((@DArray [1,2,3,4])))
     end
 end
 
@@ -127,32 +161,40 @@ check_leaks()
 @testset "test DArray / Array conversion" begin
     D = drand((200,200), [MYID, OTHERIDS])
 
-    @testset "test convert(::Array, ::(Sub)DArray)" begin
-        S = convert(Matrix{Float64}, D[1:150, 1:150])
-        A = convert(Matrix{Float64}, D)
+    @testset "test construct Array from (Sub)DArray" begin
+        S = Matrix{Float64}(D[1:150, 1:150])
+        A = Matrix{Float64}(D)
 
         @test A[1:150,1:150] == S
-        D2 = convert(DArray{Float64,2,Matrix{Float64}}, A)
+        D2 = DArray{Float64,2,Matrix{Float64}}(A)
         @test D2 == D
+        DistributedArrays.allowscalar(true)
         @test fetch(@spawnat MYID localpart(D)[1,1]) == D[1,1]
         @test fetch(@spawnat OTHERIDS localpart(D)[1,1]) == D[1,101]
+        DistributedArrays.allowscalar(false)
         close(D2)
 
-        S2 = convert(Vector{Float64}, D[4, 23:176])
+        S2 = Vector{Float64}(D[4, 23:176])
         @test A[4, 23:176] == S2
 
-        S3 = convert(Vector{Float64}, D[23:176, 197])
+        S3 = Vector{Float64}(D[23:176, 197])
         @test A[23:176, 197] == S3
 
         S4 = zeros(4)
         setindex!(S4, D[3:4, 99:100], :)
+        # FixMe! Hitting the AbstractArray fallback here is extremely unfortunate but vec() becomes a ReshapedArray which makes it diffuclt to hit DArray methods. Unless this can be fixed in Base, we might have to add special methods for ReshapedArray{DArray}
+        DistributedArrays.allowscalar(true)
         @test S4 == vec(D[3:4, 99:100])
         @test S4 == vec(A[3:4, 99:100])
+        DistributedArrays.allowscalar(false)
 
         S5 = zeros(2,2)
         setindex!(S5, D[1,1:4], :, 1:2)
+        # FixMe! Hitting the AbstractArray fallback here is extremely unfortunate but vec() becomes a ReshapedArray which makes it diffuclt to hit DArray methods. Unless this can be fixed in Base, we might have to add special methods for ReshapedArray{DArray}
+        DistributedArrays.allowscalar(true)
         @test vec(S5) == D[1, 1:4]
         @test vec(S5) == A[1, 1:4]
+        DistributedArrays.allowscalar(false)
     end
     close(D)
 end
@@ -164,7 +206,7 @@ check_leaks()
     r1 = remotecall_wait(() -> randn(3,10), workers()[1])
     r2 = remotecall_wait(() -> randn(7,10), workers()[2])
     D2 = DArray(reshape([r1; r2], 2, 1))
-    copy!(D2, D1)
+    copyto!(D2, D1)
     @test D1 == D2
     close(D1)
     close(D2)
@@ -181,6 +223,7 @@ check_leaks()
 
     @testset "test map / reduce" begin
         D2 = map(x->1, D)
+        @test D2 isa DArray
         @test reduce(+, D2) == 100
         close(D2)
     end
@@ -194,25 +237,26 @@ end
 
 check_leaks()
 
-@testset "test scale" begin
+@testset "test rmul" begin
     A = randn(100,100)
     DA = distribute(A)
-    @test scale!(DA, 2) == scale!(A, 2)
+    @test rmul!(DA, 2) == rmul!(A, 2)
     close(DA)
 end
 
 check_leaks()
 
-@testset "test scale!(b, A)" begin
+@testset "test rmul!(Diagonal, A)" begin
     A = randn(100, 100)
     b = randn(100)
+    D = Diagonal(b)
     DA = distribute(A)
-    @test scale!(b, A) == scale!(b, DA)
+    @test lmul!(D, A) == lmul!(D, DA)
     close(DA)
     A = randn(100, 100)
     b = randn(100)
     DA = distribute(A)
-    @test scale!(A, b) == scale!(DA, b)
+    @test rmul!(A, D) == rmul!(DA, D)
     close(DA)
 end
 
@@ -222,6 +266,7 @@ check_leaks()
     for _ = 1:25, f = [x -> Int128(2x), x -> Int128(x^2), x -> Int128(x^2 + 2x - 1)], opt = [+, *]
         A = rand(1:5, rand(2:30))
         DA = distribute(A)
+        @test DA isa DArray
         @test mapreduce(f, opt, DA) - mapreduce(f, opt, A) == 0
         close(DA)
     end
@@ -232,15 +277,16 @@ check_leaks()
 @testset "test mapreducedim on DArrays" begin
     D = DArray(I->fill(myid(), map(length,I)), (73,73), [MYID, OTHERIDS])
     D2 = map(x->1, D)
-    @test mapreducedim(t -> t*t, +, D2, 1) == mapreducedim(t -> t*t, +, convert(Array, D2), 1)
-    @test mapreducedim(t -> t*t, +, D2, 2) == mapreducedim(t -> t*t, +, convert(Array, D2), 2)
-    @test mapreducedim(t -> t*t, +, D2, (1,2)) == mapreducedim(t -> t*t, +, convert(Array, D2), (1,2))
+    @test D2 isa DArray
+    @test mapreduce(t -> t*t, +, D2, dims=1) == mapreduce(t -> t*t, +, convert(Array, D2), dims=1)
+    @test mapreduce(t -> t*t, +, D2, dims=2) == mapreduce(t -> t*t, +, convert(Array, D2), dims=2)
+    @test mapreduce(t -> t*t, +, D2, dims=(1,2)) == mapreduce(t -> t*t, +, convert(Array, D2), dims=(1,2))
 
     # Test non-regularly chunked DArrays
     r1 = DistributedArrays.remotecall(() -> sprandn(3, 10, 0.1), workers()[1])
     r2 = DistributedArrays.remotecall(() -> sprandn(7, 10, 0.1), workers()[2])
     D = DArray(reshape([r1; r2], (2,1)))
-    @test Array(sum(D, 2)) == sum(Array(D), 2)
+    @test Array(sum(D, dims=2)) == sum(Array(D), dims=2)
 
     # close(D)
     # close(D2)
@@ -255,10 +301,10 @@ check_leaks()
     A = convert(Array, DA)
 
     @testset "dimension $dms" for dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
-        @test mapreducedim(t -> t*t, +, A, dms) ≈ mapreducedim(t -> t*t, +, DA, dms)
-        @test mapreducedim(t -> t*t, +, A, dms, 1.0) ≈ mapreducedim(t -> t*t, +, DA, dms, 1.0)
-        @test reducedim(*, A, dms) ≈ reducedim(*, DA, dms)
-        @test reducedim(*, A, dms, 2.0) ≈ reducedim(*, DA, dms, 2.0)
+        @test mapreduce(t -> t*t, +, A, dims=dms) ≈ mapreduce(t -> t*t, +, DA, dims=dms)
+        @test mapreduce(t -> t*t, +, A, dims=dms, init=1.0) ≈ mapreduce(t -> t*t, +, DA, dims=dms, init=1.0)
+        @test reduce(*, A, dims=dms) ≈ reduce(*, DA, dims=dms)
+        @test reduce(*, A, dims=dms, init=2.0) ≈ reduce(*, DA, dims=dms, init=2.0)
     end
     close(DA)
     d_closeall()   # temp created by the mapreduce above
@@ -273,7 +319,7 @@ check_leaks()
 
     @testset "test $f for dimension $dms" for f in (mean, ), dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
         # std is pending implementation
-        @test f(DA,dms) ≈ f(A,dms)
+        @test f(DA, dims=dms) ≈ f(A, dims=dms)
     end
 
     close(DA)
@@ -288,7 +334,7 @@ check_leaks()
 
     # sum either throws an ArgumentError or a CompositeException of ArgumentErrors
     try
-        sum(DA, -1)
+        sum(DA, dims=-1)
     catch err
         if isa(err, CompositeException)
             @test !isempty(err.exceptions)
@@ -302,7 +348,7 @@ check_leaks()
         end
     end
     try
-        sum(DA, 0)
+        sum(DA, dims=0)
     catch err
         if isa(err, CompositeException)
             @test !isempty(err.exceptions)
@@ -317,9 +363,9 @@ check_leaks()
     end
 
     @test sum(DA) ≈ sum(A)
-    @test sum(DA,1) ≈ sum(A,1)
-    @test sum(DA,2) ≈ sum(A,2)
-    @test sum(DA,3) ≈ sum(A,3)
+    @test sum(DA, dims=1) ≈ sum(A, dims=1)
+    @test sum(DA, dims=2) ≈ sum(A, dims=2)
+    @test sum(DA, dims=3) ≈ sum(A, dims=3)
     close(DA)
     d_closeall()   # temporaries created above
 end
@@ -340,7 +386,7 @@ end
 
 check_leaks()
 
-# test length / endof
+# test length / lastindex
 @testset "test collections API" begin
     A = randn(23,23)
     DA = distribute(A)
@@ -349,8 +395,8 @@ check_leaks()
         @test length(DA) == length(A)
     end
 
-    @testset "test endof" begin
-        @test endof(DA) == endof(A)
+    @testset "test lastindex" begin
+        @test lastindex(DA) == lastindex(A)
     end
     close(DA)
 end
@@ -358,7 +404,7 @@ end
 check_leaks()
 
 @testset "test max / min / sum" begin
-    a = map(x -> Int(round(rand() * 100)) - 50, Array{Int}(100,1000))
+    a = map(x -> Int(round(rand() * 100)) - 50, Array{Int}(undef,100,1000))
     d = distribute(a)
 
     @test sum(d)          == sum(a)
@@ -375,7 +421,7 @@ end
 check_leaks()
 
 @testset "test all / any" begin
-    a = map(x->Int(round(rand() * 100)) - 50, Array{Int}(100,1000))
+    a = map(x->Int(round(rand() * 100)) - 50, Array{Int}(undef,100,1000))
     a = [true for i in 1:100]
     d = distribute(a)
 
@@ -631,25 +677,25 @@ end
 
 check_leaks()
 
-@testset "test c/transpose" begin
-    @testset "test ctranspose real" begin
-        A = drand(Float64, 100, 200)
-        @test A' == Array(A)'
-        close(A)
-    end
-    @testset "test ctranspose complex" begin
-        A = drand(Complex128, 200, 100)
-        @test A' == Array(A)'
-        close(A)
-    end
+@testset "test transpose/adjoint" begin
     @testset "test transpose real" begin
-        A = drand(Float64, 200, 100)
-        @test A.' == Array(A).'
+        A = drand(Float64, 100, 200)
+        @test copy(transpose(A)) == transpose(Array(A))
         close(A)
     end
-    @testset "test ctranspose complex" begin
-        A = drand(Complex128, 100, 200)
-        @test A.' == Array(A).'
+    @testset "test transpose complex" begin
+        A = drand(ComplexF64, 200, 100)
+        @test copy(transpose(A)) == transpose(Array(A))
+        close(A)
+    end
+    @testset "test adjoint real" begin
+        A = drand(Float64, 200, 100)
+        @test copy(adjoint(A)) == adjoint(Array(A))
+        close(A)
+    end
+    @testset "test adjoint complex" begin
+        A = drand(ComplexF64, 100, 200)
+        @test copy(adjoint(A)) == adjoint(Array(A))
         close(A)
     end
 
@@ -663,11 +709,11 @@ check_leaks()
 
     s = view(a, 1:5, 5:8)
     @test isa(s, SubDArray)
-    @test s == convert(DArray, s)
+    @test s == DArray(s)
 
     s = view(a, 6:5, 5:8)
     @test isa(s, SubDArray)
-    @test s == convert(DArray, s)
+    @test s == DArray(s)
     close(a)
     d_closeall()  # close the temporaries created above
 end
@@ -692,8 +738,8 @@ check_leaks()
               sinh, sinpi, sqrt, tan, tand, tanh, trigamma)
         @test f.(a) == f.(b)
     end
-    a = a + 1
-    b = b + 1
+    a = a .+ 1
+    b = b .+ 1
     @testset "$f" for f in (asec, asecd, acosh, acsc, acscd, acoth)
         @test f.(a) == f.(b)
     end
@@ -706,35 +752,35 @@ check_leaks()
 @testset "test mapslices" begin
     A = randn(5,5,5)
     D = distribute(A, procs = workers(), dist = [1, 1, min(nworkers(), 5)])
-    @test mapslices(svdvals, D, (1,2)) ≈ mapslices(svdvals, A, (1,2))
-    @test mapslices(svdvals, D, (1,3)) ≈ mapslices(svdvals, A, (1,3))
-    @test mapslices(svdvals, D, (2,3)) ≈ mapslices(svdvals, A, (2,3))
-    @test mapslices(sort, D, (1,)) ≈ mapslices(sort, A, (1,))
-    @test mapslices(sort, D, (2,)) ≈ mapslices(sort, A, (2,))
-    @test mapslices(sort, D, (3,)) ≈ mapslices(sort, A, (3,))
+    @test mapslices(svdvals, D, dims=(1,2)) ≈ mapslices(svdvals, A, dims=(1,2))
+    @test mapslices(svdvals, D, dims=(1,3)) ≈ mapslices(svdvals, A, dims=(1,3))
+    @test mapslices(svdvals, D, dims=(2,3)) ≈ mapslices(svdvals, A, dims=(2,3))
+    @test mapslices(sort, D, dims=(1,)) ≈ mapslices(sort, A, dims=(1,))
+    @test mapslices(sort, D, dims=(2,)) ≈ mapslices(sort, A, dims=(2,))
+    @test mapslices(sort, D, dims=(3,)) ≈ mapslices(sort, A, dims=(3,))
 
     # issue #3613
-    B = mapslices(sum, dones(Float64, (2,3,4), workers(), [1,1,min(nworkers(),4)]), [1,2])
+    B = mapslices(sum, dones(Float64, (2,3,4), workers(), [1,1,min(nworkers(),4)]), dims=[1,2])
     @test size(B) == (1,1,4)
     @test all(B.==6)
 
     # issue #5141
-    C1 = mapslices(x-> maximum(-x), D, [])
+    C1 = mapslices(x-> maximum(-x), D, dims=[])
     @test C1 == -D
 
     # issue #5177
     c = dones(Float64, (2,3,4,5), workers(), [1,1,1,min(nworkers(),5)])
-    m1 = mapslices(x-> ones(2,3), c, [1,2])
-    m2 = mapslices(x-> ones(2,4), c, [1,3])
-    m3 = mapslices(x-> ones(3,4), c, [2,3])
+    m1 = mapslices(x-> ones(2,3), c, dims=[1,2])
+    m2 = mapslices(x-> ones(2,4), c, dims=[1,3])
+    m3 = mapslices(x-> ones(3,4), c, dims=[2,3])
     @test size(m1) == size(m2) == size(m3) == size(c)
 
-    n1 = mapslices(x-> ones(6), c, [1,2])
-    n2 = mapslices(x-> ones(6), c, [1,3])
-    n3 = mapslices(x-> ones(6), c, [2,3])
-    n1a = mapslices(x-> ones(1,6), c, [1,2])
-    n2a = mapslices(x-> ones(1,6), c, [1,3])
-    n3a = mapslices(x-> ones(1,6), c, [2,3])
+    n1 = mapslices(x-> ones(6), c, dims=[1,2])
+    n2 = mapslices(x-> ones(6), c, dims=[1,3])
+    n3 = mapslices(x-> ones(6), c, dims=[2,3])
+    n1a = mapslices(x-> ones(1,6), c, dims=[1,2])
+    n2a = mapslices(x-> ones(1,6), c, dims=[1,3])
+    n3a = mapslices(x-> ones(1,6), c, dims=[2,3])
     @test (size(n1a) == (1,6,4,5) && size(n2a) == (1,3,6,5) && size(n3a) == (2,1,6,5))
     @test (size(n1) == (6,1,4,5) && size(n2) == (6,3,1,5) && size(n3) == (2,6,1,5))
     close(D)
@@ -750,11 +796,11 @@ check_leaks()
     c = drand(20,20)
     d = convert(Array, c)
 
-    @testset "$f" for f in (:+, :-, :.+, :.-, :.*, :./, :.%)
+    @testset "$f" for f in (:+, :-, :*, :/, :%)
         x = rand()
-        @test @eval ($f)($a, $x) == ($f)($b, $x)
-        @test @eval ($f)($x, $a) == ($f)($x, $b)
-        @test @eval ($f)($a, $c) == ($f)($b, $d)
+        @test @eval ($f).($a, $x) == ($f).($b, $x)
+        @test @eval ($f).($x, $a) == ($f).($x, $b)
+        @test @eval ($f).($a, $c) == ($f).($b, $d)
     end
 
     close(a)
@@ -762,10 +808,10 @@ check_leaks()
 
     a = dones(Int, 20, 20)
     b = convert(Array, a)
-    @testset "$f" for f in (:.<<, :.>>)
-        @test @eval ($f)($a, 2)  == ($f)($b, 2)
-        @test @eval ($f)(2, $a)  == ($f)(2, $b)
-        @test @eval ($f)($a, $a) == ($f)($b, $b)
+    @testset "$f" for f in (:<<, :>>)
+        @test @eval ($f).($a, 2)  == ($f).($b, 2)
+        @test @eval ($f).(2, $a)  == ($f).(2, $b)
+        @test @eval ($f).($a, $a) == ($f).($b, $b)
     end
 
     @testset "$f" for f in (:rem,)
@@ -785,7 +831,7 @@ check_leaks()
     nrows = 20 * nwrkrs
     ncols = 10 * nwrkrs
     a = drand((nrows,ncols), wrkrs, (1, nwrkrs))
-    m = mean(a, 1)
+    m = mean(a, dims=1)
     c = a .- m
     d = convert(Array, a) .- convert(Array, m)
     @test c == d
@@ -827,8 +873,8 @@ check_leaks()
     for (x, y) in ((drandn(20), drandn(20)),
                    (drandn(20, 2), drandn(20, 2)))
 
-        @test Array(LinAlg.axpy!(2.0, x, copy(y))) ≈ LinAlg.axpy!(2.0, Array(x), Array(y))
-        @test_throws DimensionMismatch LinAlg.axpy!(2.0, x, zeros(length(x) + 1))
+        @test Array(axpy!(2.0, x, copy(y))) ≈ axpy!(2.0, Array(x), Array(y))
+        @test_throws DimensionMismatch axpy!(2.0, x, zeros(length(x) + 1))
         close(x)
         close(y)
     end
@@ -847,7 +893,7 @@ check_leaks()
         R[:, i] = convert(Array, A)[:, :, i]*convert(Array, B)[:, i]
     end
     @test convert(Array, ppeval(*, A, B)) ≈ R
-    @test sum(ppeval(eigvals, A)) ≈ sum(ppeval(eigvals, A, eye(10, 10)))
+    @test sum(ppeval(eigvals, A)) ≈ sum(ppeval(eigvals, A, Matrix{Float64}(I,10,10)))
     close(A)
     close(B)
     d_closeall()  # close the temporaries created above
@@ -867,11 +913,11 @@ end
     b = convert(Array, B)
 
     AB = A * B
-    AtB = A.' * B
+    AtB = transpose(A) * B
     AcB = A' * B
 
     ab = a * b
-    atb = a.' * b
+    atb = transpose(a) * b
     acb = a' * b
 
     @test AB ≈ ab
@@ -880,13 +926,14 @@ end
     d_closeall()  # close the temporaries created above
 end
 
-@testset "sort, T = $T" for i in 0:6, T in [Int, Float64]
+@testset "sort, T = $T, 10^$i elements" for i in 0:6, T in [Int, Float64]
     d = DistributedArrays.drand(T, 10^i)
     @testset "sample = $sample" for sample in Any[true, false, (minimum(d),maximum(d)), rand(T, 10^i>512 ? 512 : 10^i)]
         d2 = DistributedArrays.sort(d; sample=sample)
-
+        a  = convert(Array, d)
+        a2 = convert(Array, d2)
         @test length(d) == length(d2)
-        @test sort(convert(Array, d)) == convert(Array, d2)
+        @test sort(a) == a2
     end
     d_closeall()  # close the temporaries created above
 end

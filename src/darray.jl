@@ -26,22 +26,21 @@ mutable struct DArray{T,N,A} <: AbstractArray{T,N}
     id::Tuple
     dims::NTuple{N,Int}
     pids::Array{Int,N}                          # pids[i]==p ⇒ processor p has piece i
-    indexes::Array{NTuple{N,UnitRange{Int}},N}  # indexes held by piece i
+    indices::Array{NTuple{N,UnitRange{Int}},N}  # indices held by piece i
     cuts::Vector{Vector{Int}}                   # cuts[d][i] = first index of chunk i in dimension d
-    localpart::Nullable{A}
-
+    localpart::Union{A,Nothing}
     release::Bool
 
-    function DArray{T,N,A}(id, dims, pids, indexes, cuts, lp) where {T,N,A}
+    function DArray{T,N,A}(id, dims, pids, indices, cuts, lp) where {T,N,A}
         # check invariants
-        if dims != map(last, last(indexes))
-            throw(ArgumentError("dimension of DArray (dim) and indexes do not match"))
+        if dims != map(last, last(indices))
+            throw(ArgumentError("dimension of DArray (dim) and indices do not match"))
         end
         release = (myid() == id[1])
 
         d = d_from_weakref_or_d(id)
         if d === nothing
-            d = new(id, dims, pids, indexes, cuts, lp, release)
+            d = new(id, dims, pids, indices, cuts, lp, release)
         end
 
         if release
@@ -49,7 +48,7 @@ mutable struct DArray{T,N,A} <: AbstractArray{T,N}
             registry[id] = WeakRef(d)
 
 #            println("Installing finalizer for : ", d.id, ", : ", object_id(d), ", isbits: ", isbits(d))
-            finalizer(d, close)
+            finalizer(close, d)
         end
         d
     end
@@ -63,8 +62,8 @@ function d_from_weakref_or_d(id)
     return d
 end
 
-eltype(::Type{DArray{T}}) where {T} = T
-empty_localpart(T,N,A) = A(Array{T}(ntuple(zero, N)))
+Base.eltype(::Type{DArray{T}}) where {T} = T
+empty_localpart(T,N,A) = A(Array{T}(undef, ntuple(zero, N)))
 
 const SubDArray{T,N,D<:DArray} = SubArray{T,N,D}
 const SubOrDArray{T,N} = Union{DArray{T,N}, SubDArray{T,N}}
@@ -148,13 +147,13 @@ function ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Ve
         d = registry[id]
         d = isa(d, WeakRef) ? d.value : d
     else
-        d = DArray{T,1,T}(id, (npids,), pids, idxs, cuts, Nullable{T}())
+        d = DArray{T,1,T}(id, (npids,), pids, idxs, cuts, nothing)
     end
     d
 end
 
 function gather(d::DArray{T,1,T}) where T
-    a=Array{T}(length(procs(d)))
+    a=Array{T}(undef, length(procs(d)))
     @sync for (i,p) in enumerate(procs(d))
         @async a[i] = remotecall_fetch(localpart, p, d)
     end
@@ -189,18 +188,18 @@ function DArray(refs)
     id = next_did()
 
     npids = [r.where for r in refs]
-    nsizes = Array{Tuple}(dimdist)
+    nsizes = Array{Tuple}(undef, dimdist)
     @sync for i in 1:length(refs)
         let i=i
             @async nsizes[i] = remotecall_fetch(sz_localpart_ref, npids[i], refs[i], id)
         end
     end
 
-    nindexes = Array{NTuple{length(dimdist),UnitRange{Int}}}(dimdist...)
+    nindices = Array{NTuple{length(dimdist),UnitRange{Int}}}(undef, dimdist...)
 
-    for i in 1:length(nindexes)
-        subidx = ind2sub(dimdist, i)
-        nindexes[i] = ntuple(length(subidx)) do x
+    for i in 1:length(nindices)
+        subidx = CartesianIndices(dimdist)[i]
+        nindices[i] = ntuple(length(subidx)) do x
             idx_in_dim = subidx[x]
             startidx = 1
             for j in 1:(idx_in_dim-1)
@@ -212,11 +211,11 @@ function DArray(refs)
         end
     end
 
-    lastidxs = hcat([Int[last(idx_in_d)+1 for idx_in_d in idx] for idx in nindexes]...)
-    ncuts = Array{Int,1}[unshift!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
+    lastidxs = hcat([Int[last(idx_in_d)+1 for idx_in_d in idx] for idx in nindices]...)
+    ncuts = Array{Int,1}[pushfirst!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
     ndims = tuple([sort(unique(lastidxs[x,:]))[end]-1 for x in 1:length(dimdist)]...)
 
-    DArray(id, refs, ndims, reshape(npids, dimdist), nindexes, ncuts)
+    DArray(id, refs, ndims, reshape(npids, dimdist), nindices, ncuts)
 end
 
 macro DArray(ex0::Expr)
@@ -239,11 +238,11 @@ macro DArray(ex0::Expr)
 end
 
 # new DArray similar to an existing one
-DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indexes, d.cuts)
+DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indices, d.cuts)
 
 sz_localpart_ref(ref, id) = size(fetch(ref))
 
-Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array{T}(map(length,I)), dims, procs(d))
+Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array{T}(undef, map(length,I)), dims, procs(d))
 Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
 Base.similar(d::DArray{T}, dims::Dims) where {T} = similar(d, T, dims)
 Base.similar(d::DArray{T}) where {T} = similar(d, T, size(d))
@@ -273,7 +272,7 @@ function defaultdist(dims, pids)
         fac = f[k]
         (d, dno) = findmax(dims)
         # resolve ties to highest dim
-        dno = last(find(dims .== d))
+        dno = findlast(isequal(d), dims)
         if dims[dno] >= fac
             dims[dno] = div(dims[dno], fac)
             chunks[dno] *= fac
@@ -283,21 +282,21 @@ function defaultdist(dims, pids)
     return chunks
 end
 
-# get array of start indexes for dividing sz into nc chunks
+# get array of start indices for dividing sz into nc chunks
 function defaultdist(sz::Int, nc::Int)
     if sz >= nc
-        return round.(Int, linspace(1, sz+1, nc+1))
+        return round.(Int, range(1, stop=sz+1, length=nc+1))
     else
-        return [[1:(sz+1);], zeros(Int, nc-sz);]
+        return [[1:(sz+1);]; zeros(Int, nc-sz)]
     end
 end
 
-# compute indexes array for dividing dims into chunks
+# compute indices array for dividing dims into chunks
 function chunk_idxs(dims, chunks)
     cuts = map(defaultdist, dims, chunks)
     n = length(dims)
-    idxs = Array{NTuple{n,UnitRange{Int}}}(chunks...)
-    for cidx in CartesianRange(tuple(chunks...))
+    idxs = Array{NTuple{n,UnitRange{Int}}}(undef, chunks...)
+    for cidx in CartesianIndices(tuple(chunks...))
         idxs[cidx.I...] = ntuple(i -> (cuts[i][cidx[i]]:cuts[i][cidx[i] + 1] - 1), n)
     end
     return (idxs, cuts)
@@ -330,7 +329,7 @@ function localpart(d::DArray{T,N,A}) where {T,N,A}
         return empty_localpart(T,N,A)::A
     end
 
-    return get(d.localpart)::A
+    return d.localpart::A
 end
 
 localpart(d::DArray, localidx...) = localpart(d)[localidx...]
@@ -349,25 +348,77 @@ end
 
 
 # fetch localpart of d at pids[i]
-fetch(d::DArray{T,N,A}, i) where {T,N,A} = remotecall_fetch(localpart, d.pids[i], d)
+Base.fetch(d::DArray{T,N,A}, i) where {T,N,A} = remotecall_fetch(localpart, d.pids[i], d)
 
 """
-    localindexes(d)
+    localindices(d)
 
-A tuple describing the indexes owned by the local process.
+A tuple describing the indices owned by the local process.
 Returns a tuple with empty ranges if no local part exists on the calling process.
 """
-function localindexes(d::DArray)
+function localindices(d::DArray)
     lpidx = localpartindex(d)
     if lpidx == 0
         return ntuple(i -> 1:0, ndims(d))
     end
-    return d.indexes[lpidx]
+    return d.indices[lpidx]
 end
 
-# find which piece holds index (I...)
-locate(d::DArray, I::Int...) =
-    ntuple(i -> searchsortedlast(d.cuts[i], I[i]), ndims(d))
+# Equality
+function Base.:(==)(d::DArray{<:Any,<:Any,A}, a::AbstractArray) where A
+    if size(d) != size(a)
+        return false
+    else
+        b = asyncmap(procs(d)) do p
+            remotecall_fetch(p) do
+                localpart(d) == A(a[localindices(d)...])
+            end
+        end
+        return all(b)
+    end
+end
+function Base.:(==)(d::SubDArray, a::AbstractArray)
+    cd = copy(d)
+    t = cd == a
+    close(cd)
+    return t
+end
+Base.:(==)(a::AbstractArray, d::DArray) = d == a
+Base.:(==)(a::AbstractArray, d::SubDArray) = d == a
+Base.:(==)(d1::DArray, d2::DArray) = invoke(==, Tuple{DArray, AbstractArray}, d1, d2)
+function Base.:(==)(d1::SubDArray, d2::DArray)
+    cd1 = copy(d1)
+    t = cd1 == d2
+    close(cd1)
+    return t
+end
+function Base.:(==)(d1::DArray, d2::SubDArray)
+    cd2 = copy(d2)
+    t = d1 == cd2
+    close(cd2)
+    return t
+end
+function Base.:(==)(d1::SubDArray, d2::SubDArray)
+    cd1 = copy(d1)
+    t = cd1 == d2
+    close(cd1)
+    return t
+end
+
+"""
+    locate(d::DArray, I::Int...)
+
+Determine the index of `procs(d)` that hold element `I`.
+"""
+function locate(d::DArray, I::Int...)
+    ntuple(ndims(d)) do i
+        fi = searchsortedlast(d.cuts[i], I[i])
+        if fi >= length(d.cuts[i])
+            throw(ArgumentError("element not contained in array"))
+        end
+        return fi
+    end
+end
 
 chunk(d::DArray{T,N,A}, i...) where {T,N,A} = remotecall_fetch(localpart, d.pids[i...], d)::A
 
@@ -459,59 +510,48 @@ Distribute a local array `A` like the distributed array `DA`.
 function distribute(A::AbstractArray, DA::DArray)
     size(DA) == size(A) || throw(DimensionMismatch("Distributed array has size $(size(DA)) but array has $(size(A))"))
 
-    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
-        A[DA.indexes[pididx]...]
+    s = verified_destination_serializer(procs(DA), size(DA.indices)) do pididx
+        A[DA.indices[pididx]...]
     end
     return DArray(I->localpart(s), DA)
 end
 
-Base.convert(::Type{DArray{T,N,S}}, A::S) where {T,N,S<:AbstractArray} = distribute(convert(AbstractArray{T,N}, A))
+(::Type{DArray{T,N,S}})(A::S) where {T,N,S<:AbstractArray} = distribute(convert(AbstractArray{T,N}, A))
 
-Base.convert(::Type{Array{S,N}}, d::DArray{T,N}) where {S,T,N} = begin
-    a = Array{S}(size(d))
+function (::Type{Array{S,N}})(d::DArray{T,N}) where {S,T,N}
+    a = Array{S}(undef, size(d))
     @sync begin
         for i = 1:length(d.pids)
-            @async a[d.indexes[i]...] = chunk(d, i)
+            @async a[d.indices[i]...] = chunk(d, i)
         end
     end
     return a
 end
 
-Base.convert(::Type{Array{S,N}}, s::SubDArray{T,N}) where {S,T,N} = begin
-    I = s.indexes
+function (::Type{Array{S,N}})(s::SubDArray{T,N}) where {S,T,N}
+    I = s.indices
     d = s.parent
-    if isa(I,Tuple{Vararg{UnitRange{Int}}}) && S<:T && T<:S
+    if isa(I,Tuple{Vararg{UnitRange{Int}}}) && S<:T && T<:S && !isempty(s)
         l = locate(d, map(first, I)...)
-        if isequal(d.indexes[l...], I)
+        if isequal(d.indices[l...], I)
             # SubDArray corresponds to a chunk
             return chunk(d, l...)
         end
     end
-    a = Array{S}(size(s))
+    a = Array{S}(undef, size(s))
     a[[1:size(a,i) for i=1:N]...] = s
     return a
 end
 
-function Base.convert(::Type{DArray}, SD::SubArray{T,N}) where {T,N}
+function (::Type{DArray})(SD::SubArray{T,N}) where {T,N}
     D = SD.parent
     DArray(size(SD), procs(D)) do I
-        TR = typeof(SD.indexes[1])
-        lindices = Array{TR}(0)
-        for (i,r) in zip(I, SD.indexes)
-            st = step(r)
-            lrstart = first(r) + st*(first(i)-1)
-            lrend = first(r) + st*(last(i)-1)
-            if TR <: UnitRange
-                push!(lindices, lrstart:lrend)
-            else
-                push!(lindices, lrstart:st:lrend)
-            end
-        end
+        lindices = Base.reindex(SD, SD.indices, I)
         convert(Array, D[lindices...])
     end
 end
 
-Base.reshape(A::DArray{T,1,S}, d::Dims) where {T,S<:Array} = begin
+function Base.reshape(A::DArray{T,1,S}, d::Dims) where {T,S<:Array}
     if prod(d) != length(A)
         throw(DimensionMismatch("dimensions must be consistent with array size"))
     end
@@ -520,12 +560,12 @@ Base.reshape(A::DArray{T,1,S}, d::Dims) where {T,S<:Array} = begin
         d1offs = first(I[1])
         nd = length(I)
 
-        B = Array{T}(sz)
+        B = Array{T}(undef, sz)
         nr = size(B,1)
         sztail = size(B)[2:end]
 
         for i=1:div(length(B),nr)
-            i2 = ind2sub(sztail, i)
+            i2 = CartesianIndices(sztail)[i]
             globalidx = [ I[j][i2[j-1]] for j=2:nd ]
 
             a = sub2ind(d, d1offs, globalidx...)
@@ -537,27 +577,60 @@ Base.reshape(A::DArray{T,1,S}, d::Dims) where {T,S<:Array} = begin
 end
 
 ## indexing ##
+const _allowscalar = Ref(true)
+allowscalar(flag = true) = (_allowscalar[] = flag)
+_scalarindexingallowed() = _allowscalar[] || throw(ErrorException("scalar indexing disabled"))
 
 getlocalindex(d::DArray, idx...) = localpart(d)[idx...]
 function getindex_tuple(d::DArray{T}, I::Tuple{Vararg{Int}}) where T
     chidx = locate(d, I...)
-    idxs = d.indexes[chidx...]
+    idxs = d.indices[chidx...]
     localidx = ntuple(i -> (I[i] - first(idxs[i]) + 1), ndims(d))
     pid = d.pids[chidx...]
     return remotecall_fetch(getlocalindex, pid, d, localidx...)::T
 end
 
-Base.getindex(d::DArray, i::Int) = getindex_tuple(d, ind2sub(size(d), i))
-Base.getindex(d::DArray, i::Int...) = getindex_tuple(d, i)
+function Base.getindex(d::DArray, i::Int)
+    _scalarindexingallowed()
+    return getindex_tuple(d, Tuple(CartesianIndices(d)[i]))
+end
+function Base.getindex(d::DArray, i::Int...)
+    _scalarindexingallowed()
+    return getindex_tuple(d, i)
+end
 
 Base.getindex(d::DArray) = d[1]
-Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
+Base.getindex(d::SubOrDArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
+
+function Base.isassigned(D::DArray, i::Integer...)
+    try
+        getindex_tuple(D, i)
+        true
+    catch e
+        if isa(e, BoundsError) || isa(e, UndefRefError)
+            return false
+        else
+            rethrow(e)
+        end
+    end
+end
 
 
-Base.copy!(dest::SubOrDArray, src::SubOrDArray) = begin
+function Base.copyto!(dest::SubOrDArray, src::AbstractArray)
     asyncmap(procs(dest)) do p
         remotecall_fetch(p) do
-            localpart(dest)[:] = src[localindexes(dest)...]
+            ldest = localpart(dest)
+            ldest[:] = Array(view(src, localindices(dest)...))
+        end
+    end
+    return dest
+end
+
+function Base.deepcopy(src::DArray)
+    dest = similar(src)
+    asyncmap(procs(src)) do p
+        remotecall_fetch(p) do
+            dest[:L] = deepcopy(src[:L])
         end
     end
     return dest
@@ -570,7 +643,7 @@ function Base.setindex!(a::Array, d::DArray,
         I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
     n = length(I)
     @sync for i = 1:length(d.pids)
-        K = d.indexes[i]
+        K = d.indices[i]
         @async a[[I[j][K[j]] for j=1:n]...] = chunk(d, i)
     end
     return a
@@ -585,7 +658,7 @@ end
 # skip at the end. In many cases range intersection would be much faster
 # than generating a logical mask, but that loses the endpoint information.
 indexin_mask(a, b::Number) = a .== b
-indexin_mask(a, r::Range{Int}) = [i in r for i in a]
+indexin_mask(a, r::AbstractRange{Int}) = [i in r for i in a]
 indexin_mask(a, b::AbstractArray{Int}) = indexin_mask(a, IntSet(b))
 indexin_mask(a, b::AbstractArray) = indexin_mask(a, Set(b))
 indexin_mask(a, b) = [i in b for i in a]
@@ -683,9 +756,9 @@ function Base.setindex!(a::Array, s::SubDArray,
     Base.setindex_shape_check(s, Base.index_lengths(Inew...)...)
     n = length(Inew)
     d = s.parent
-    J = Base.to_indices(d, s.indexes)
+    J = Base.to_indices(d, s.indices)
     @sync for i = 1:length(d.pids)
-        K_c = d.indexes[i]
+        K_c = d.indices[i]
         K = map(intersect, J, K_c)
         if !any(isempty, K)
             K_mask = map(indexin_mask, J, K_c)
@@ -697,7 +770,7 @@ function Base.setindex!(a::Array, s::SubDArray,
                 # partial chunk
                 @async a[idxs...] =
                     remotecall_fetch(d.pids[i]) do
-                        view(localpart(d), [K[j]-first(K_c[j])+1 for j=1:length(J)]...)
+                        view(localpart(d), [K[j].-first(K_c[j]).+1 for j=1:length(J)]...)
                     end
             end
         end
@@ -705,7 +778,7 @@ function Base.setindex!(a::Array, s::SubDArray,
     return a
 end
 
-Base.fill!(A::DArray, x) = begin
+function Base.fill!(A::DArray, x)
     @sync for p in procs(A)
         @async remotecall_fetch((A,x)->(fill!(localpart(A), x); nothing), p, A, x)
     end

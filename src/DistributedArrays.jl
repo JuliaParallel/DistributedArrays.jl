@@ -2,16 +2,20 @@ __precompile__()
 
 module DistributedArrays
 
-importall Base
-import Base.Callable
-import Base.BLAS: axpy!
+using Distributed
+using Serialization
+using LinearAlgebra
 
-using Primes
-using Primes: factor
+import Base: +, -, *, div, mod, rem, &, |, xor
+import Base.Callable
+import LinearAlgebra: axpy!, dot, norm
+
+import Primes
+import Primes: factor
 
 # DArray exports
 export DArray, SubDArray, SubOrDArray, @DArray
-export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindexes, ppeval
+export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindices, ppeval
 
 # non-array distributed data
 export ddata, gather

@@ -1,67 +1,79 @@
 ## higher-order functions ##
 
+import Base: +, -, div, mod, rem, &, |, xor
+import SparseArrays: nnz
+
 Base.map(f, d0::DArray, ds::AbstractArray...) = broadcast(f, d0, ds...)
 
-Base.map!(f::F, dest::DArray, src::DArray) where {F} = begin
-    @sync for p in procs(dest)
-        @async remotecall_fetch(() -> (map!(f, localpart(dest), src[localindexes(dest)...]); nothing), p)
+function Base.map!(f::F, dest::DArray, src::DArray{<:Any,<:Any,A}) where {F,A}
+    asyncmap(procs(dest)) do p
+        remotecall_fetch(p) do
+            map!(f, localpart(dest), A(view(src, localindices(dest)...)))
+            return nothing
+        end
     end
     return dest
 end
 
-Base.Broadcast._containertype(::Type{D}) where {D<:DArray} = DArray
+# new broadcasting implementation for julia-0.7
 
-Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{DArray}) = DArray
-Base.Broadcast.promote_containertype(::Type{DArray}, ::Type{Array})  = DArray
-Base.Broadcast.promote_containertype(::Type{DArray}, ct)             = DArray
-Base.Broadcast.promote_containertype(::Type{Array}, ::Type{DArray})  = DArray
-Base.Broadcast.promote_containertype(ct, ::Type{DArray})             = DArray
+Base.BroadcastStyle(::Type{<:DArray}) = Broadcast.ArrayStyle{DArray}()
+Base.BroadcastStyle(::Type{<:DArray}, ::Any) = Broadcast.ArrayStyle{DArray}()
 
-Base.Broadcast.broadcast_indices(::Type{DArray}, A)      = indices(A)
-Base.Broadcast.broadcast_indices(::Type{DArray}, A::Ref) = ()
-
-# FixMe!
-## 1. Support for arbitrary indices including OneTo
-## 2. This is as type unstable as it can be. Overhead might not matter too much for DArrays though.
-function Base.Broadcast.broadcast_c(f, ::Type{DArray}, As...)
-    T     = Base.Broadcast._broadcast_eltype(f, As...)
-    shape = Base.Broadcast.broadcast_indices(As...)
-    iter  = Base.CartesianRange(shape)
-    D     = DArray(map(length, shape)) do I
-        Base.Broadcast.broadcast_c(f, Array,
-            map(a -> isa(a, Union{Number,Ref}) ? a :
-                localtype(a)(a[ntuple(i -> i > ndims(a) ? 1 : (size(a, i) == 1 ? (1:1) : I[i]), length(shape))...]), As)...)
-    end
-    return D
+function Base.similar(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}}, ::Type{ElType}) where {ElType}
+   DA = find_darray(bc)
+   DArray(I -> Array{ElType}(undef, map(length,I)), DA)
 end
 
+"`DA = find_darray(As)` returns the first DArray among the arguments."
+find_darray(bc::Base.Broadcast.Broadcasted) = find_darray(bc.args)
+find_darray(args::Tuple) = find_darray(find_darray(args[1]), Base.tail(args))
+find_darray(x) = x
+find_darray(a::DArray, rest) = a
+find_darray(::Any, rest) = find_darray(rest)
+
+function Base.copyto!(dest::DArray, bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}})
+    @sync for p in procs(dest)
+       @async remotecall_fetch(p) do
+          copyto!(localpart(dest), rewrite_local(bc))
+       end
+    end
+    dest
+end
+
+"""
+Transform a Broadcasted{Broadcast.ArrayStyle{DArray}} object into an equivalent
+Broadcasted{Broadcast.DefaultArrayStyle} object for the localparts.
+"""
+rewrite_local(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}}) = Broadcast.broadcasted(bc.f, rewrite_local(bc.args)...)
+rewrite_local(args::Tuple) = map(rewrite_local, args)
+rewrite_local(a::DArray) = localpart(a)
+rewrite_local(x) = x
+
+
 function Base.reduce(f, d::DArray)
-    results=[]
-    @sync begin
-        for p in procs(d)
-            @async push!(results, remotecall_fetch((f,d)->reduce(f, localpart(d)), p, f, d))
+    results = asyncmap(procs(d)) do p
+        remotecall_fetch(p) do
+            return reduce(f, localpart(d))
         end
     end
     reduce(f, results)
 end
 
-function _mapreduce(f, opt, d::DArray)
-# TODO Change to an @async remotecall_fetch - will reduce one extra network hop -
-# once bug in master is fixed.
-    results=[]
-    @sync begin
-        for p in procs(d)
-            @async push!(results, remotecall_fetch((f,opt,d)->mapreduce(f, opt, localpart(d)), p, f, opt, d))
-        end
+function Base._mapreduce(f, op, ::IndexCartesian, d::DArray)
+    results = asyncmap(procs(d)) do p
+        remotecall_fetch((_f,_op,_d)->mapreduce(_f, _op, localpart(_d)), p, f, op, d)
     end
-    reduce(opt, results)
+
+    reduce(op, results)
 end
-Base.mapreduce(f, opt::Union{typeof(|), typeof(&)}, d::DArray) = _mapreduce(f, opt, d)
-Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, opt, d)
-Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
+Base._mapreduce(f, op, ::IndexCartesian, d::SubDArray) = Base._mapreduce(f, op, IndexCartesian(), DArray(d))
+# Base.mapreduce(f, opt::Union{typeof(|), typeof(&)}, d::DArray) = _mapreduce(f, opt, d)
+# Base.mapreduce(f, opt::Function, d::DArray) = _mapreduce(f, opt, d)
+# Base.mapreduce(f, opt, d::DArray) = _mapreduce(f, opt, d)
 
 # mapreducedim
-Base.reducedim_initarray(A::DArray, region, v0, ::Type{R}) where {R} = begin
+function Base.reducedim_initarray(A::DArray, region, v0, ::Type{R}) where {R}
     # Store reduction on lowest pids
     pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
     chunks = similar(pids, Future)
@@ -72,28 +84,18 @@ Base.reducedim_initarray(A::DArray, region, v0, ::Type{R}) where {R} = begin
 end
 Base.reducedim_initarray(A::DArray, region, v0::T) where {T} = Base.reducedim_initarray(A, region, v0, T)
 
-Base.reducedim_initarray0(A::DArray, region, v0, ::Type{R}) where {R} = begin
-    # Store reduction on lowest pids
-    pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
-    chunks = similar(pids, Future)
-    @sync for i in eachindex(pids)
-        @async chunks[i...] = remotecall_wait(() -> Base.reducedim_initarray0(localpart(A), region, v0, R), pids[i...])
-    end
-    return DArray(chunks)
-end
-Base.reducedim_initarray0(A::DArray, region, v0::T) where {T} = Base.reducedim_initarray0(A, region, v0, T)
-
 # Compute mapreducedim of each localpart and store the result in a new DArray
-mapreducedim_within(f, op, A::DArray, region) = begin
+function mapreducedim_within(f, op, A::DArray, region)
     arraysize = [size(A)...]
-    gridsize = [size(A.indexes)...]
+    gridsize = [size(A.indices)...]
     arraysize[[region...]] = gridsize[[region...]]
-    indx = similar(A.indexes)
-    for i in CartesianRange(size(indx))
-        indx[i] = ntuple(j -> j in region ? (i.I[j]:i.I[j]) : A.indexes[i][j], ndims(A))
+    indx = similar(A.indices)
+
+    for i in CartesianIndices(indx)
+        indx[i] = ntuple(j -> j in region ? (i.I[j]:i.I[j]) : A.indices[i][j], ndims(A))
     end
     cuts = [i in region ? collect(1:arraysize[i] + 1) : A.cuts[i] for i in 1:ndims(A)]
-    return DArray(next_did(), I -> mapreducedim(f, op, localpart(A), region),
+    return DArray(next_did(), I -> mapreduce(f, op, localpart(A), dims=region),
         tuple(arraysize...), procs(A), indx, cuts)
 end
 
@@ -101,9 +103,9 @@ end
 # has been run on each localpart with mapreducedim_within. Eventually, we might
 # want to write mapreducedim_between! as a binary reduction.
 function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
-    @sync for p in procs(R)
-        @async remotecall_fetch(p, f, op, R, A, region) do f, op, R, A, region
-            localind = [r for r = localindexes(A)]
+    asyncmap(procs(R)) do p
+        remotecall_fetch(p, f, op, R, A, region) do f, op, R, A, region
+            localind = [r for r = localindices(A)]
             localind[[region...]] = [1:n for n = size(A)[[region...]]]
             B = convert(Array, A[localind...])
             Base.mapreducedim!(f, op, localpart(R), B)
@@ -113,41 +115,51 @@ function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
     return R
 end
 
-Base.mapreducedim!(f, op, R::DArray, A::DArray) = begin
+function Base.mapreducedim!(f, op, R::DArray, A::DArray)
     lsize = Base.check_reducedims(R,A)
     if isempty(A)
         return copy(R)
     end
     region = tuple(collect(1:ndims(A))[[size(R)...] .!= [size(A)...]]...)
     if isempty(region)
-        return copy!(R, A)
+        return copyto!(R, A)
     end
     B = mapreducedim_within(f, op, A, region)
     return mapreducedim_between!(identity, op, R, B, region)
 end
 
-Base.mapreducedim(f, op, R::DArray, A::DArray) = begin
-    Base.mapreducedim!(f, op, Base.reducedim_initarray(A, region, v0), A)
+function Base._all(f, A::DArray, ::Colon)
+    B = asyncmap(procs(A)) do p
+        remotecall_fetch(p) do
+            all(f, localpart(A))
+        end
+    end
+    return all(B)
+end
+
+function Base._any(f, A::DArray, ::Colon)
+    B = asyncmap(procs(A)) do p
+        remotecall_fetch(p) do
+            any(f, localpart(A))
+        end
+    end
+    return any(B)
+end
+
+function Base.count(f, A::DArray)
+    B = asyncmap(procs(A)) do p
+        remotecall_fetch(p) do
+            count(f, localpart(A))
+        end
+    end
+    return sum(B)
 end
 
 function nnz(A::DArray)
-    B = Array{Any}(size(A.pids))
-    @sync begin
-        for i in eachindex(A.pids)
-            @async B[i...] = remotecall_fetch(x -> nnz(localpart(x)), A.pids[i...], A)
-        end
+    B = asyncmap(A.pids) do p
+        remotecall_fetch(nnz∘localpart, p, A)
     end
     return reduce(+, B)
-end
-
-# reduce like
-for (fn, fr) in ((:sum, :+),
-                 (:prod, :*),
-                 (:maximum, :max),
-                 (:minimum, :min),
-                 (:any, :|),
-                 (:all, :&))
-    @eval (Base.$fn)(d::DArray) = reduce($fr, d)
 end
 
 function Base.extrema(d::DArray)
@@ -157,24 +169,6 @@ function Base.extrema(d::DArray)
         end
     end
     return reduce((t,s) -> (min(t[1], s[1]), max(t[2], s[2])), r)
-end
-
-# mapreduce like
-for (fn, fr1, fr2) in ((:maxabs, :abs, :max),
-                       (:minabs, :abs, :min),
-                       (:sumabs, :abs, :+),
-                       (:sumabs2, :abs2, :+))
-    @eval (Base.$fn)(d::DArray) = mapreduce($fr1, $fr2, d)
-end
-
-# semi mapreduce
-for (fn, fr) in ((:any, :|),
-                 (:all, :&),
-                 (:count, :+))
-    @eval begin
-        (Base.$fn)(f::typeof(identity), d::DArray) = mapreduce(f, $fr, d)
-        (Base.$fn)(f::Callable, d::DArray) = mapreduce(f, $fr, d)
-    end
 end
 
 # Unary vector functions
@@ -187,8 +181,8 @@ map_localparts(f::Callable, d1::DArray, d2::DArray) = DArray(d1) do I
 end
 
 function map_localparts(f::Callable, DA::DArray, A::Array)
-    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
-        A[DA.indexes[pididx]...]
+    s = verified_destination_serializer(procs(DA), size(DA.indices)) do pididx
+        A[DA.indices[pididx]...]
     end
     DArray(DA) do I
         f(localpart(DA), localpart(s))
@@ -196,8 +190,8 @@ function map_localparts(f::Callable, DA::DArray, A::Array)
 end
 
 function map_localparts(f::Callable, A::Array, DA::DArray)
-    s = verified_destination_serializer(procs(DA), size(DA.indexes)) do pididx
-        A[DA.indexes[pididx]...]
+    s = verified_destination_serializer(procs(DA), size(DA.indices)) do pididx
+        A[DA.indices[pididx]...]
     end
     DArray(DA) do I
         f(localpart(s), localpart(DA))
@@ -205,8 +199,8 @@ function map_localparts(f::Callable, A::Array, DA::DArray)
 end
 
 function map_localparts!(f::Callable, d::DArray)
-    @sync for p in procs(d)
-        @async remotecall_fetch((f,d)->(f(localpart(d)); nothing), p, f, d)
+    asyncmap(procs(d)) do p
+        remotecall_fetch((f,d)->(f(localpart(d)); nothing), p, f, d)
     end
     return d
 end
@@ -224,7 +218,7 @@ function samedist(A::DArray, B::DArray)
     B
 end
 
-for f in (:+, :-, :div, :mod, :rem, :&, :|, :$)
+for f in (:+, :-, :div, :mod, :rem, :&, :|, :xor)
     @eval begin
         function ($f)(A::DArray{T}, B::DArray{T}) where T
             B = samedist(A, B)
@@ -235,18 +229,21 @@ for f in (:+, :-, :div, :mod, :rem, :&, :|, :$)
     end
 end
 
-function mapslices(f::Function, D::DArray{T,N,A}, dims::AbstractVector) where {T,N,A}
-    if !all(t -> t == 1, size(D.indexes)[dims])
+function Base.mapslices(f, D::DArray{T,N,A}; dims) where {T,N,A}
+    if !(dims isa AbstractVector)
+        dims = [dims...]
+    end
+    if !all(t -> t == 1, size(D.indices)[dims])
         p = ones(Int, ndims(D))
         nondims = filter(t -> !(t in dims), 1:ndims(D))
         p[nondims] = defaultdist([size(D)...][[nondims...]], procs(D))
         DD = DArray(size(D), procs(D), p) do I
             return convert(A, D[I...])
         end
-        return mapslices(f, DD, dims)
+        return mapslices(f, DD, dims=dims)
     end
 
-    refs = Future[remotecall((x,y,z)->mapslices(x,localpart(y),z), p, f, D, dims) for p in procs(D)]
+    refs = Future[remotecall((x,y,z)->mapslices(x,localpart(y),dims=z), p, f, D, dims) for p in procs(D)]
 
     DArray(reshape(refs, size(procs(D))))
 end
@@ -280,7 +277,7 @@ function _ppeval(f, A...; dim = map(ndims, A))
     push!(ridx, 1)
     Rsize = map(last, ridx)
     Rsize[end] = dimlength
-    R = Array{eltype(R1)}(Rsize...)
+    R = Array{eltype(R1)}(undef, Rsize...)
 
     for i = 1:dimlength
         for j = 1:narg
@@ -307,7 +304,7 @@ Evaluates the callable argument `f` on slices of the elements of the `D` tuple.
 `f` can be any callable object that accepts sliced or broadcasted elements of `D`.
 The result returned from `f` must be either an array or a scalar.
 
-`D` has any number of elements and the alements can have any type. If an element
+`D` has any number of elements and the elements can have any type. If an element
 of `D` is a distributed array along the dimension specified by `dim`. If an
 element of `D` is not distributed, the element is by default broadcasted and
 applied on all evaluations of `f`.
@@ -320,23 +317,23 @@ broadcasted to all evaluations of `f`.
 
 #### Result
 `ppeval` returns a distributed array of dimension `p+1` where the first `p`
-sizes correspond to the sizes of return values of `f`. The last dimention of
+sizes correspond to the sizes of return values of `f`. The last dimension of
 the return array from `ppeval` has the same length as the dimension over which
 the input arrays are sliced.
 
 #### Examples
 ```jl
-addprocs(JULIA_CPU_CORES)
+addprocs(Sys.CPU_THREADS)
 
 using DistributedArrays
 
-A = drandn((10, 10, JULIA_CPU_CORES), workers(), [1, 1, JULIA_CPU_CORES])
+A = drandn((10, 10, Sys.CPU_THREADS), workers(), [1, 1, Sys.CPU_THREADS])
 
 ppeval(eigvals, A)
 
 ppeval(eigvals, A, randn(10,10)) # broadcasting second argument
 
-B = drandn((10, JULIA_CPU_CORES), workers(), [1, JULIA_CPU_CORES])
+B = drandn((10, Sys.CPU_THREADS), workers(), [1, Sys.CPU_THREADS])
 
 ppeval(*, A, B)
 ```
@@ -345,7 +342,7 @@ function ppeval(f, D...; dim::NTuple = map(t -> isa(t, DArray) ? ndims(t) : 0, D
     #Ensure that the complete DArray is available on the specified dims on all processors
     for i = 1:length(D)
         if isa(D[i], DArray)
-            for idxs in D[i].indexes
+            for idxs in D[i].indices
                 for d in setdiff(1:ndims(D[i]), dim[i])
                     if length(idxs[d]) != size(D[i], d)
                         throw(DimensionMismatch(string("dimension $d is distributed. ",
@@ -363,5 +360,5 @@ function ppeval(f, D...; dim::NTuple = map(t -> isa(t, DArray) ? ndims(t) : 0, D
     # the DArray constructor.
     sd = [size(D[1].pids)...]
     nd = remotecall_fetch((r)->ndims(fetch(r)), refs[1].where, refs[1])
-    DArray(reshape(refs, tuple([sd[1:nd - 1], sd[end];]...)))
+    DArray(reshape(refs, tuple([sd[1:nd - 1]; sd[end]]...)))
 end

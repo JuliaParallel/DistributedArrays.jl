@@ -76,7 +76,7 @@ spmd(spmd_test1)
 # define the function everywhere
 @everywhere function foo_spmd(d_in, d_out, n)
     pids=sort(vec(procs(d_in)))
-    pididx = findfirst(pids, myid())
+    pididx = findfirst(isequal(myid()), pids)
     mylp = localpart(d_in)
     localsum = 0
 
@@ -105,7 +105,7 @@ spmd(spmd_test1)
 end
 
 # run foo_spmd on all workers, many of them, all concurrently using implictly different contexts.
-in_arrays = map(x->DArray(I->fill(myid(), (map(length,I)...)), (nworkers(), 2), workers(), [nworkers(),1]), 1:8)
+in_arrays = map(x->DArray(I->fill(myid(), (map(length,I)...,)), (nworkers(), 2), workers(), [nworkers(),1]), 1:8)
 out_arrays = map(x->ddata(), 1:8)
 
 @sync for i in 1:8
@@ -122,7 +122,7 @@ println("SPMD: Passed testing of spmd function run concurrently")
 # define the function everywhere
 @everywhere function foo_spmd2(d_in, d_out, n)
     pids=sort(vec(procs(d_in)))
-    pididx = findfirst(pids, myid())
+    pididx = findfirst(isequal(myid()), pids)
     mylp = localpart(d_in)
 
     # see if we have a value in the local store.
@@ -151,7 +151,7 @@ println("SPMD: Passed testing of spmd function run concurrently")
 end
 
 
-in_arrays = map(x->DArray(I->fill(myid(), (map(length,I)...)), (nworkers(), 2), workers(), [nworkers(),1]), 1:8)
+in_arrays = map(x->DArray(I->fill(myid(), (map(length,I)...,)), (nworkers(), 2), workers(), [nworkers(),1]), 1:8)
 out_arrays = map(x->ddata(), 1:8)
 contexts = map(x->context(workers()), 1:8)
 
@@ -170,7 +170,7 @@ end
 # verify localstores with appropriate context store values exist.
 @everywhere begin
     if myid() != 1
-        n = 0
+        local n = 0
         for (k,v) in DistributedArrays.SPMD.map_ctxts
             store = v.store
             localsum = store[:LOCALSUM]

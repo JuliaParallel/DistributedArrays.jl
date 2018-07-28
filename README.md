@@ -7,12 +7,10 @@
 Distributed Arrays for Julia
 
 ***NOTE***
-Distributed Arrays will only work on Julia v0.4.0 or later.
-
-`DArray`s have been removed from Julia Base library in v0.4 so it is now necessary to import the `DistributedArrays` package on all spawned processes.
+This package will only work on Julia v0.7 or later.
 
 ```julia
-@everywhere using DistributedArrays
+using DistributedArrays
 ```
 
 Distributed Arrays
@@ -76,12 +74,12 @@ Indexing via symbols is used for this, specifically symbols `:L`,`:LP`,`:l`,`:lp
 are all equivalent. For example, `d[:L]` returns the localpart of `d`
 while `d[:L]=v` sets `v` as the localpart of `d`.
 
-* `localindexes(a::DArray)` gives a tuple of the index ranges owned by the
+* `localindices(a::DArray)` gives a tuple of the index ranges owned by the
 local process.
 
 * `convert(Array, a::DArray)` brings all the data to the local process.
 
-Indexing a `DArray` (square brackets) with ranges of indexes always
+Indexing a `DArray` (square brackets) with ranges of indices always
 creates a `SubArray`, not copying any data.
 
 
@@ -154,7 +152,7 @@ following code accomplishes this::
             left  = mod(first(I[2])-2,size(d,2))+1
             right = mod( last(I[2])  ,size(d,2))+1
 
-            old = Array(Bool, length(I[1])+2, length(I[2])+2)
+            old = Array{Bool}(undef, length(I[1])+2, length(I[2])+2)
             old[1      , 1      ] = d[top , left]   # left side
             old[2:end-1, 1      ] = d[I[1], left]
             old[end    , 1      ] = d[bot , left]
@@ -205,7 +203,7 @@ seen in this simple example:
 ```julia
 julia> addprocs(8);
 
-julia> @everywhere using DistributedArrays
+julia> using DistributedArrays
 
 julia> A = fill(1.1, (100,100));
 
@@ -227,7 +225,7 @@ Garbage Collection and DArrays
 ------------------------------
 
 When a DArray is constructed (typically on the master process), the returned DArray objects stores information on how the
-array is distributed, which procesor holds which indexes and so on. When the DArray object
+array is distributed, which procesor holds which indices and so on. When the DArray object
 on the master process is garbage collected, all particpating workers are notified and
 localparts of the DArray freed on each worker.
 
@@ -317,18 +315,19 @@ Example
 This toy example exchanges data with each of its neighbors `n` times.
 
 ```
+using Distributed
 using DistributedArrays
 addprocs(8)
-@everywhere importall DistributedArrays
-@everywhere importall DistributedArrays.SPMD
+@everywhere using DistributedArrays
+@everywhere using DistributedArrays.SPMD
 
-d_in=d=DArray(I->fill(myid(), (map(length,I)...)), (nworkers(), 2), workers(), [nworkers(),1])
-d_out=ddata()
+d_in=d=DArray(I->fill(myid(), (map(length,I)...,)), (nworkers(), 2), workers(), [nworkers(),1])
+d_out=ddata();
 
 # define the function everywhere
 @everywhere function foo_spmd(d_in, d_out, n)
     pids = sort(vec(procs(d_in)))
-    pididx = findfirst(pids, myid())
+    pididx = findfirst(isequal(myid()), pids)
     mylp = d_in[:L]
     localsum = 0
 
@@ -352,7 +351,7 @@ d_out=ddata()
 end
 
 # run foo_spmd on all workers
-spmd(foo_spmd, d_in, d_out, 10)
+spmd(foo_spmd, d_in, d_out, 10, pids=workers())
 
 # print values of d_in and d_out after the run
 println(d_in)
