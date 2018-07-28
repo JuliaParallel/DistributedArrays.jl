@@ -2,7 +2,7 @@ function Serialization.serialize(S::AbstractSerializer, d::DArray{T,N,A}) where 
     # Only send the ident for participating workers - we expect the DArray to exist in the
     # remote registry. DO NOT send the localpart.
     destpid = worker_id_from_socket(S.io)
-    serialize_type(S, typeof(d))
+    Serialization.serialize_type(S, typeof(d))
     if (destpid in d.pids) || (destpid == d.id[1])
         serialize(S, (true, d.id))    # (id_only, id)
     else
@@ -64,7 +64,7 @@ function Serialization.serialize(S::AbstractSerializer, s::DestinationSerializer
     pid = worker_id_from_socket(S.io)
     pididx = findfirst(isequal(pid), s.pids)
     @assert pididx !== nothing
-    serialize_type(S, typeof(s))
+    Serialization.serialize_type(S, typeof(s))
     serialize(S, s.generate(pididx))
 end
 

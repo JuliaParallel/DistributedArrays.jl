@@ -55,7 +55,8 @@ end
 
 Get the vector of processes storing pieces of DArray `d`.
 """
-Distributed.procs(d::DArray) = d.pids
+Distributed.procs(d::DArray)    = d.pids
+Distributed.procs(d::SubDArray) = procs(parent(d))
 
 """
     localpart(A)

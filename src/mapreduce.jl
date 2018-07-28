@@ -5,10 +5,10 @@ import SparseArrays: nnz
 
 Base.map(f, d0::DArray, ds::AbstractArray...) = broadcast(f, d0, ds...)
 
-function Base.map!(f::F, dest::DArray, src::DArray) where {F}
+function Base.map!(f::F, dest::DArray, src::DArray{<:Any,<:Any,A}) where {F,A}
     asyncmap(procs(dest)) do p
         remotecall_fetch(p) do
-            map!(f, localpart(dest), src[localindices(dest)...])
+            map!(f, localpart(dest), A(view(src, localindices(dest)...)))
             return nothing
         end
     end
@@ -53,7 +53,7 @@ rewrite_local(x) = x
 
 function Base.reduce(f, d::DArray)
     results = asyncmap(procs(d)) do p
-        remotecall_fetch(p, f, d) do (f, d)
+        remotecall_fetch(p) do
             return reduce(f, localpart(d))
         end
     end
@@ -122,10 +122,37 @@ function Base.mapreducedim!(f, op, R::DArray, A::DArray)
     end
     region = tuple(collect(1:ndims(A))[[size(R)...] .!= [size(A)...]]...)
     if isempty(region)
-        return copy!(R, A)
+        return copyto!(R, A)
     end
     B = mapreducedim_within(f, op, A, region)
     return mapreducedim_between!(identity, op, R, B, region)
+end
+
+function Base._all(f, A::DArray, ::Colon)
+    B = asyncmap(procs(A)) do p
+        remotecall_fetch(p) do
+            all(f, localpart(A))
+        end
+    end
+    return all(B)
+end
+
+function Base._any(f, A::DArray, ::Colon)
+    B = asyncmap(procs(A)) do p
+        remotecall_fetch(p) do
+            any(f, localpart(A))
+        end
+    end
+    return any(B)
+end
+
+function Base.count(f, A::DArray)
+    B = asyncmap(procs(A)) do p
+        remotecall_fetch(p) do
+            count(f, localpart(A))
+        end
+    end
+    return sum(B)
 end
 
 function nnz(A::DArray)

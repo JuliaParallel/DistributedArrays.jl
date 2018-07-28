@@ -161,32 +161,40 @@ check_leaks()
 @testset "test DArray / Array conversion" begin
     D = drand((200,200), [MYID, OTHERIDS])
 
-    @testset "test convert(::Array, ::(Sub)DArray)" begin
-        S = convert(Matrix{Float64}, D[1:150, 1:150])
-        A = convert(Matrix{Float64}, D)
+    @testset "test construct Array from (Sub)DArray" begin
+        S = Matrix{Float64}(D[1:150, 1:150])
+        A = Matrix{Float64}(D)
 
         @test A[1:150,1:150] == S
-        D2 = convert(DArray{Float64,2,Matrix{Float64}}, A)
+        D2 = DArray{Float64,2,Matrix{Float64}}(A)
         @test D2 == D
+        DistributedArrays.allowscalar(true)
         @test fetch(@spawnat MYID localpart(D)[1,1]) == D[1,1]
         @test fetch(@spawnat OTHERIDS localpart(D)[1,1]) == D[1,101]
+        DistributedArrays.allowscalar(false)
         close(D2)
 
-        S2 = convert(Vector{Float64}, D[4, 23:176])
+        S2 = Vector{Float64}(D[4, 23:176])
         @test A[4, 23:176] == S2
 
-        S3 = convert(Vector{Float64}, D[23:176, 197])
+        S3 = Vector{Float64}(D[23:176, 197])
         @test A[23:176, 197] == S3
 
         S4 = zeros(4)
         setindex!(S4, D[3:4, 99:100], :)
+        # FixMe! Hitting the AbstractArray fallback here is extremely unfortunate but vec() becomes a ReshapedArray which makes it diffuclt to hit DArray methods. Unless this can be fixed in Base, we might have to add special methods for ReshapedArray{DArray}
+        DistributedArrays.allowscalar(true)
         @test S4 == vec(D[3:4, 99:100])
         @test S4 == vec(A[3:4, 99:100])
+        DistributedArrays.allowscalar(false)
 
         S5 = zeros(2,2)
         setindex!(S5, D[1,1:4], :, 1:2)
+        # FixMe! Hitting the AbstractArray fallback here is extremely unfortunate but vec() becomes a ReshapedArray which makes it diffuclt to hit DArray methods. Unless this can be fixed in Base, we might have to add special methods for ReshapedArray{DArray}
+        DistributedArrays.allowscalar(true)
         @test vec(S5) == D[1, 1:4]
         @test vec(S5) == A[1, 1:4]
+        DistributedArrays.allowscalar(false)
     end
     close(D)
 end
@@ -198,7 +206,7 @@ check_leaks()
     r1 = remotecall_wait(() -> randn(3,10), workers()[1])
     r2 = remotecall_wait(() -> randn(7,10), workers()[2])
     D2 = DArray(reshape([r1; r2], 2, 1))
-    copy!(D2, D1)
+    copyto!(D2, D1)
     @test D1 == D2
     close(D1)
     close(D2)
@@ -672,22 +680,22 @@ check_leaks()
 @testset "test transpose/adjoint" begin
     @testset "test transpose real" begin
         A = drand(Float64, 100, 200)
-        @test transpose(A) == transpose(Array(A))
+        @test copy(transpose(A)) == transpose(Array(A))
         close(A)
     end
     @testset "test transpose complex" begin
         A = drand(ComplexF64, 200, 100)
-        @test transpose(A) == transpose(Array(A))
+        @test copy(transpose(A)) == transpose(Array(A))
         close(A)
     end
     @testset "test adjoint real" begin
         A = drand(Float64, 200, 100)
-        @test adjoint(A) == adjoint(Array(A))
+        @test copy(adjoint(A)) == adjoint(Array(A))
         close(A)
     end
     @testset "test adjoint complex" begin
         A = drand(ComplexF64, 100, 200)
-        @test adjoint(A) == adjoint(Array(A))
+        @test copy(adjoint(A)) == adjoint(Array(A))
         close(A)
     end
 
@@ -701,11 +709,11 @@ check_leaks()
 
     s = view(a, 1:5, 5:8)
     @test isa(s, SubDArray)
-    @test s == convert(DArray, s)
+    @test s == DArray(s)
 
     s = view(a, 6:5, 5:8)
     @test isa(s, SubDArray)
-    @test s == convert(DArray, s)
+    @test s == DArray(s)
     close(a)
     d_closeall()  # close the temporaries created above
 end

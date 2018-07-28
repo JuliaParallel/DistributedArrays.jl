@@ -1,4 +1,5 @@
-function Base.copy(D::Adjoint{T,<:DArray{T,2}}) where T
+function Base.copy(Dadj::Adjoint{T,<:DArray{T,2}}) where T
+    D = parent(Dadj)
     DArray(reverse(size(D)), procs(D)) do I
         lp = Array{T}(undef, map(length, I))
         rp = convert(Array, D[reverse(I)...])
@@ -6,7 +7,8 @@ function Base.copy(D::Adjoint{T,<:DArray{T,2}}) where T
     end
 end
 
-function Base.copy(D::Transpose{T,<:DArray{T,2}}) where T
+function Base.copy(Dtr::Transpose{T,<:DArray{T,2}}) where T
+    D = parent(Dtr)
     DArray(reverse(size(D)), procs(D)) do I
         lp = Array{T}(undef, map(length, I))
         rp = convert(Array, D[reverse(I)...])
@@ -49,7 +51,7 @@ function dot(x::DVector, y::DVector)
     return reduce(+, results)
 end
 
-function norm(x::DVector, p::Real = 2)
+function norm(x::DArray, p::Real = 2)
     results = []
     @sync begin
         for pp in procs(x)
@@ -83,7 +85,7 @@ function add!(dest, src, scale = one(dest[1]))
     return dest
 end
 
-function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVector)
+function mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Number = 0)
 
     # error checks
     if size(A, 2) != length(x)
@@ -106,11 +108,14 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
 
     # Scale y if necessary
     if β != one(β)
-        @sync for p in y.pids
-            if β != zero(β)
-                @async remotecall_fetch(y -> (rmul!(localpart(y), β); nothing), p, y)
-            else
-                @async remotecall_fetch(y -> (fill!(localpart(y), 0); nothing), p, y)
+        asyncmap(procs(y)) do p
+            remotecall_fetch(p) do
+                if !iszero(β)
+                    rmul!(localpart(y), β)
+                else
+                    fill!(localpart(y), 0)
+                end
+                return nothing
             end
         end
     end
@@ -127,7 +132,9 @@ function A_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVec
     return y
 end
 
-function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVector)
+function mul!(y::DVector, adjA::Adjoint{<:Number,<:DMatrix}, x::AbstractVector, α::Number = 1, β::Number = 0)
+
+    A = parent(adjA)
 
     # error checks
     if size(A, 1) != length(x)
@@ -148,11 +155,14 @@ function Ac_mul_B!(α::Number, A::DMatrix, x::AbstractVector, β::Number, y::DVe
 
     # Scale y if necessary
     if β != one(β)
-        @sync for p in y.pids
-            if β != zero(β)
-                @async remotecall_fetch(() -> (rmul!(localpart(y), β); nothing), p)
-            else
-                @async remotecall_fetch(() -> (fill!(localpart(y), 0); nothing), p)
+        asyncmap(procs(y)) do p
+            remotecall_fetch(p) do
+                if !iszero(β)
+                    rmul!(localpart(y), β)
+                else
+                    fill!(localpart(y), 0)
+                end
+                return nothing
             end
         end
     end
@@ -189,7 +199,7 @@ function LinearAlgebra.rmul!(DA::DMatrix, D::Diagonal)
 end
 
 # Level 3
-function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix, tA)
+function _matmatmul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number, β::Number, tA)
     # error checks
     Ad1, Ad2 = (tA == 'N') ? (1,2) : (2,1)
     mA, nA = (size(A, Ad1), size(A, Ad2))
@@ -254,17 +264,16 @@ function _matmatmul!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::D
     return C
 end
 
-A_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix) = _matmatmul!(α, A, B, β, C, 'N')
-Ac_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix) = _matmatmul!(α, A, B, β, C, 'C')
-At_mul_B!(α::Number, A::DMatrix, B::AbstractMatrix, β::Number, C::DMatrix) = _matmatmul!(α, A, B, β, C, 'T')
-At_mul_B!(C::DMatrix, A::DMatrix, B::AbstractMatrix) = At_mul_B!(one(eltype(C)), A, B, zero(eltype(C)), C)
+mul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number = 1, β::Number = 0) = _matmatmul!(C, A, B, α, β, 'N')
+mul!(C::DMatrix, A::Adjoint{<:Number,<:DMatrix}, B::AbstractMatrix, α::Number = 1, β::Number = 0) = _matmatmul!(C, parent(A), B, α, β, 'C')
+mul!(C::DMatrix, A::Transpose{<:Number,<:DMatrix}, B::AbstractMatrix, α::Number = 1, β::Number = 0) = _matmatmul!(C, parent(A), B, α, β, 'T')
 
 _matmul_op = (t,s) -> t*s + t*s
 
 function Base.:*(A::DMatrix, x::AbstractVector)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
     y = DArray(I -> Array{T}(undef, map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
-    return A_mul_B!(one(T), A, x, zero(T), y)
+    return mul!(y, A, x)
 end
 function Base.:*(A::DMatrix, B::AbstractMatrix)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
@@ -272,22 +281,43 @@ function Base.:*(A::DMatrix, B::AbstractMatrix)
             (size(A, 1), size(B, 2)),
             procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))],
             (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
-    return A_mul_B!(one(T), A, B, zero(T), C)
+    return mul!(C, A, B)
 end
 
-function Ac_mul_B(A::DMatrix, x::AbstractVector)
+function Base.:*(adjA::Adjoint{<:Any,<:DMatrix}, x::AbstractVector)
+    A = parent(adjA)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
     y = DArray(I -> Array{T}(undef, map(length, I)),
             (size(A, 2),),
             procs(A)[1,:],
             (size(procs(A), 2),))
-    return Ac_mul_B!(one(T), A, x, zero(T), y)
+    return mul!(y, adjA, x)
 end
-function Ac_mul_B(A::DMatrix, B::AbstractMatrix)
+function Base.:*(adjA::Adjoint{<:Any,<:DMatrix}, B::AbstractMatrix)
+    A = parent(adjA)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
     C = DArray(I -> Array{T}(undef, map(length, I)), (size(A, 2),
         size(B, 2)),
         procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:],
         (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
-    return Ac_mul_B!(one(T), A, B, zero(T), C)
+    return mul!(C, adjA, B)
+end
+
+function Base.:*(trA::Transpose{<:Any,<:DMatrix}, x::AbstractVector)
+    A = parent(trA)
+    T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
+    y = DArray(I -> Array{T}(undef, map(length, I)),
+            (size(A, 2),),
+            procs(A)[1,:],
+            (size(procs(A), 2),))
+    return mul!(y, trA, x)
+end
+function Base.:*(trA::Transpose{<:Any,<:DMatrix}, B::AbstractMatrix)
+    A = parent(trA)
+    T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
+    C = DArray(I -> Array{T}(undef, map(length, I)), (size(A, 2),
+        size(B, 2)),
+        procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:],
+        (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
+    return mul!(C, trA, B)
 end

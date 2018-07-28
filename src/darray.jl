@@ -364,9 +364,41 @@ function localindices(d::DArray)
     return d.indices[lpidx]
 end
 
-# find which piece holds index (I...)
-locate(d::DArray, I::Int...) =
-    ntuple(i -> searchsortedlast(d.cuts[i], I[i]), ndims(d))
+# Equality
+function Base.:(==)(d::DArray{<:Any,<:Any,A}, a::AbstractArray) where A
+    if size(d) != size(a)
+        return false
+    else
+        b = asyncmap(procs(d)) do p
+            remotecall_fetch(p) do
+                localpart(d) == A(a[localindices(d)...])
+            end
+        end
+        return all(b)
+    end
+end
+Base.:(==)(d::SubDArray, a::AbstractArray) = copy(d) == a
+Base.:(==)(a::AbstractArray, d::DArray) = d == a
+Base.:(==)(a::AbstractArray, d::SubDArray) = d == a
+Base.:(==)(d1::DArray, d2::DArray) = invoke(==, Tuple{DArray, AbstractArray}, d1, d2)
+Base.:(==)(d1::SubDArray, d2::DArray) = copy(d1) == d2
+Base.:(==)(d1::DArray, d2::SubDArray) = d1 == copy(d2)
+Base.:(==)(d1::SubDArray, d2::SubDArray) = copy(d1) == copy(d2)
+
+"""
+    locate(d::DArray, I::Int...)
+
+Determine the index of `procs(d)` that hold element `I`.
+"""
+function locate(d::DArray, I::Int...)
+    ntuple(ndims(d)) do i
+        fi = searchsortedlast(d.cuts[i], I[i])
+        if fi >= length(d.cuts[i])
+            throw(ArgumentError("element not contained in array"))
+        end
+        return fi
+    end
+end
 
 chunk(d::DArray{T,N,A}, i...) where {T,N,A} = remotecall_fetch(localpart, d.pids[i...], d)::A
 
@@ -479,7 +511,7 @@ end
 function (::Type{Array{S,N}})(s::SubDArray{T,N}) where {S,T,N}
     I = s.indices
     d = s.parent
-    if isa(I,Tuple{Vararg{UnitRange{Int}}}) && S<:T && T<:S
+    if isa(I,Tuple{Vararg{UnitRange{Int}}}) && S<:T && T<:S && !isempty(s)
         l = locate(d, map(first, I)...)
         if isequal(d.indices[l...], I)
             # SubDArray corresponds to a chunk
@@ -487,7 +519,7 @@ function (::Type{Array{S,N}})(s::SubDArray{T,N}) where {S,T,N}
         end
     end
     a = Array{S}(undef, size(s))
-    a[[1:size(a,i) for i=1:N]...] .= s
+    a[[1:size(a,i) for i=1:N]...] = s
     return a
 end
 
@@ -540,7 +572,7 @@ end
 
 function Base.getindex(d::DArray, i::Int)
     _scalarindexingallowed()
-    return getindex_tuple(d, CartesianIndices(d)[i])
+    return getindex_tuple(d, Tuple(CartesianIndices(d)[i]))
 end
 function Base.getindex(d::DArray, i::Int...)
     _scalarindexingallowed()
@@ -548,7 +580,7 @@ function Base.getindex(d::DArray, i::Int...)
 end
 
 Base.getindex(d::DArray) = d[1]
-Base.getindex(d::DArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
+Base.getindex(d::SubOrDArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
 
 function Base.isassigned(D::DArray, i::Integer...)
     try
@@ -564,15 +596,15 @@ function Base.isassigned(D::DArray, i::Integer...)
 end
 
 
-Base.copyto!(dest::SubOrDArray, src::SubOrDArray) = begin
+function Base.copyto!(dest::SubOrDArray, src::AbstractArray)
     asyncmap(procs(dest)) do p
         remotecall_fetch(p) do
-            localpart(dest)[:] = src[localindices(dest)...]
+            ldest = localpart(dest)
+            ldest[:] = Array(view(src, localindices(dest)...))
         end
     end
     return dest
 end
-Base.copy!(dest::SubOrDArray, src::SubOrDArray) = copyto!(dest, src)
 
 function Base.deepcopy(src::DArray)
     dest = similar(src)
