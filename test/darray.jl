@@ -315,7 +315,7 @@ check_leaks()
 @testset "test statistical functions on DArrays" begin
     dims = (20,20,20)
     DA = drandn(dims)
-    A = convert(Array, DA)
+    A = Array(DA)
 
     @testset "test $f for dimension $dms" for f in (mean, ), dms in (1, 2, 3, (1,2), (1,3), (2,3), (1,2,3))
         # std is pending implementation
