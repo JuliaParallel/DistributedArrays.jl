@@ -78,7 +78,7 @@ Base.hash(d::DArray, h::UInt) = Base.hash(d.id, h)
 ## core constructors ##
 
 function DArray(id, init, dims, pids, idxs, cuts)
-    r=Vector{Any}(undef,length(pids))
+    r=Vector{DataType}(undef,length(pids))
     @sync begin
         for i = 1:length(pids)
             @async begin
