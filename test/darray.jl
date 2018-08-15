@@ -66,7 +66,16 @@ using Random
         @test DistributedArrays.defaultdist(50,4) == [1,14,27,39,51]
     end
     
-    
+    @testset "Inhomogenous typeof(localpart)" begin
+        block = 10
+        Y = nworkers() * block
+        X = nworkers() * block
+
+        @test_throws ErrorException DArray((X, Y)) do I
+            eltype = first(I[1]) == 1 ? Int64 : Float64
+            zeros(eltype, map(length, I))
+        end
+    end
 end
 
 check_leaks()
