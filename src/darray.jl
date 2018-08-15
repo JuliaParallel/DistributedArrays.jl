@@ -568,9 +568,9 @@ function Base.reshape(A::DArray{T,1,S}, d::Dims) where {T,S<:Array}
             i2 = CartesianIndices(sztail)[i]
             globalidx = [ I[j][i2[j-1]] for j=2:nd ]
 
-            a = sub2ind(d, d1offs, globalidx...)
+            a = LinearIndices(d)[d1offs, globalidx...]
 
-            B[:,i] = A[a:(a+nr-1)]
+            B[:,i] = Array(A[a:(a+nr-1)])
         end
         B
     end
@@ -706,7 +706,7 @@ end
 Base.size(P::ProductIndices) = P.sz
 # This gets passed to map to avoid breaking propagation of inbounds
 Base.@propagate_inbounds propagate_getindex(A, I...) = A[I...]
-Base.@propagate_inbounds Base.getindex(P::ProductIndices{_,N}, I::Vararg{Int, N}) where {_,N} =
+Base.@propagate_inbounds Base.getindex(P::ProductIndices{J,N}, I::Vararg{Int, N}) where {J,N} =
     Bool((&)(map(propagate_getindex, P.indices, I)...))
 
 struct MergedIndices{I,N} <: AbstractArray{CartesianIndex{N}, N}
@@ -714,7 +714,7 @@ struct MergedIndices{I,N} <: AbstractArray{CartesianIndex{N}, N}
     sz::NTuple{N,Int}
 end
 Base.size(M::MergedIndices) = M.sz
-Base.@propagate_inbounds Base.getindex(M::MergedIndices{_,N}, I::Vararg{Int, N}) where {_,N} =
+Base.@propagate_inbounds Base.getindex(M::MergedIndices{J,N}, I::Vararg{Int, N}) where {J,N} =
     CartesianIndex(map(propagate_getindex, M.indices, I))
 # Additionally, we optimize bounds checking when using MergedIndices as an
 # array index since checking, e.g., A[1:500, 1:500] is *way* faster than

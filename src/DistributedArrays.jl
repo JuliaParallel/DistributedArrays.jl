@@ -5,6 +5,7 @@ module DistributedArrays
 using Distributed
 using Serialization
 using LinearAlgebra
+using Statistics
 
 import Base: +, -, *, div, mod, rem, &, |, xor
 import Base.Callable
