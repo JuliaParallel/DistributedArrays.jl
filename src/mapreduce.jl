@@ -20,36 +20,24 @@ end
 Base.BroadcastStyle(::Type{<:DArray}) = Broadcast.ArrayStyle{DArray}()
 Base.BroadcastStyle(::Type{<:DArray}, ::Any) = Broadcast.ArrayStyle{DArray}()
 
-function Base.similar(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}}, ::Type{ElType}) where {ElType}
-   DA = find_darray(bc)
-   DArray(I -> Array{ElType}(undef, map(length,I)), DA)
-end
-
-"`DA = find_darray(As)` returns the first DArray among the arguments."
-find_darray(bc::Base.Broadcast.Broadcasted) = find_darray(bc.args)
-find_darray(args::Tuple) = find_darray(find_darray(args[1]), Base.tail(args))
-find_darray(x) = x
-find_darray(a::DArray, rest) = a
-find_darray(::Any, rest) = find_darray(rest)
-
-function Base.copyto!(dest::DArray, bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}})
-    @sync for p in procs(dest)
-       @async remotecall_fetch(p) do
-          copyto!(localpart(dest), rewrite_local(bc))
-       end
+function Base.copy(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}})
+    T     = Base.Broadcast.combine_eltypes(bc.f, bc.args)
+    shape = Base.Broadcast.combine_axes(bc.args...)
+    iter  = Base.CartesianIndices(shape)
+    D     = DArray(map(length, shape)) do I
+        A = map(bc.args) do a
+            if isa(a, Union{Number,Ref})
+                return a
+            else
+                return localtype(a)(
+                    a[ntuple(i -> i > ndims(a) ? 1 : (size(a, i) == 1 ? (1:1) : I[i]), length(shape))...]
+                    )
+            end
+        end
+        broadcast(bc.f, A...)
     end
-    dest
+    return D
 end
-
-"""
-Transform a Broadcasted{Broadcast.ArrayStyle{DArray}} object into an equivalent
-Broadcasted{Broadcast.DefaultArrayStyle} object for the localparts.
-"""
-rewrite_local(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}}) = Broadcast.broadcasted(bc.f, rewrite_local(bc.args)...)
-rewrite_local(args::Tuple) = map(rewrite_local, args)
-rewrite_local(a::DArray) = localpart(a)
-rewrite_local(x) = x
-
 
 function Base.reduce(f, d::DArray)
     results = asyncmap(procs(d)) do p

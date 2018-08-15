@@ -20,7 +20,7 @@ end
 @everywhere using Random
 @everywhere using LinearAlgebra
 
-@everywhere srand(1234 + myid())
+@everywhere Random.seed!(1234 + myid())
 
 const MYID = myid()
 const OTHERIDS = filter(id-> id != MYID, procs())[rand(1:(nprocs()-1))]

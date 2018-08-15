@@ -835,6 +835,10 @@ check_leaks()
     c = a .- m
     d = convert(Array, a) .- convert(Array, m)
     @test c == d
+    e = @DArray [ones(10) for i=1:4]
+    f = 2 .* e
+    @test Array(f) == 2 .* Array(e)
+    @test Array(map(x -> sum(x) .+ 2, e)) == map(x -> sum(x) .+ 2, e)
     d_closeall()
 end
 
