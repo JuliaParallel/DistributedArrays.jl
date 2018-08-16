@@ -93,7 +93,9 @@ function DArray(id, init, dims, pids, idxs, cuts)
             end
         end
     end
-
+    r=unique(r)
+    length(r) >1 && @warn "DArray and localparts have different `eltype`"
+    
     A = promote_type(r...)
     if myid() in pids
         d = registry[id]
