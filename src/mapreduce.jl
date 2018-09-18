@@ -15,30 +15,6 @@ function Base.map!(f::F, dest::DArray, src::DArray{<:Any,<:Any,A}) where {F,A}
     return dest
 end
 
-# new broadcasting implementation for julia-0.7
-
-Base.BroadcastStyle(::Type{<:DArray}) = Broadcast.ArrayStyle{DArray}()
-Base.BroadcastStyle(::Type{<:DArray}, ::Any) = Broadcast.ArrayStyle{DArray}()
-
-function Base.copy(bc::Broadcast.Broadcasted{Broadcast.ArrayStyle{DArray}})
-    T     = Base.Broadcast.combine_eltypes(bc.f, bc.args)
-    shape = Base.Broadcast.combine_axes(bc.args...)
-    iter  = Base.CartesianIndices(shape)
-    D     = DArray(map(length, shape)) do I
-        A = map(bc.args) do a
-            if isa(a, Union{Number,Ref})
-                return a
-            else
-                return localtype(a)(
-                    a[ntuple(i -> i > ndims(a) ? 1 : (size(a, i) == 1 ? (1:1) : I[i]), length(shape))...]
-                    )
-            end
-        end
-        broadcast(bc.f, A...)
-    end
-    return D
-end
-
 function Base.reduce(f, d::DArray)
     results = asyncmap(procs(d)) do p
         remotecall_fetch(p) do

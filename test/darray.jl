@@ -846,6 +846,16 @@ check_leaks()
     f = 2 .* e
     @test Array(f) == 2 .* Array(e)
     @test Array(map(x -> sum(x) .+ 2, e)) == map(x -> sum(x) .+ 2, e)
+
+    @testset "test nested broadcast" begin
+       g = a .- m .* sin.(c)
+       @test Array(g) == Array(a) .- Array(m) .* sin.(Array(c))
+    end
+
+    # @testset "lazy wrapped broadcast" begin
+    #    l = similar(a)
+    #    l[1:10, :] .= view(a, 1:10, : )
+    # end
     d_closeall()
 end
 

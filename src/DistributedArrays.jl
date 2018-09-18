@@ -27,6 +27,7 @@ export close, d_closeall
 include("darray.jl")
 include("core.jl")
 include("serialize.jl")
+include("broadcast.jl")
 include("mapreduce.jl")
 include("linalg.jl")
 include("sort.jl")
