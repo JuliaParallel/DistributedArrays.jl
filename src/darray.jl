@@ -285,7 +285,7 @@ end
 # get array of start indices for dividing sz into nc chunks
 function defaultdist(sz::Int, nc::Int)
     if sz >= nc
-        return round.(Int, range(1, stop=sz+1, length=nc+1))
+        return ceil.(Int, range(1, stop=sz+1, length=nc+1))
     else
         return [[1:(sz+1);]; zeros(Int, nc-sz)]
     end

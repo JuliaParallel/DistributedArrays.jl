@@ -56,6 +56,13 @@ using SparseArrays: nnz
         @test DistributedArrays.empty_localpart(Float64,2,LowerTriangular{Float64,Matrix{Float64}}) isa
                 LowerTriangular
     end
+    
+    @testset "Consistent Uneven Distribution issue #166" begin
+        DA = drand((2+length(OTHERIDS),), [MYID, OTHERIDS])
+        @test fetch(@spawnat MYID length(localpart(DA)) == 2)
+        @test fetch(@spawnat OTHERIDS length(localpart(DA)) == 1)
+        close(DA)
+    end
 end
 
 check_leaks()
