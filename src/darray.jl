@@ -285,7 +285,17 @@ end
 # get array of start indices for dividing sz into nc chunks
 function defaultdist(sz::Int, nc::Int)
     if sz >= nc
-        return ceil.(Int, range(1, stop=sz+1, length=nc+1))
+        chunk_size = div(sz,nc)
+        remainder = rem(sz,nc)
+        grid = Array(1:chunk_size:sz+1)
+        for i = 1:(nc+1)
+            if i<= remainder
+                grid[i] += i-1
+            else
+                grid[i] += remainder
+            end
+        end
+        return grid
     else
         return [[1:(sz+1);]; zeros(Int, nc-sz)]
     end
