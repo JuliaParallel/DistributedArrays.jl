@@ -58,9 +58,9 @@ using SparseArrays: nnz
     end
     
     @testset "Consistent Uneven Distribution issue #166" begin
-        DA = drand((7,), [1,2,3])
-        @test fetch(@spawnat 1 length(localpart(DA)) == 3)
-        @test fetch(@spawnat [2,3] length(localpart(DA)) == 2)
+        DA = drand((2+length(OTHERIDS),), [MYID, OTHERIDS])
+        @test fetch(@spawnat MYID length(localpart(DA)) == 2)
+        @test fetch(@spawnat OTHERIDS length(localpart(DA)) == 1)
         close(DA)
     end
 end
