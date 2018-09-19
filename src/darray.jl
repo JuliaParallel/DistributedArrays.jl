@@ -78,7 +78,7 @@ Base.hash(d::DArray, h::UInt) = Base.hash(d.id, h)
 ## core constructors ##
 
 function DArray(id, init, dims, pids, idxs, cuts)
-    r=Channel(1)
+    r=Vector{DataType}(undef,length(pids))
     @sync begin
         for i = 1:length(pids)
             @async begin
@@ -89,12 +89,14 @@ function DArray(id, init, dims, pids, idxs, cuts)
                     # constructing from an array of remote refs.
                     typA=remotecall_fetch(construct_localparts, pids[i], init[i], id, dims, pids, idxs, cuts)
                 end
-                !isready(r) && put!(r, typA)
+                r[i]=typA
             end
         end
     end
-
-    A = take!(r)
+    r=unique(r)
+    length(r) >1 && @warn "DArray and localparts have different `eltype`"
+    
+    A = promote_type(r...)
     if myid() in pids
         d = registry[id]
         d = isa(d, WeakRef) ? d.value : d
