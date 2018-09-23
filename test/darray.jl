@@ -1,6 +1,7 @@
 using Test, LinearAlgebra, SpecialFunctions
 using Statistics: mean
 using SparseArrays: nnz
+using Random
 @everywhere using SparseArrays: sprandn
 
 @testset "test distribute and other constructors" begin
@@ -984,6 +985,13 @@ check_leaks()
     end
     Any["Hello World!" for p in workers()] == gather(d)
 
+
+    close(d)
+end
+
+@testset "rand!" begin
+    d = dzeros(30, 30)
+    rand!(d)
 
     close(d)
 end
