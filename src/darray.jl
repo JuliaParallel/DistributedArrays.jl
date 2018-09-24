@@ -784,3 +784,12 @@ function Base.fill!(A::DArray, x)
     end
     return A
 end
+
+using Random
+
+function Random.rand!(rng::AbstractRNG, A::DArray, ::Type{T}) where T
+    asyncmap(procs(A)) do p
+        remotecall_wait((rng, A, T)->rand!(rng, localpart(A), T), p, rng, A, T)
+    end
+end
+
