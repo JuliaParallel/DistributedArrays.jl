@@ -38,15 +38,10 @@ function dot(x::DVector, y::DVector)
     if length(x) != length(y)
         throw(DimensionMismatch(""))
     end
-    if (procs(x) != procs(y)) || (x.cuts != y.cuts)
-        throw(ArgumentError("vectors don't have the same distribution. Not handled for efficiency reasons."))
-    end
 
     results=Any[]
-    @sync begin
-        for i = eachindex(x.pids)
-            @async push!(results, remotecall_fetch((x, y, i) -> dot(localpart(x), fetch(y, i)), x.pids[i], x, y, i))
-        end
+    asyncmap(procs(x)) do p
+            push!(results, remotecall_fetch((x, y) -> dot(localpart(x), makelocal(y, localindices(x)...)), x, y))
     end
     return reduce(+, results)
 end
