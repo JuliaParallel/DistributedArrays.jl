@@ -787,9 +787,9 @@ end
 
 using Random
 
-function Random.rand!(rng::AbstractRNG, A::DArray, ::Type{T}) where T
+function Random.rand!(A::DArray, ::Type{T}) where T
     asyncmap(procs(A)) do p
-        remotecall_wait((rng, A, T)->rand!(rng, localpart(A), T), p, rng, A, T)
+        remotecall_wait((A, T)->rand!(localpart(A), T), p, A, T)
     end
 end
 
