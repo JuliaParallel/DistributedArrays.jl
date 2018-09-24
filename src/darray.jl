@@ -334,6 +334,36 @@ end
 
 localpart(d::DArray, localidx...) = localpart(d)[localidx...]
 
+_localindex(i::Integer, offset) = i - offset
+_localindex(i::AbstractRange, offset) = (first(i)-offset):step(i):(last(i)-offset)
+_localindex(i::AbstractUnitRange, offset) = (first(i)-offset):(last(i)-offset)
+
+"""
+    makelocal(A::DArray, I...)
+
+Equivalent to `Array(view(A, I...))` but optimised for the case that the data is local.
+Can return a view into `localpart(A)`
+"""
+function makelocal(A::DArray{<:Any, <:Any, AT}, I::Vararg{Any, N}) where {N, AT}
+    Base.@_inline_meta
+    J = map(i->Base.unalias(A, i), to_indices(A, I))
+    J = map(j-> isa(j, Base.Slice) ? j.indices : j, J)
+    @boundscheck checkbounds(A, J...)
+
+    lidcs = localindices(A)
+    if Base.checkbounds_indices(Bool, lidcs, J)
+        # data we want is local
+        viewidcs = ntuple(i -> _localindex(J[i], first(lidcs[i]) - 1), ndims(A))
+        view(localpart(A), viewidcs...)
+    else
+        # Make more efficient (?maybe) by allocating new memory
+        # only for the remote part
+        viewidcs = ntuple(i -> _localindex(J[i], 0), ndims(A))
+        arr = similar(AT, map(length, viewidcs)...)
+        copyto!(arr, view(A, viewidcs...))
+    end
+end
+
 # shortcut to set/get localparts of a distributed object
 function Base.getindex(d::DArray, s::Symbol)
     @assert s in [:L, :l, :LP, :lp]
@@ -539,6 +569,11 @@ function Array{S,N}(s::SubDArray{T,N}) where {S,T,N}
         end
     end
     a = Array{S}(undef, size(s))
+    copyto!(a, s)
+end
+
+function Base.copyto!(a::Array, s::SubDArray)
+    N = ndims(a)
     a[[1:size(a,i) for i=1:N]...] = s
     return a
 end
@@ -615,12 +650,11 @@ function Base.isassigned(D::DArray, i::Integer...)
     end
 end
 
-
 function Base.copyto!(dest::SubOrDArray, src::AbstractArray)
     asyncmap(procs(dest)) do p
         remotecall_fetch(p) do
             ldest = localpart(dest)
-            ldest[:] = Array(view(src, localindices(dest)...))
+            copyto!(ldest, view(src, localindices(dest)...))
         end
     end
     return dest

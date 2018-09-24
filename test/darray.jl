@@ -712,6 +712,25 @@ end
 
 check_leaks()
 
+@testset "makelocal" begin
+    A = randn(5*nprocs(), 5*nprocs())
+    dA = distribute(A, procs=procs())
+    for i in 1:size(dA, 2)
+        a = DistributedArrays.makelocal(dA, :, i)
+        @test all(Array(view(dA, :, i)) .== a)
+        @test all(      view( A, :, i) .== a)
+    end
+    for i in 1:size(dA, 1)
+        a = DistributedArrays.makelocal(dA, i, :)
+        @test all(Array(view(dA, i:i, :)) .== a)
+        @test all(      view( A, i:i, :) .== a)
+    end
+    a = DistributedArrays.makelocal(dA, 1:5, 1:5)
+    @test all(Array(view(dA, 1:5, 1:5)) .== a)
+    @test all(      view( A, 1:5, 1:5) .== a)
+    close(dA)
+end
+
 @testset "test convert from subdarray" begin
     a = drand(20, 20);
 

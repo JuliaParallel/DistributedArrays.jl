@@ -8,7 +8,7 @@ Base.map(f, d0::DArray, ds::AbstractArray...) = broadcast(f, d0, ds...)
 function Base.map!(f::F, dest::DArray, src::DArray{<:Any,<:Any,A}) where {F,A}
     asyncmap(procs(dest)) do p
         remotecall_fetch(p) do
-            map!(f, localpart(dest), A(view(src, localindices(dest)...)))
+            map!(f, localpart(dest), makelocal(src, localindices(dest)...))
             return nothing
         end
     end
