@@ -16,8 +16,18 @@ DArrayStyle(::Val{N}) where N = DArrayStyle{Broadcast.DefaultArrayStyle{N}}()
 BroadcastStyle(::Type{<:DArray{<:Any, N, A}}) where {N, A} = DArrayStyle(BroadcastStyle(A), Val(N))
 
 # promotion rules
+# TODO: test this
 function BroadcastStyle(::DArrayStyle{AStyle}, ::DArrayStyle{BStyle}) where {AStyle, BStyle}
-    DArrayStyle{BroadcastStyle(AStyle, BStyle)}()
+    DArrayStyle(BroadcastStyle(AStyle, BStyle))
+end
+
+function Broadcast.broadcasted(::DArrayStyle{Style}, f, args...) where Style
+    inner = Broadcast.broadcasted(Style(), f, args...)
+    if inner isa Broadcasted
+        return Broadcasted{DArrayStyle{Style}}(inner.f, inner.args, inner.axes)
+    else # eagerly evaluated
+        return inner
+    end
 end
 
 # # deal with one layer deep lazy arrays
@@ -74,6 +84,10 @@ end
     end
     return dest
 end
+
+# Test
+# a = Array
+# a .= DArray(x,y)
 
 @inline function Base.copy(bc::Broadcasted{<:DArrayStyle})
     dbc = bcdistribute(bc)
