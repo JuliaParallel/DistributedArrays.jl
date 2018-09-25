@@ -240,16 +240,23 @@ end
 # new DArray similar to an existing one
 DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indices, d.cuts)
 
+Base.size(d::DArray) = d.dims
+chunktype(d::DArray{<:Any,<:Any,A}) where A = A
+arraykind(::Type{<:Array}) = Array
+# This fallback is cheating, we would ideally want this functionality in Base
+arraykind(::Type{T}) where T<:AbstractArray = Base.typename(T).wrapper
+
 sz_localpart_ref(ref, id) = size(fetch(ref))
 
-Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array{T}(undef, map(length,I)), dims, procs(d))
+Base.similar(d::DArray, T::Type, dims::Dims) = DArray(dims, procs(d)) do I
+    # we might not have a localarray around to do `similar(lA, T, dims)`
+    # so we have to fallback to the constructor.
+    ArrKind = arraykind(chunktype(d))
+    similar(ArrKind{T}, map(length, I))
+end
 Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
 Base.similar(d::DArray{T}, dims::Dims) where {T} = similar(d, T, dims)
 Base.similar(d::DArray{T}) where {T} = similar(d, T, size(d))
-
-Base.size(d::DArray) = d.dims
-
-chunktype(d::DArray{T,N,A}) where {T,N,A} = A
 
 ## chunk index utilities ##
 
@@ -344,7 +351,7 @@ _localindex(i::AbstractUnitRange, offset) = (first(i)-offset):(last(i)-offset)
 Equivalent to `Array(view(A, I...))` but optimised for the case that the data is local.
 Can return a view into `localpart(A)`
 """
-function makelocal(A::DArray{<:Any, <:Any, AT}, I::Vararg{Any, N}) where {N, AT}
+function makelocal(A::DArray, I::Vararg{Any, N}) where N
     Base.@_inline_meta
     J = map(i->Base.unalias(A, i), to_indices(A, I))
     J = map(j-> isa(j, Base.Slice) ? j.indices : j, J)
@@ -359,7 +366,7 @@ function makelocal(A::DArray{<:Any, <:Any, AT}, I::Vararg{Any, N}) where {N, AT}
         # Make more efficient (?maybe) by allocating new memory
         # only for the remote part
         viewidcs = ntuple(i -> _localindex(J[i], 0), ndims(A))
-        arr = similar(AT, map(length, viewidcs)...)
+        arr = similar(chunktype(A), map(length, viewidcs))
         copyto!(arr, view(A, viewidcs...))
     end
 end
