@@ -126,20 +126,14 @@ bcdistribute_args(args::Tuple{}) = ()
 # dropping axes here since recomputing is easier
 @inline bclocal(bc::Broadcasted{DArrayStyle{Style}}, idxs) where Style = Broadcasted{Style}(bc.f, bclocal_args(_bcview(axes(bc), idxs), bc.args))
 
-# bclocal will do a view of the data and the copy it over, except
-# when the shard match precisly (TODO: make sure that the invariant holds more often)
+# bclocal will do a view of the data and the copy it over
+# except when the data already is local
 function bclocal(x::DArray{T, N, AT}, idxs) where {T, N, AT}
     bcidxs = _bcview(axes(x), idxs)
-    lpidx = localpartindex(x)
-    if lpidx != 0 && all(x.indices[lpidx] .== bcidxs)
-        return localpart(x)
-    end
-    return convert(__type(AT), view(x, bcidxs...))
+    makelocal(x, bcidxs...)
 end
 bclocal(x, idxs) = x
 
 @inline bclocal_args(idxs, args::Tuple) = (bclocal(args[1], idxs), bclocal_args(idxs, tail(args))...)
 bclocal_args(idxs, args::Tuple{Any}) = (bclocal(args[1], idxs),)
 bclocal_args(idxs, args::Tuple{}) = ()
-
-__type(T) = Base.typename(T).wrapper
