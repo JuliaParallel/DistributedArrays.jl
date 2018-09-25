@@ -898,6 +898,19 @@ end
 
 check_leaks()
 
+@testset "dot product" begin
+    A = drandn(20,20)
+    b = drandn(20)
+    c = A * b
+
+    @test dot(c, b) ≈ dot(convert(Array, c), convert(Array, b))
+    close(A)
+    close(b)
+    close(c)
+end
+
+check_leaks()
+
 @testset "test norm" begin
     x = drandn(20)
 
