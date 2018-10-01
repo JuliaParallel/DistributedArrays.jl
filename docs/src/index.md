@@ -24,11 +24,11 @@ Common kinds of arrays can be constructed with functions beginning with
 `d`:
 
 ```julia
-    dzeros(100,100,10)
-    dones(100,100,10)
-    drand(100,100,10)
-    drandn(100,100,10)
-    dfill(x,100,100,10)
+dzeros(100,100,10)
+dones(100,100,10)
+drand(100,100,10)
+drandn(100,100,10)
+dfill(x,100,100,10)
 ```
 
 In the last case, each element will be initialized to the specified
@@ -37,7 +37,7 @@ For more control, you can specify which processes to use, and how the
 data should be distributed:
 
 ```julia
-    dzeros((100,100), workers()[1:4], [1,4])
+dzeros((100,100), workers()[1:4], [1,4])
 ```
 
 The second argument specifies that the array should be created on the first
@@ -79,7 +79,7 @@ Constructing Distributed Arrays
 The primitive `DArray` constructor has the following somewhat elaborate signature:
 
 ```julia
-    DArray(init, dims[, procs, dist])
+DArray(init, dims[, procs, dist])
 ```
 
 `init` is a function that accepts a tuple of index ranges. This function should
@@ -96,7 +96,7 @@ As an example, here is how to turn the local array constructor `fill`
 into a distributed array constructor:
 
 ```julia
-    dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
+dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 ```
 
 In this case the `init` function only needs to call `fill` with the
@@ -123,6 +123,28 @@ julia> @DArray [i+j for i = 1:5, j = 1:5]
  6  7  8  9  10
 ```
 
+### Construction from arrays generated on separate processes
+`DArray`s can also be constructed from arrays that have been constructed on separate processes, as demonstrated below:
+```julia
+ras = [@spawnat p rand(30,30) for p in workers()[1:4]]
+ras = reshape(ras,(2,2))
+D   = DArray(ras)
+```
+An alternative syntax is:
+```julia
+r1 = DistributedArrays.remotecall(() -> rand(10,10), workers()[1]) 
+r2 = DistributedArrays.remotecall(() -> rand(10,10), workers()[2]) 
+r3 = DistributedArrays.remotecall(() -> rand(10,10), workers()[3]) 
+r4 = DistributedArrays.remotecall(() -> rand(10,10), workers()[4]) 
+D  = DArray(reshape([r1 r2 r3 r4], (2,2))) 
+```
+The distribution of indices across workers can be checked with
+```julia
+[@fetchfrom p localindices(D) for p in workers()]
+```
+
+
+
 Distributed Array Operations
 ----------------------------
 
@@ -135,27 +157,27 @@ each process needs the immediate neighbor cells of its local chunk. The
 following code accomplishes this::
 
 ```julia
-    function life_step(d::DArray)
-        DArray(size(d),procs(d)) do I
-            top   = mod(first(I[1])-2,size(d,1))+1
-            bot   = mod( last(I[1])  ,size(d,1))+1
-            left  = mod(first(I[2])-2,size(d,2))+1
-            right = mod( last(I[2])  ,size(d,2))+1
+function life_step(d::DArray)
+    DArray(size(d),procs(d)) do I
+        top   = mod(first(I[1])-2,size(d,1))+1
+        bot   = mod( last(I[1])  ,size(d,1))+1
+        left  = mod(first(I[2])-2,size(d,2))+1
+        right = mod( last(I[2])  ,size(d,2))+1
 
-            old = Array{Bool}(undef, length(I[1])+2, length(I[2])+2)
-            old[1      , 1      ] = d[top , left]   # left side
-            old[2:end-1, 1      ] = d[I[1], left]
-            old[end    , 1      ] = d[bot , left]
-            old[1      , 2:end-1] = d[top , I[2]]
-            old[2:end-1, 2:end-1] = d[I[1], I[2]]   # middle
-            old[end    , 2:end-1] = d[bot , I[2]]
-            old[1      , end    ] = d[top , right]  # right side
-            old[2:end-1, end    ] = d[I[1], right]
-            old[end    , end    ] = d[bot , right]
+        old = Array{Bool}(undef, length(I[1])+2, length(I[2])+2)
+        old[1      , 1      ] = d[top , left]   # left side
+        old[2:end-1, 1      ] = d[I[1], left]
+        old[end    , 1      ] = d[bot , left]
+        old[1      , 2:end-1] = d[top , I[2]]
+        old[2:end-1, 2:end-1] = d[I[1], I[2]]   # middle
+        old[end    , 2:end-1] = d[bot , I[2]]
+        old[1      , end    ] = d[top , right]  # right side
+        old[2:end-1, end    ] = d[I[1], right]
+        old[end    , end    ] = d[bot , right]
 
-            life_rule(old)
-        end
+        life_rule(old)
     end
+end
 ```
 
 As you can see, we use a series of indexing expressions to fetch
@@ -166,20 +188,22 @@ to the data, yielding the needed `DArray` chunk. Nothing about `life_rule`
 is `DArray`\ -specific, but we list it here for completeness::
 
 ```julia
-    function life_rule(old)
-        m, n = size(old)
-        new = similar(old, m-2, n-2)
-        for j = 2:n-1
-            for i = 2:m-1
-                nc = +(old[i-1,j-1], old[i-1,j], old[i-1,j+1],
-                       old[i  ,j-1],             old[i  ,j+1],
-                       old[i+1,j-1], old[i+1,j], old[i+1,j+1])
-                new[i-1,j-1] = (nc == 3 || nc == 2 && old[i,j])
-            end
+function life_rule(old)
+    m, n = size(old)
+    new = similar(old, m-2, n-2)
+    for j = 2:n-1
+        for i = 2:m-1
+            nc = +(old[i-1,j-1], old[i-1,j], old[i-1,j+1],
+                   old[i  ,j-1],             old[i  ,j+1],
+                   old[i+1,j-1], old[i+1,j], old[i+1,j+1])
+            new[i-1,j-1] = (nc == 3 || nc == 2 && old[i,j])
         end
-        new
     end
+    new
+end
 ```
+
+
 
 Numerical Results of Distributed Computations
 ---------------------------------------------
@@ -211,6 +235,8 @@ false
 
 The ultimate ordering of operations will be dependent on how the Array is distributed.
 
+
+
 Garbage Collection and DArrays
 ------------------------------
 
@@ -232,6 +258,8 @@ a reference to a DArray object on the creating process for as long as it is bein
 `d_closeall()` is another useful function to manage distributed memory. It releases all darrays created from
 the calling process, including any temporaries created during computation.
 
+
+
 Working with distributed non-array data (requires Julia 0.6)
 ------------------------------------------------------------
 
@@ -252,13 +280,15 @@ returns a `DArray{T,1,Array{T,1}}`, i.e., it is equivalent to calling `distribut
 Given a `DArray{T,1,T}` object `d`, `d[:L]` returns the localpart on a worker. `d[i]` returns the `localpart`
 on the ith worker that `d` is distributed over.
 
+
+
 SPMD Mode (An MPI Style SPMD mode with MPI like primitives, requires Julia 0.6)
 -------------------------------------------------------------------------------
 SPMD, i.e., a Single Program Multiple Data mode is implemented by submodule `DistributedArrays.SPMD`. In this mode the same function is executed in parallel on all participating nodes. This is a typical style of MPI programs where the same program is executed on all processors. A basic subset of MPI-like primitives are currently supported. As a programming model it should be familiar to folks with an MPI background.
 
 The same block of code is executed concurrently on all workers using the `spmd` function.
 
-```
+```julia
 # define foo() on all workers
 @everywhere function foo(arg1, arg2)
     ....
@@ -299,12 +329,14 @@ consecutive `bcast` calls.
 import it explcitly, or prefix functions that can can only be used in spmd mode with `SPMD.`, for example,
 `SPMD.sendto`.
 
+
+
 Example
 -------
 
 This toy example exchanges data with each of its neighbors `n` times.
 
-```
+```julia
 using Distributed
 using DistributedArrays
 addprocs(8)
@@ -348,6 +380,8 @@ println(d_in)
 println(d_out)
 ```
 
+
+
 SPMD Context
 ------------
 
@@ -368,12 +402,13 @@ on all participating `pids`. Else they will be released when the context object 
 on the node that created it.
 
 
+
 Nested `spmd` calls
 -------------------
 As `spmd` executes the the specified function on all participating nodes, we need to be careful with nesting `spmd` calls.
 
 An example of an unsafe(wrong) way:
-```
+```julia
 function foo(.....)
     ......
     spmd(bar, ......)
@@ -391,7 +426,7 @@ spmd(foo,....)
 In the above example, `foo`, `bar` and `baz` are all functions wishing to leverage distributed computation. However, they themselves may be currenty part of a `spmd` call. A safe way to handle such a scenario is to only drive parallel computation from the master process.
 
 The correct way (only have the driver process initiate `spmd` calls):
-```
+```julia
 function foo()
     ......
     myid()==1 && spmd(bar, ......)
@@ -408,7 +443,7 @@ spmd(foo,....)
 ```
 
 This is also true of functions which automatically distribute computation on DArrays.
-```
+```julia
 function foo(d::DArray)
     ......
     myid()==1 && map!(bar, d)
