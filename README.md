@@ -34,11 +34,11 @@ Common kinds of arrays can be constructed with functions beginning with
 `d`:
 
 ```julia
-    dzeros(100,100,10)
-    dones(100,100,10)
-    drand(100,100,10)
-    drandn(100,100,10)
-    dfill(x,100,100,10)
+dzeros(100,100,10)
+dones(100,100,10)
+drand(100,100,10)
+drandn(100,100,10)
+dfill(x,100,100,10)
 ```
 
 In the last case, each element will be initialized to the specified
@@ -47,7 +47,7 @@ For more control, you can specify which processes to use, and how the
 data should be distributed:
 
 ```julia
-    dzeros((100,100), workers()[1:4], [1,4])
+dzeros((100,100), workers()[1:4], [1,4])
 ```
 
 The second argument specifies that the array should be created on the first
@@ -89,7 +89,7 @@ Constructing Distributed Arrays
 The primitive `DArray` constructor has the following somewhat elaborate signature:
 
 ```julia
-    DArray(init, dims[, procs, dist])
+DArray(init, dims[, procs, dist])
 ```
 
 `init` is a function that accepts a tuple of index ranges. This function should
@@ -106,7 +106,7 @@ As an example, here is how to turn the local array constructor `fill`
 into a distributed array constructor:
 
 ```julia
-    dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
+dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 ```
 
 In this case the `init` function only needs to call `fill` with the
@@ -268,7 +268,7 @@ SPMD, i.e., a Single Program Multiple Data mode is implemented by submodule `Dis
 
 The same block of code is executed concurrently on all workers using the `spmd` function.
 
-```julia
+```
 # define foo() on all workers
 @everywhere function foo(arg1, arg2)
     ....
@@ -314,7 +314,7 @@ Example
 
 This toy example exchanges data with each of its neighbors `n` times.
 
-```julia
+```
 using Distributed
 using DistributedArrays
 addprocs(8)
@@ -383,7 +383,7 @@ Nested `spmd` calls
 As `spmd` executes the the specified function on all participating nodes, we need to be careful with nesting `spmd` calls.
 
 An example of an unsafe(wrong) way:
-```julia
+```
 function foo(.....)
     ......
     spmd(bar, ......)
@@ -401,7 +401,7 @@ spmd(foo,....)
 In the above example, `foo`, `bar` and `baz` are all functions wishing to leverage distributed computation. However, they themselves may be currenty part of a `spmd` call. A safe way to handle such a scenario is to only drive parallel computation from the master process.
 
 The correct way (only have the driver process initiate `spmd` calls):
-```julia
+```
 function foo()
     ......
     myid()==1 && spmd(bar, ......)
@@ -418,7 +418,7 @@ spmd(foo,....)
 ```
 
 This is also true of functions which automatically distribute computation on DArrays.
-```julia
+```
 function foo(d::DArray)
     ......
     myid()==1 && map!(bar, d)
