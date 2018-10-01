@@ -6,13 +6,13 @@
 Distributed Arrays
 ------------------
 
-Large computations are often organized around large arrays of data. In
-these cases, a particularly natural way to obtain parallelism is to
-distribute arrays among several processes. This combines the memory
-resources of multiple machines, allowing use of arrays too large to fit
-on one machine. Each process operates on the part of the array it
-owns, providing a ready answer to the question of how a program should
-be divided among machines.
+Large computations are often organized around large arrays of data. In these
+cases, a particularly natural way to obtain parallelism is to distribute arrays
+among several processes. This combines the memory resources of multiple
+machines, allowing use of arrays too large to fit on one machine. Each process
+can read and write to the part of the array it owns and has read-only access to
+the parts it doesn't own. This provides a ready answer to the question of how a
+program should be divided among machines.
 
 Julia distributed arrays are implemented by the `DArray` type. A
 `DArray` has an element type and dimensions just like an `Array`.
