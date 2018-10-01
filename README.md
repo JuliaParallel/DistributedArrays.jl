@@ -133,6 +133,31 @@ julia> @DArray [i+j for i = 1:5, j = 1:5]
  6  7  8  9  10
 ```
 
+### Construction from arrays generated on separate processes
+
+`DArray`s can also be constructed from arrays that have been constructed on separate processes, as demonstrated below:
+
+```julia
+ras = [@spawnat p rand(30,30) for p in workers()[1:4]]
+ras = reshape(ras,(2,2))
+D   = DArray(ras)
+```
+
+An alternative syntax is:
+
+```julia
+r1 = DistributedArrays.remotecall(() -> rand(10,10), workers()[1]) 
+r2 = DistributedArrays.remotecall(() -> rand(10,10), workers()[2]) 
+r3 = DistributedArrays.remotecall(() -> rand(10,10), workers()[3]) 
+r4 = DistributedArrays.remotecall(() -> rand(10,10), workers()[4]) 
+D  = DArray(reshape([r1 r2 r3 r4], (2,2))) 
+```
+
+The distribution of indices across workers can be checked with
+```julia
+[@fetchfrom p localindices(D) for p in workers()]
+```
+
 Distributed Array Operations
 ----------------------------
 
