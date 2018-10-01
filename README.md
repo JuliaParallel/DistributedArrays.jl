@@ -1,6 +1,6 @@
 # DistributedArrays
 
-*A distributed arrays for Julia.*
+*Distributed arrays for Julia.*
 
 | **Documentation**                                                         | **Build Status**                                              |
 |:-------------------------------------------------------------------------:|:-------------------------------------------------------------:|
