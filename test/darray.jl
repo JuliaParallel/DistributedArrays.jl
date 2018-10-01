@@ -1041,3 +1041,11 @@ d_closeall()
     @test all(allregistrieszero)
 end
 
+@testset "internal API" begin
+    @testset "arraykind" begin
+       @test DistributedArrays.arraykind(Array{Float32, 2}) == Array
+       @test DistributedArrays.arraykind(AbstractArray{Float32, 2}) == Array
+       @test DistributedArrays.arraykind(typeof(1:10)) == UnitRange
+    end
+end
+

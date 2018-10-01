@@ -242,7 +242,11 @@ DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indices,
 
 Base.size(d::DArray) = d.dims
 chunktype(d::DArray{<:Any,<:Any,A}) where A = A
-arraykind(::Type{<:Array}) = Array
+
+# For every Array, we shall return Array and for abstract supertype of Array we shall return Array
+arraykind(::Type{T}) where {_T, _N, Array{_T, _N} <:T <: AbstractArray} = Array
+
+# For every other leaf-type of <:AbstractArray we shall return it
 # This fallback is cheating, we would ideally want this functionality in Base
 arraykind(::Type{T}) where T<:AbstractArray = Base.typename(T).wrapper
 
