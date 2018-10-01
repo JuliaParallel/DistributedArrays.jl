@@ -7,11 +7,12 @@ julia:
   - 1.0
   - nightly
 matrix:
-  # allow_failures:
-    # - julia: nightly
+  allow_failures:
+    - julia: nightly
 notifications:
   email: false
 before_install:
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
 after_success:
   - julia -e 'cd(Pkg.dir("DistributedArrays")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder()); Codecov.submit(Codecov.process_folder())'
+  - julia -e 'cd(Pkg.dir("DistributedArrays")); Pkg.add("Documenter"); include(joinpath("docs", "make.jl"))'
