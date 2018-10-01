@@ -241,17 +241,17 @@ Garbage Collection and DArrays
 ------------------------------
 
 When a DArray is constructed (typically on the master process), the returned DArray objects stores information on how the
-array is distributed, which procesor holds which indices and so on. When the DArray object
-on the master process is garbage collected, all particpating workers are notified and
+array is distributed, which processor holds which indices and so on. When the DArray object
+on the master process is garbage collected, all participating workers are notified and
 localparts of the DArray freed on each worker.
 
 Since the size of the DArray object itself is small, a problem arises as `gc` on the master faces no memory pressure to
 collect the DArray immediately. This results in a delay of the memory being released on the participating workers.
 
-Therefore it is highly recommended to explcitly call `close(d::DArray)` as soon as user code
+Therefore it is highly recommended to explicitly call `close(d::DArray)` as soon as user code
 has finished working with the distributed array.
 
-It is also important to note that the localparts of the DArray is collected from all particpating workers
+It is also important to note that the localparts of the DArray is collected from all participating workers
 when the DArray object on the process creating the DArray is collected. It is therefore important to maintain
 a reference to a DArray object on the creating process for as long as it is being computed upon.
 
@@ -326,7 +326,7 @@ Tag `tag` should be used to differentiate between consecutive calls of the same 
 consecutive `bcast` calls.
 
 `spmd` and spmd related functions are defined in submodule `DistributedArrays.SPMD`. You will need to
-import it explcitly, or prefix functions that can can only be used in spmd mode with `SPMD.`, for example,
+import it explicitly, or prefix functions that can can only be used in spmd mode with `SPMD.`, for example,
 `SPMD.sendto`.
 
 
@@ -385,7 +385,7 @@ println(d_out)
 SPMD Context
 ------------
 
-Each SPMD run is implictly executed in a different context. This allows for multiple `spmd` calls to
+Each SPMD run is implicitly executed in a different context. This allows for multiple `spmd` calls to
 be active at the same time. A SPMD context can be explicitly specified via keyword arg `context` to `spmd`.
 
 `context(pids=procs())` returns a new SPMD context.
@@ -396,7 +396,7 @@ key-value pairs between spmd runs under the same context.
 `context_local_storage()` returns the dictionary associated with the context.
 
 NOTE: Implicitly defined contexts, i.e., `spmd` calls without specifying a `context` create a context
-which live only for the duration of the call. Explictly created context objects can be released
+which live only for the duration of the call. Explicitly created context objects can be released
 early by calling `close(ctxt::SPMDContext)`. This will release the local storage dictionaries
 on all participating `pids`. Else they will be released when the context object is gc'ed
 on the node that created it.
@@ -423,7 +423,7 @@ end
 
 spmd(foo,....)
 ```
-In the above example, `foo`, `bar` and `baz` are all functions wishing to leverage distributed computation. However, they themselves may be currenty part of a `spmd` call. A safe way to handle such a scenario is to only drive parallel computation from the master process.
+In the above example, `foo`, `bar` and `baz` are all functions wishing to leverage distributed computation. However, they themselves may be currently part of a `spmd` call. A safe way to handle such a scenario is to only drive parallel computation from the master process.
 
 The correct way (only have the driver process initiate `spmd` calls):
 ```julia

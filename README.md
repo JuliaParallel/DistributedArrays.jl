@@ -9,7 +9,7 @@
 ## Introduction
 
 `DistributedArrays.jl` uses the stdlib [`Distributed`][distributed-docs] to implement a *Global Array* interface.
-A `DArray` is distributed accross a set of workers. Each worker can read and write from its local portion of the array and each worker has read-only access to the portions of the array held by other workers.
+A `DArray` is distributed across a set of workers. Each worker can read and write from its local portion of the array and each worker has read-only access to the portions of the array held by other workers.
 
 ## Installation
 
