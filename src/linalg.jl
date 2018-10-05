@@ -95,8 +95,8 @@ function mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Num
     for j = 1:size(A.pids, 2)
         xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
         for i = 1:size(A.pids, 1)
-            R[i,j] = remotecall(procs(A)[i,j]) do
-                localpart(A)*convert(localtype(x), xj)
+            R[i,j] = remotecall(procs(A)[i,j], A, xj) do A, xj
+                localpart(A) * convert(chunktype(A), xj)
             end
         end
     end
@@ -120,7 +120,10 @@ function mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Num
         p = y.pids[i]
         for j = 1:size(R, 2)
             rij = R[i,j]
-            @async remotecall_fetch(() -> (add!(localpart(y), fetch(rij), α); nothing), p)
+            @async remotecall_fetch(p, y, rij, α) do y, rij, α
+	        add!(localpart(y), fetch(rij), α)
+		return nothing
+	    end
         end
     end
 
@@ -222,7 +225,7 @@ function _matmatmul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number, β::
             Bjk = B[Acuts[j]:Acuts[j + 1] - 1, Ccuts[k]:Ccuts[k + 1] - 1]
             for i = 1:size(A.pids, Ad1)
                 p = (tA == 'N') ? procs(A)[i,j] : procs(A)[j,i]
-                R[i,j,k] = remotecall(p) do
+                R[i,j,k] = remotecall(p, A, B, Bjk) do A, B, Bjk
                     if tA == 'T'
                         return transpose(localpart(A))*convert(localtype(B), Bjk)
                     elseif tA == 'C'
@@ -252,7 +255,10 @@ function _matmatmul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number, β::
             p = C.pids[i,k]
             for j = 1:size(R, 2)
                 rijk = R[i,j,k]
-                @async remotecall_fetch(d -> (add!(localpart(d), fetch(rijk), α); nothing), p, C)
+                @async remotecall_fetch(p, d, rijk, α) do d, rijk, α
+		    add!(localpart(d), fetch(rijk), α)
+		    return nothing
+		end
             end
         end
     end
