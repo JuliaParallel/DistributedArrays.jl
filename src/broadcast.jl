@@ -23,7 +23,7 @@ end
 # # deal with one layer deep lazy arrays
 # BroadcastStyle(::Type{<:LinearAlgebra.Transpose{<:Any,T}}) where T <: DArray = BroadcastStyle(T)
 # BroadcastStyle(::Type{<:LinearAlgebra.Adjoint{<:Any,T}}) where T <: DArray = BroadcastStyle(T)
-# BroadcastStyle(::Type{<:SubArray{<:Any,<:Any,<:T}}) where T <: DArray = BroadcastStyle(T)
+BroadcastStyle(::Type{<:SubArray{<:Any,<:Any,<:T}}) where T <: DArray = BroadcastStyle(T)
 
 # # This Union is a hack. Ideally Base would have a Transpose <: WrappedArray <: AbstractArray
 # # and we could define our methods in terms of Union{DArray, WrappedArray{<:Any, <:DArray}}
@@ -128,7 +128,7 @@ bcdistribute_args(args::Tuple{}) = ()
 
 # bclocal will do a view of the data and the copy it over
 # except when the data already is local
-function bclocal(x::DArray{T, N, AT}, idxs) where {T, N, AT}
+function bclocal(x::SubOrDArray, idxs)
     bcidxs = _bcview(axes(x), idxs)
     makelocal(x, bcidxs...)
 end

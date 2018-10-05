@@ -242,6 +242,7 @@ DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indices,
 
 Base.size(d::DArray) = d.dims
 chunktype(d::DArray{<:Any,<:Any,A}) where A = A
+chunktype(d::SubDArray) = chunktype(parent(d))
 
 # For every Array, we shall return Array and for abstract supertype of Array we shall return Array
 arraykind(::Type{T}) where {_T, _N, Array{_T, _N} <:T <: AbstractArray} = Array
@@ -373,6 +374,12 @@ function makelocal(A::DArray, I::Vararg{Any, N}) where N
         arr = similar(chunktype(A), map(length, viewidcs))
         copyto!(arr, view(A, viewidcs...))
     end
+end
+
+function makelocal(A::SubDArray, I::Vararg{Any, N}) where N
+    Base.@_inline_meta
+    arr = similar(chunktype(A), map(length, I))
+    copyto!(arr, view(A, I...))
 end
 
 # shortcut to set/get localparts of a distributed object
