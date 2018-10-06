@@ -63,14 +63,32 @@ end
     asyncmap(procs(dest)) do p
         remotecall_fetch(p) do
             # get the indices for the localpart
-            lpidx = localpartindex(dest)
-            @assert lpidx != 0
+            lidcs = localindices(dest)
             # create a local version of the broadcast, by constructing views
             # Note: creates copies of the argument
-            lbc = bclocal(dbc, dest.indices[lpidx])
+            lbc = bclocal(dbc, lidcs)
             Base.copyto!(localpart(dest), lbc)
             return nothing
         end
+    end
+    return dest
+end
+
+@inline function Base.copyto!(dest::SubDArray, bc::Broadcasted)
+    axes(dest) == axes(bc) || Broadcast.throwdm(axes(dest), axes(bc))
+    dbc = bcdistribute(bc)
+
+    asyncmap(procs(dest)) do p
+        remotecall_fetch(p) do
+            lidcs = localindices(parent(dest))
+            I = map(intersect, dest.indices, lidcs)
+            any(isempty, I) && return nothing
+            lbc = bclocal(dbc, I)
+
+            lviewidcs = ntuple(i -> _localindex(I[i], first(lidcs[i]) - 1), ndims(dest))
+            Base.copyto!(view(localpart(parent(dest)), lviewidcs...), lbc)
+            return nothing
+	end
     end
     return dest
 end
