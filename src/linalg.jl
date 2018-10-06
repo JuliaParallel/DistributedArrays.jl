@@ -63,6 +63,13 @@ function LinearAlgebra.rmul!(A::DArray, x::Number)
     return A
 end
 
+function LinearAlgebra.lmul!(x::Number, A::DArray)
+    @sync for p in procs(A)
+        @async remotecall_fetch((x,A)->(lmul!(x,localpart(A)); nothing), p, x, A)
+    end
+    return A
+end
+
 # Level 2
 function add!(dest, src, scale = one(dest[1]))
     if length(dest) != length(src)
