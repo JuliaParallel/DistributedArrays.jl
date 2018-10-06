@@ -95,6 +95,7 @@ end
             lidcs = localindices(parent(dest))
             I = map(intersect, dest.indices, lidcs)
             any(isempty, I) && return nothing
+	    any(isempty, map(intersect, axes(dbc), I)) && return nothing
             lbc = bclocal(dbc, I)
 
             lviewidcs = ntuple(i -> _localindex(I[i], first(lidcs[i]) - 1), ndims(dest))
