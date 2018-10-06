@@ -74,6 +74,18 @@ end
     return dest
 end
 
+function Broadcast.dotview(D::DArray, args...)
+    if length(args) == 1  && length(args) != ndims(D) && args[1] isa UnitRange
+        I = CartesianIndices(size(D))[args[1]]
+        minI = minimum(I)
+        maxI = maximum(I)
+
+        cI = ntuple(i->minI[i]:maxI[i], ndims(D))
+        return view(D, cI...)
+    end
+    return Base.maybeview(D, args...)
+end
+
 @inline function Base.copyto!(dest::SubDArray, bc::Broadcasted)
     axes(dest) == axes(bc) || Broadcast.throwdm(axes(dest), axes(bc))
     dbc = bcdistribute(bc)
