@@ -255,8 +255,8 @@ function _matmatmul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number, β::
             p = C.pids[i,k]
             for j = 1:size(R, 2)
                 rijk = R[i,j,k]
-                @async remotecall_fetch(p, d, rijk, α) do d, rijk, α
-		    add!(localpart(d), fetch(rijk), α)
+                @async remotecall_fetch(p, C, rijk, α) do C, rijk, α
+		    add!(localpart(C), fetch(rijk), α)
 		    return nothing
 		end
             end
