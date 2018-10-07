@@ -103,7 +103,7 @@ function mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Num
         xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
         for i = 1:size(A.pids, 1)
             R[i,j] = remotecall(procs(A)[i,j], A, xj) do A, xj
-                localpart(A) * convert(chunktype(A), xj)
+                localpart(A) * convert(arraykind(chunktype(A)), xj)
             end
         end
     end
