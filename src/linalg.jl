@@ -128,7 +128,11 @@ function mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Num
         for j = 1:size(R, 2)
             rij = R[i,j]
             @async remotecall_fetch(p, y, rij, α) do y, rij, α
-	        add!(localpart(y), fetch(rij), α)
+	        local r = fetch(rij)
+		if r isa RemoteException
+		   throw(r)
+		end
+	        add!(localpart(y), r, α)
 		return nothing
 	    end
         end
