@@ -1,8 +1,8 @@
 function Base.copy(Dadj::Adjoint{T,<:DArray{T,2}}) where T
     D = parent(Dadj)
     DArray(reverse(size(D)), procs(D)) do I
-        lp = Array{T}(undef, map(length, I))
-        rp = convert(Array, D[reverse(I)...])
+        lp = similar(localpart(D), T, map(length, I))
+        rp = makelocal(D, reverse(I)...)
         adjoint!(lp, rp)
     end
 end
@@ -10,8 +10,8 @@ end
 function Base.copy(Dtr::Transpose{T,<:DArray{T,2}}) where T
     D = parent(Dtr)
     DArray(reverse(size(D)), procs(D)) do I
-        lp = Array{T}(undef, map(length, I))
-        rp = convert(Array, D[reverse(I)...])
+        lp = similar(localpart(D), T, map(length, I))
+        rp = makelocal(D, reverse(I)...)
         transpose!(lp, rp)
     end
 end
@@ -128,13 +128,13 @@ function mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Num
         for j = 1:size(R, 2)
             rij = R[i,j]
             @async remotecall_fetch(p, y, rij, α) do y, rij, α
-	        local r = fetch(rij)
-		if r isa RemoteException
-		   throw(r)
-		end
-	        add!(localpart(y), r, α)
-		return nothing
-	    end
+                local r = fetch(rij)
+                if r isa RemoteException
+                    throw(r)
+                end
+                add!(localpart(y), r, α)
+                return nothing
+            end
         end
     end
 
@@ -284,12 +284,14 @@ _matmul_op = (t,s) -> t*s + t*s
 
 function Base.:*(A::DMatrix, x::AbstractVector)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
-    y = DArray(I -> Array{T}(undef, map(length, I)), (size(A, 1),), procs(A)[:,1], (size(procs(A), 1),))
+    y = DArray((size(A, 1),), procs(A)[:,1], (size(procs(A), 1),)) do I
+        similar(localpart(A), T, map(length, I))
+    end
     return mul!(y, A, x)
 end
 function Base.:*(A::DMatrix, B::AbstractMatrix)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
-    C = DArray(I -> Array{T}(undef, map(length, I)),
+    C = DArray(I -> similar(localpart(A), map(length, I)),
             (size(A, 1), size(B, 2)),
             procs(A)[:,1:min(size(procs(A), 2), size(procs(B), 2))],
             (size(procs(A), 1), min(size(procs(A), 2), size(procs(B), 2))))
@@ -299,7 +301,7 @@ end
 function Base.:*(adjA::Adjoint{<:Any,<:DMatrix}, x::AbstractVector)
     A = parent(adjA)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
-    y = DArray(I -> Array{T}(undef, map(length, I)),
+    y = DArray(I -> similar(localpart(A), map(length, I)),
             (size(A, 2),),
             procs(A)[1,:],
             (size(procs(A), 2),))
@@ -308,8 +310,8 @@ end
 function Base.:*(adjA::Adjoint{<:Any,<:DMatrix}, B::AbstractMatrix)
     A = parent(adjA)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
-    C = DArray(I -> Array{T}(undef, map(length, I)), (size(A, 2),
-        size(B, 2)),
+    C = DArray(I -> similar(localpart(A), map(length, I)),
+        (size(A, 2), size(B, 2)),
         procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:],
         (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
     return mul!(C, adjA, B)
@@ -318,7 +320,7 @@ end
 function Base.:*(trA::Transpose{<:Any,<:DMatrix}, x::AbstractVector)
     A = parent(trA)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
-    y = DArray(I -> Array{T}(undef, map(length, I)),
+    y = DArray(I -> similar(localpart(A), map(length, I)),
             (size(A, 2),),
             procs(A)[1,:],
             (size(procs(A), 2),))
@@ -327,8 +329,8 @@ end
 function Base.:*(trA::Transpose{<:Any,<:DMatrix}, B::AbstractMatrix)
     A = parent(trA)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(B))
-    C = DArray(I -> Array{T}(undef, map(length, I)), (size(A, 2),
-        size(B, 2)),
+    C = DArray(I -> similar(localpart(A), map(length, I)),
+        (size(A, 2), size(B, 2)),
         procs(A)[1:min(size(procs(A), 1), size(procs(B), 2)),:],
         (size(procs(A), 2), min(size(procs(A), 1), size(procs(B), 2))))
     return mul!(C, trA, B)

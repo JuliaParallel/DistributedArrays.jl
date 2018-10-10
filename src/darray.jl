@@ -366,13 +366,13 @@ function makelocal(A::DArray, I::Vararg{Any, N}) where N
     if Base.checkbounds_indices(Bool, lidcs, J)
         # data we want is local
         viewidcs = ntuple(i -> _localindex(J[i], first(lidcs[i]) - 1), ndims(A))
-        view(localpart(A), viewidcs...)
+        return view(localpart(A), viewidcs...)
     else
         # Make more efficient (?maybe) by allocating new memory
         # only for the remote part
         viewidcs = ntuple(i -> _localindex(J[i], 0), ndims(A))
         arr = similar(chunktype(A), map(length, viewidcs))
-        copyto!(arr, view(A, viewidcs...))
+        return  copyto!(arr, view(A, viewidcs...))
     end
 end
 
