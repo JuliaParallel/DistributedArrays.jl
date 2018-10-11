@@ -79,7 +79,7 @@ function add!(dest, src, scale = one(dest[1]))
     return dest
 end
 
-function mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Number = 0)
+function mul!(y::DVector, A::DMatrix, x::DVector, α::Number = 1, β::Number = 0)
 
     # error checks
     if size(A, 2) != length(x)
@@ -92,10 +92,9 @@ function mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Num
     # Multiply on each tile of A
     R = Array{Future}(undef, size(A.pids))
     for j = 1:size(A.pids, 2)
-        xj = x[A.cuts[2][j]:A.cuts[2][j + 1] - 1]
         for i = 1:size(A.pids, 1)
-            R[i,j] = remotecall(procs(A)[i,j], A, xj) do A, xj
-                localpart(A) * convert(arraykind(chunktype(A)), xj)
+            R[i,j] = remotecall(procs(A)[i,j], A, x) do A, x
+                localpart(A) * makelocal(x, A.cuts[2][j]:A.cuts[2][j + 1] - 1)
             end
         end
     end
