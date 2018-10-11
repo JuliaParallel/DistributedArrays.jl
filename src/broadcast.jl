@@ -110,8 +110,8 @@ end
     dbc = bcdistribute(bc)
     # TODO: teach DArray about axes since this is wrong for OffsetArrays
     DArray(map(length, axes(bc))) do I
-        lbc = bclocal(dbc, I)
-        return copy(Broadcast.instantiate(lbc))
+        lbc = Broadcast.instantiate(bclocal(dbc, I))
+        return copy(lbc)
     end
 end
 

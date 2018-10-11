@@ -104,6 +104,9 @@ end
 
 function construct_localparts(init, id, dims, pids, idxs, cuts; T=nothing, A=nothing)
     localpart = isa(init, Function) ? init(idxs[localpartindex(pids)]) : fetch(init)
+    if localpart isa RemoteException
+    	throw(localpart)
+    end
     if A == nothing
         A = typeof(localpart)
     end
