@@ -79,19 +79,15 @@ Base.hash(d::DArray, h::UInt) = Base.hash(d.id, h)
 
 function DArray(id, init, dims, pids, idxs, cuts)
     r=Channel(1)
-    @sync begin
-        for i = 1:length(pids)
-            @async begin
-                local typA
-                if isa(init, Function)
-                    typA=remotecall_fetch(construct_localparts, pids[i], init, id, dims, pids, idxs, cuts)
-                else
-                    # constructing from an array of remote refs.
-                    typA=remotecall_fetch(construct_localparts, pids[i], init[i], id, dims, pids, idxs, cuts)
-                end
-                !isready(r) && put!(r, typA)
-            end
+    asyncmap(1:length(pids)) do i
+        local typA
+        if isa(init, Function)
+            typA=remotecall_fetch(construct_localparts, pids[i], init, id, dims, pids, idxs, cuts)
+        else
+            # constructing from an array of remote refs.
+            typA=remotecall_fetch(construct_localparts, pids[i], init[i], id, dims, pids, idxs, cuts)
         end
+        !isready(r) && put!(r, typA)
     end
 
     A = take!(r)
@@ -314,8 +310,7 @@ function chunk_idxs(dims, chunks)
     return (idxs, cuts)
 end
 
-function localpartindex(pids::Array{Int})
-    mi = myid()
+function localpartindex(pids::Array{Int}, mi=myid())
     for i = 1:length(pids)
         if pids[i] == mi
             return i
