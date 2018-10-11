@@ -593,25 +593,10 @@ function tolocalindices(lidcs, idcs)
     ntuple(i->_localindex(idcs[i], first(lidcs[i])-1), length(idcs))
 end
 
-function Base.copyto!(A::AbstractArray, SD::SubDArray)
-    D = parent(SD)
-    indices = Base.reindex(SD, SD.indices, axes(SD))
-    asyncmap(procs(D)) do p
-        lpidx = localpartindex(procs(D), p)
-        part = map(intersect, indices, D.indices[lpidx])
-        isempty(part) && return
-
-        # we really want fetch! here
-        part_chunk = remotecall_fetch(p, D, part) do D, part
-            lidcs = DistributedArrays.localindices(D)
-            idcs = 	tolocalindices(lidcs, part)
-
-            # unalias_copy
-            return view(localpart(D), idcs...)
-        end
-        A[part...] .= part_chunk
-    end
-    return A
+function Base.copyto!(a::Array, s::SubDArray)
+    N = ndims(a)
+    a[[1:size(a,i) for i=1:N]...] = s
+    return a
 end
 
 function DArray(SD::SubArray{T,N}) where {T,N}
