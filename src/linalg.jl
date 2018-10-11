@@ -75,18 +75,7 @@ end
 
 # Level 2
 function add!(dest, src, scale = one(dest[1]))
-    if length(dest) != length(src)
-        throw(DimensionMismatch("source and destination arrays must have same number of elements"))
-    end
-    if scale == one(scale)
-        @simd for i = eachindex(dest)
-            @inbounds dest[i] += src[i]
-        end
-    else
-        @simd for i = eachindex(dest)
-            @inbounds dest[i] += scale*src[i]
-        end
-    end
+    dest .+= scale*src
     return dest
 end
 
