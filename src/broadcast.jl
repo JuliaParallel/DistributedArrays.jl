@@ -96,7 +96,7 @@ end
             I = map(intersect, dest.indices, lidcs)
             any(isempty, I) && return nothing
 	    any(isempty, map(intersect, axes(dbc), I)) && return nothing
-            lbc = bclocal(dbc, I)
+            lbc = Broadcast.instantiate(bclocal(dbc, I))
 
             lviewidcs = ntuple(i -> _localindex(I[i], first(lidcs[i]) - 1), ndims(dest))
             Base.copyto!(view(localpart(parent(dest)), lviewidcs...), lbc)
@@ -111,7 +111,7 @@ end
     # TODO: teach DArray about axes since this is wrong for OffsetArrays
     DArray(map(length, axes(bc))) do I
         lbc = bclocal(dbc, I)
-        copy(lbc)
+        return copy(Broadcast.instantiate(lbc))
     end
 end
 
