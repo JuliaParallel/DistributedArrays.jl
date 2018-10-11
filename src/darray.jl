@@ -841,7 +841,7 @@ using Random
 
 function Random.rand!(A::DArray)
     asyncmap(procs(A)) do p
-        remotecall_wait((A)->rand!(localpart(A), p, A)
+        remotecall_wait((A)->rand!(localpart(A)), p, A)
     end
 end
 
