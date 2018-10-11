@@ -41,7 +41,10 @@ function dot(x::DVector, y::DVector)
 
     results=Any[]
     asyncmap(procs(x)) do p
-            push!(results, remotecall_fetch((x, y) -> dot(localpart(x), makelocal(y, localindices(x)...)), p, x, y))
+            r = remotecall_fetch(p, x, y) do x, y
+                dot(localpart(x), makelocal(y, localindices(x)...))
+            end
+            push!(results, r)
     end
     return reduce(+, results)
 end

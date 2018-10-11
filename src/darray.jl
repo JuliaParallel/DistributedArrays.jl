@@ -839,9 +839,9 @@ end
 
 using Random
 
-function Random.rand!(A::DArray, ::Type{T}) where T
+function Random.rand!(A::DArray)
     asyncmap(procs(A)) do p
-        remotecall_wait((A, T)->rand!(localpart(A), T), p, A, T)
+        remotecall_wait((A)->rand!(localpart(A), p, A)
     end
 end
 
