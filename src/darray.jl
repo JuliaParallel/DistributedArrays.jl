@@ -607,7 +607,7 @@ function Base.copyto!(A::AbstractArray, SD::SubDArray)
             idcs = 	tolocalindices(lidcs, part)
 
             # unalias_copy
-            return view(localpart(D), _idcs...)
+            return view(localpart(D), idcs...)
         end
         A[part...] .= part_chunk
     end
