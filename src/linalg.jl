@@ -258,7 +258,11 @@ function _matmatmul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number, β::
             for j = 1:size(R, 2)
                 rijk = R[i,j,k]
                 @async remotecall_fetch(p, C, rijk, α) do C, rijk, α
-		    add!(localpart(C), fetch(rijk), α)
+		    _rijk = fetch(rijk)
+		    if _rijk isa RemoteException
+		        throw(_rijk)
+		    end	
+		    add!(localpart(C), _rijk, α)
 		    return nothing
 		end
             end
@@ -292,10 +296,9 @@ end
 function Base.:*(adjA::Adjoint{<:Any,<:DMatrix}, x::AbstractVector)
     A = parent(adjA)
     T = Base.promote_op(_matmul_op, eltype(A), eltype(x))
-    y = DArray(I -> similar(localpart(A), map(length, I)),
-            (size(A, 2),),
-            procs(A)[1,:],
-            (size(procs(A), 2),))
+    y = DArray((size(A, 2),), procs(A)[1,:], (size(procs(A), 2),)) do I
+            similar(localpart(A), map(length, I))
+	end
     return mul!(y, adjA, x)
 end
 function Base.:*(adjA::Adjoint{<:Any,<:DMatrix}, B::AbstractMatrix)
