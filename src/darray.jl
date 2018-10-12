@@ -568,7 +568,7 @@ function Array{S,N}(d::DArray{T,N}) where {S,T,N}
     a = Array{S}(undef, size(d))
     @sync begin
         for i = 1:length(d.pids)
-            @async a[d.indices[i]...] = chunk(d, i)
+            @async a[d.indices[i]...] = convert(Array, chunk(d, i))
         end
     end
     return a
