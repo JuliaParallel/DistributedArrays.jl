@@ -321,7 +321,7 @@ function localpartindex(pids::Array{Int}, mi=myid())
     end
     return 0
 end
-localpartindex(d::DArray) = localpartindex(procs(d))
+localpartindex(d::DArray, mi=myid()) = localpartindex(procs(d), mi)
 
 """
     localpart(d::DArray)
@@ -597,7 +597,7 @@ function Base.copyto!(A::Array, SD::SubDArray)
     D = parent(SD)
     indices = parentindices(SD)
     asyncmap(procs(D)) do p
-        lpidx = localpartindex(procs(D), p)
+        lpidx = localpartindex(D, p)
 	# find out if an part of the Array is stored on p
         part = map(intersect, indices, D.indices[lpidx])
         any(isempty, part) && return
@@ -612,9 +612,20 @@ function Base.copyto!(A::Array, SD::SubDArray)
         end
 	# We need to figure out where to put the data...
         a_idcs = tolocalindices(indices, part)
+	@info "About to copy chunk" from=p to=myid() A=typeof(A) chunk=typeof(part_chunk)
         A[a_idcs...] .= part_chunk
     end
     return A
+end
+
+function Base.collect(D::SubArray{<:Any, <:Any, <:DArray{<:Any, <:Any, A}}) where A
+    a = similar(A, size(D))
+    copyto!(a, D)
+end
+
+function Base.collect(D::DArray{<:Any, <:Any, A}) where A
+    a = similar(A, size(D))
+    copyto!(a, D)
 end
 
 function DArray(SD::SubArray{T,N}) where {T,N}
