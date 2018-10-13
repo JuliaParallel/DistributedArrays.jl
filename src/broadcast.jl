@@ -74,15 +74,38 @@ end
     return dest
 end
 
+function _linear(shape, cI)
+    Is = LinearIndices(shape)[cI...]
+    minI = minimum(Is)
+    maxI = maximum(Is)
+    I = minI:maxI
+    return I
+end
+
+function _cartesian(shape, linearI::AbstractUnitRange)
+    Is = CartesianIndices(shape)[linearI]
+    minI = minimum(Is)
+    maxI = maximum(Is)
+
+    I = ntuple(length(minI)) do i
+	ci = minI[i]:maxI[i]
+        if length(ci) == 1
+            return first(ci)
+        else
+            return ci
+        end
+    end
+    return I
+end
+
+function _cartesian(shape, linearI::Integer)
+    I = CartesianIndices(shape)[linearI]
+    return I
+end
+
 function Broadcast.dotview(D::DArray, args...)
     if length(args) == 1  && length(args) != ndims(D) && args[1] isa UnitRange
-        I = CartesianIndices(size(D))[args[1]]
-        minI = minimum(I)
-        maxI = maximum(I)
-
-        cI = ntuple(i->minI[i]:maxI[i], ndims(D))
-        cI = ntuple(i->length(cI[i])==1 ? first(cI[i]) : cI[i], ndims(D))
-        return view(D, cI...)
+        return view(D, _cartesian(size(D), args[1])...)
     end
     return Base.maybeview(D, args...)
 end
@@ -93,13 +116,31 @@ end
 
     asyncmap(procs(dest)) do p
         remotecall_fetch(p) do
-            lidcs = localindices(parent(dest))
+            # check if we are holding part of dest, and which part
+            lidcs = localindices(parent(dest)) 
             I = map(intersect, dest.indices, lidcs)
             any(isempty, I) && return nothing
-	    any(isempty, map(intersect, axes(dbc), I)) && return nothing
-            lbc = Broadcast.instantiate(bclocal(dbc, I))
 
-            lviewidcs = ntuple(i -> _localindex(I[i], first(lidcs[i]) - 1), ndims(dest))
+            # check if the part we are holding is part of dbc
+            # this should always be true...
+            if length(I) == length(axes(dbc))
+                any(isempty, map(intersect, axes(dbc), I)) && return nothing
+                bcI = I
+		lviewidcs = tolocalindices(lidcs, I)
+            elseif length(I) > length(axes(dbc)) && length(axes(dbc)) == 1
+                # project the axes of dbc to cartesian indices in dest
+                # this can happen due to the dotview optimisation of avoiding ReshaphedArray
+	        ax = _cartesian(size(parent(dest)), axes(dbc)[1])
+                any(isempty, map(intersect, ax, I)) && return nothing
+                bcI = (_linear(axes(parent(dest)), I), )
+		lviewidcs = (_linear(axes(localpart(parent(dest))), tolocalindices(lidcs, I)),)
+            else
+                @assert "$(I) and $(axes(dbc)) are not compatible"
+            end
+            # if we gotten into the second case I is not correct for bclocal
+	    lbc = bclocal(dbc, bcI)
+            lbc = Broadcast.instantiate(lbc)
+
             Base.copyto!(view(localpart(parent(dest)), lviewidcs...), lbc)
             return nothing
 	end
@@ -149,6 +190,7 @@ _bcdistribute(::DArrayStyle, x) = x
 # Don't bother distributing singletons
 _bcdistribute(::Broadcast.AbstractArrayStyle{0}, x) = x
 _bcdistribute(::Broadcast.AbstractArrayStyle, x) = distribute(x)
+_bcdistribute(::Broadcast.AbstractArrayStyle, x::AbstractRange) = x
 _bcdistribute(::Any, x) = x
 
 @inline bcdistribute_args(args::Tuple) = (bcdistribute(args[1]), bcdistribute_args(tail(args))...)
@@ -158,13 +200,24 @@ bcdistribute_args(args::Tuple{}) = ()
 # dropping axes here since recomputing is easier
 @inline bclocal(bc::Broadcasted{DArrayStyle{Style}}, idxs) where Style = Broadcasted{Style}(bc.f, bclocal_args(_bcview(axes(bc), idxs), bc.args))
 
+bclocal(x::T, idxs) where T = _bclocal(BroadcastStyle(T), x, idxs)
+
 # bclocal will do a view of the data and the copy it over
 # except when the data already is local
-function bclocal(x::SubOrDArray, idxs)
+function _bclocal(::DArrayStyle, x, idxs)
     bcidxs = _bcview(axes(x), idxs)
     makelocal(x, bcidxs...)
 end
-bclocal(x, idxs) = x
+_bclocal(::Broadcast.AbstractArrayStyle{0}, x, idxs) = x
+function _bclocal(::Broadcast.AbstractArrayStyle, x::AbstractRange, idxs)
+    @assert length(idxs) == 1
+    x[idxs[1]]
+end
+function _bclocal(::Broadcast.Style{Tuple}, x, idxs)
+    @assert length(idxs) == 1
+    tuple((e for (i,e) in enumerate(x) if i in idxs[1])...)
+end
+_bclocal(::Any, x, idxs) = error("don't know how to localise $x with $idxs")
 
 @inline bclocal_args(idxs, args::Tuple) = (bclocal(args[1], idxs), bclocal_args(idxs, tail(args))...)
 bclocal_args(idxs, args::Tuple{Any}) = (bclocal(args[1], idxs),)

@@ -249,14 +249,14 @@ arraykind(::Type{T}) where {_T, _N, Array{_T, _N} <:T <: AbstractArray} = Array
 # For every other leaf-type of <:AbstractArray we shall return it
 # This fallback is cheating, we would ideally want this functionality in Base
 arraykind(::Type{T}) where T<:AbstractArray = Base.typename(T).wrapper
+arraykind(::Type{T}, ::Type{E}) where {T, E} = arraykind(T){E}
 
 sz_localpart_ref(ref, id) = size(fetch(ref))
 
 Base.similar(d::DArray, T::Type, dims::Dims) = DArray(dims, procs(d)) do I
     # we might not have a localarray around to do `similar(lA, T, dims)`
     # so we have to fallback to the constructor.
-    ArrKind = arraykind(chunktype(d))
-    similar(ArrKind{T}, map(length, I))
+    similar(arraykind(chunktype(d), T), map(length, I))
 end
 Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
 Base.similar(d::DArray{T}, dims::Dims) where {T} = similar(d, T, dims)
@@ -354,7 +354,7 @@ _localindex(i::AbstractUnitRange, offset) = (first(i)-offset):(last(i)-offset)
 Equivalent to `Array(view(A, I...))` but optimised for the case that the data is local.
 Can return a view into `localpart(A)`
 """
-function makelocal(A::DArray, I::Vararg{Any, N}) where N
+function makelocal(A::DArray{T}, I::Vararg{Any, N}) where {T, N}
     Base.@_inline_meta
     J = map(i->Base.unalias(A, i), to_indices(A, I))
     J = map(j-> isa(j, Base.Slice) ? j.indices : j, J)
@@ -363,20 +363,20 @@ function makelocal(A::DArray, I::Vararg{Any, N}) where N
     lidcs = localindices(A)
     if Base.checkbounds_indices(Bool, lidcs, J)
         # data we want is local
-        viewidcs = ntuple(i -> _localindex(J[i], first(lidcs[i]) - 1), ndims(A))
+        viewidcs = tolocalindices(lidcs, J)
         return view(localpart(A), viewidcs...)
     else
         # Make more efficient (?maybe) by allocating new memory
         # only for the remote part
         viewidcs = ntuple(i -> _localindex(J[i], 0), ndims(A))
-        arr = similar(chunktype(A), map(length, viewidcs))
-        return  copyto!(arr, view(A, viewidcs...))
+        arr = similar(arraykind(chunktype(A), T), map(length, viewidcs))
+        return copyto!(arr, view(A, viewidcs...))
     end
 end
 
-function makelocal(A::SubDArray, I::Vararg{Any, N}) where N
+function makelocal(A::SubDArray{T}, I::Vararg{Any, N}) where {T,N}
     Base.@_inline_meta
-    arr = similar(chunktype(A), map(length, I))
+    arr = similar(arraykind(chunktype(A), T), map(length, I))
     copyto!(arr, view(A, I...))
 end
 
@@ -593,7 +593,9 @@ function tolocalindices(lidcs, idcs)
     ntuple(i->_localindex(idcs[i], first(lidcs[i])-1), length(idcs))
 end
 
-function Base.copyto!(A::Array, SD::SubDArray)
+Base.copyto!(A::Array, SD::SubDArray) = _dcopyto!(A, SD)
+
+function _dcopyto!(A, SD::SubDArray)
     D = parent(SD)
     indices = parentindices(SD)
     asyncmap(procs(D)) do p
@@ -612,7 +614,10 @@ function Base.copyto!(A::Array, SD::SubDArray)
         end
 	# We need to figure out where to put the data...
         a_idcs = tolocalindices(indices, part)
-        A[a_idcs...] .= part_chunk
+	if ndims(A) != length(a_idcs) && ndims(A) == 1
+	    a_idcs = (_linear(size(D), a_idcs),)
+	end
+	A[a_idcs...] .= reshape(part_chunk, map(length, a_idcs))
     end
     return A
 end
@@ -669,7 +674,7 @@ getlocalindex(d::DArray, idx...) = localpart(d)[idx...]
 function getindex_tuple(d::DArray{T}, I::Tuple{Vararg{Int}}) where T
     chidx = locate(d, I...)
     idxs = d.indices[chidx...]
-    localidx = tolocalindeces(idxs, I)
+    localidx = tolocalindices(idxs, I)
     pid = d.pids[chidx...]
     return remotecall_fetch(getlocalindex, pid, d, localidx...)::T
 end
