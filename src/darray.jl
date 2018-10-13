@@ -612,7 +612,6 @@ function Base.copyto!(A::Array, SD::SubDArray)
         end
 	# We need to figure out where to put the data...
         a_idcs = tolocalindices(indices, part)
-	@info "About to copy chunk" from=p to=myid() A=typeof(A) chunk=typeof(part_chunk)
         A[a_idcs...] .= part_chunk
     end
     return A
