@@ -81,6 +81,7 @@ function Broadcast.dotview(D::DArray, args...)
         maxI = maximum(I)
 
         cI = ntuple(i->minI[i]:maxI[i], ndims(D))
+        cI = ntuple(i->length(cI[i])==1 ? first(cI[i]) : cI[i], ndims(D))
         return view(D, cI...)
     end
     return Base.maybeview(D, args...)

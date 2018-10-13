@@ -670,7 +670,7 @@ getlocalindex(d::DArray, idx...) = localpart(d)[idx...]
 function getindex_tuple(d::DArray{T}, I::Tuple{Vararg{Int}}) where T
     chidx = locate(d, I...)
     idxs = d.indices[chidx...]
-    localidx = ntuple(i -> (I[i] - first(idxs[i]) + 1), ndims(d))
+    localidx = tolocalindeces(idxs, I)
     pid = d.pids[chidx...]
     return remotecall_fetch(getlocalindex, pid, d, localidx...)::T
 end
