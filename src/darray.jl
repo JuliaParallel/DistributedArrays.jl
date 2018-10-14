@@ -377,7 +377,7 @@ end
 function makelocal(A::SubDArray{T}, I::Vararg{Any, N}) where {T,N}
     Base.@_inline_meta
     arr = similar(arraykind(chunktype(A), T), map(length, I))
-    copyto!(arr, view(A, I...))
+    copyto!(arr, dotview(A, I...))
 end
 
 # shortcut to set/get localparts of a distributed object
@@ -614,10 +614,18 @@ function _dcopyto!(A, SD::SubDArray)
         end
 	# We need to figure out where to put the data...
         a_idcs = tolocalindices(indices, part)
+
+	# the dotview trick
 	if ndims(A) != length(a_idcs) && ndims(A) == 1
 	    a_idcs = (_linear(size(D), a_idcs),)
+	    
+	    # reindex to linear view
+	    if part_chunk isa SubArray
+	        linidcs = _linear(size(parent(part_chunk)), parentindices(part_chunk))
+		part_chunk = view(parent(part_chunk), linidcs)
+	    end
 	end
-	A[a_idcs...] .= reshape(part_chunk, map(length, a_idcs))
+	A[a_idcs...] .= part_chunk
     end
     return A
 end
