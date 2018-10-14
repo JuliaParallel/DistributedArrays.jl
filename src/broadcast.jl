@@ -91,6 +91,22 @@ function _linear(shape, cI)
 end
 
 function _cartesian(shape, linearI::AbstractUnitRange)
+    if length(linearI) == 1
+        # Ok this is really weird, we can't do the bwloe since that will
+        # lead to a single CartesianIndex which will makes us really sad
+        # we can't fall back to _cartesian(shape, linearI) since that will
+        # give us view of 0-dimension.
+        cI = _cartesian(shape, first(linearI))[1]
+        n = length(cI)
+        cI = ntuple(n) do i
+           if i == n
+               return cI[i]:cI[i]
+           else 
+              return i
+           end
+        end
+        return cI
+    end
     Is = CartesianIndices(shape)[linearI]
     minI = minimum(Is)
     maxI = maximum(Is)
@@ -114,7 +130,7 @@ function _cartesian(shape, linearI::AbstractUnitRange)
 end
 
 function _cartesian(shape, linearI::Integer)
-    I = CartesianIndices(shape)[linearI]
+    I = (CartesianIndices(shape)[linearI], )
     return I
 end
 
