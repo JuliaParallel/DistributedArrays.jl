@@ -79,7 +79,15 @@ function _linear(shape, cI)
     minI = minimum(Is)
     maxI = maximum(Is)
     I = minI:maxI
-    return I
+
+    # Sanity check
+    _I = LinearIndices(I)
+    if length(Is) == length(_I) && all(i1 == i2 for (i1, i2) in zip(Is, _I))
+        return I
+    else
+        @error "_linear failed for" shape cI I
+        error("Can't convert cartesian index to linear")
+    end
 end
 
 function _cartesian(shape, linearI::AbstractUnitRange)
@@ -95,7 +103,14 @@ function _cartesian(shape, linearI::AbstractUnitRange)
             return ci
         end
     end
-    return I
+    # Sanity check
+    _I = CartesianIndices(I)
+    if length(Is) == length(_I) && all(i1 == i2 for (i1, i2) in zip(Is, _I))
+        return I
+    else
+        @error "_cartesian failed for" shape linearI I
+        error("Can't create cartesian index from linear index")
+    end
 end
 
 function _cartesian(shape, linearI::Integer)
