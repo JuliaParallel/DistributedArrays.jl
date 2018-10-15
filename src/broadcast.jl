@@ -91,8 +91,7 @@ function _linear(shape, cI)
     end
 
     # Sanity check
-    _I = LinearIndices(I)
-    if length(Is) == length(_I) && all(i1 == i2 for (i1, i2) in zip(Is, _I))
+    if length(Is) == length(I) && all(i1 == i2 for (i1, i2) in zip(Is, I))
         return I
     else
         @error "_linear failed for" shape cI I
