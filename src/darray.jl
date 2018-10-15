@@ -612,16 +612,24 @@ function _dcopyto!(A, SD::SubDArray)
             # unalias_copy
             return view(localpart(D), idcs...)
         end
+
 	# We need to figure out where to put the data...
         a_idcs = tolocalindices(indices, part)
 
 	# the dotview trick
 	if ndims(A) != length(a_idcs) && ndims(A) == 1
-	    a_idcs = (_linear(size(D), a_idcs),)
-	    
+	    fakeAxes = map(a_idcs) do i
+	       if length(i) == 1
+	           return 1
+	       else
+	           return length(A)
+	       end
+	    end
+            @assert prod(fakeAxes) == length(A)
+	    a_idcs = (_linear(fakeAxes, a_idcs),)
 	    # reindex to linear view
 	    if part_chunk isa SubArray
-	        linidcs = _linear(size(parent(part_chunk)), parentindices(part_chunk))
+	        linidcs = _linear(axes(parent(part_chunk)), parentindices(part_chunk))
 		part_chunk = view(parent(part_chunk), linidcs)
 	    end
 	end

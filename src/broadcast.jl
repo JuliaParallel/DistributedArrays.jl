@@ -78,7 +78,7 @@ function _linear(shape, cI)
     Is = LinearIndices(shape)[cI...]
     minI = minimum(Is)
     maxI = maximum(Is)
-    if length(Is) > 2
+    if length(Is) >= 2
         stride = Is[2] - Is[1]
     else
         stride = 1
