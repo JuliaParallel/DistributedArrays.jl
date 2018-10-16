@@ -158,26 +158,31 @@ end
         remotecall_fetch(p) do
             # check if we are holding part of dest, and which part
             lidcs = localindices(parent(dest)) 
-            I = map(intersect, dest.indices, lidcs)
+            I = map(intersect, parentindices(dest), lidcs)
             any(isempty, I) && return nothing
 
             # check if the part we are holding is part of dbc
             # this should always be true...
             if length(I) == length(axes(dbc))
-                any(isempty, map(intersect, axes(dbc), I)) && return nothing
+                # TODO offset adjustment like for the linear case of bcI
+                if any(isempty, map(intersect, axes(dbc), I))
+                    @error "SD bc invariant broken" axes(dbc) I
+                    error("")
+                end
                 bcI = I
 		lviewidcs = tolocalindices(lidcs, I)
             elseif length(I) > length(axes(dbc)) && length(axes(dbc)) == 1
                 # project the axes of dbc to cartesian indices in dest
                 # this can happen due to the dotview optimisation of avoiding ReshaphedArray
-	        ax = _cartesian(size(parent(dest)), axes(dbc)[1])
-                any(isempty, map(intersect, ax, I)) && return nothing
-                bcI = (_linear(axes(parent(dest)), I), )
+                offset = last(axes(dbc)[1])
+                # we need to translate the global index I into the locally correct one for the dbc
+                # this is not the same as localindices since bc index 1:8 maps to 10:17 and 9:9 maps to 18:18
+                # if we gotten into the second case I is not correct for bclocal
+                bcI = (_linear(axes(parent(dest)), I) .- offset, )
 		lviewidcs = (_linear(axes(localpart(parent(dest))), tolocalindices(lidcs, I)),)
             else
                 @assert "$(I) and $(axes(dbc)) are not compatible"
             end
-            # if we gotten into the second case I is not correct for bclocal
 	    lbc = bclocal(dbc, bcI)
             lbc = Broadcast.instantiate(lbc)
 
