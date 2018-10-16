@@ -174,7 +174,7 @@ end
             elseif length(I) > length(axes(dbc)) && length(axes(dbc)) == 1
                 # project the axes of dbc to cartesian indices in dest
                 # this can happen due to the dotview optimisation of avoiding ReshaphedArray
-                offset = last(axes(dbc)[1])
+                offset = first(_linear(axes(parent(dest)), parentindices(dest))) - 1
                 # we need to translate the global index I into the locally correct one for the dbc
                 # this is not the same as localindices since bc index 1:8 maps to 10:17 and 9:9 maps to 18:18
                 # if we gotten into the second case I is not correct for bclocal
