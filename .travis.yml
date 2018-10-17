@@ -18,4 +18,4 @@ before_install:
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
 after_success:
   - julia -e 'import Pkg; cd(Pkg.dir("DistributedArrays")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder()); Codecov.submit(Codecov.process_folder())'
-  - julia -e 'import Pkg; cd(Pkg.dir("DistributedArrays")); Pkg.add("Documenter"); include(joinpath("docs", "make.jl"))'
+  - julia -e 'import Pkg; cd(Pkg.dir("DistributedArrays")); ps=Pkg.PackageSpec(name="Documenter", version="0.19"); Pkg.add(ps); Pkg.pin(ps); include(joinpath("docs", "make.jl"))'
