@@ -63,7 +63,10 @@ using Random
         @test fetch(@spawnat MYID length(localpart(DA)) == 2)
         @test fetch(@spawnat OTHERIDS length(localpart(DA)) == 1)
         close(DA)
+        @test DistributedArrays.defaultdist(50,4) == [1,14,27,39,51]
     end
+    
+    
 end
 
 check_leaks()
