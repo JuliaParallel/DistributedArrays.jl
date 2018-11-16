@@ -287,8 +287,9 @@ function defaultdist(sz::Int, nc::Int)
     if sz >= nc
         chunk_size = div(sz,nc)
         remainder = rem(sz,nc)
-        grid = Array(1:chunk_size:sz+1)
+        grid = zeros(Int64, nc+1)
         for i = 1:(nc+1)
+            grid[i] += (i-1)*chunk_size + 1
             if i<= remainder
                 grid[i] += i-1
             else
