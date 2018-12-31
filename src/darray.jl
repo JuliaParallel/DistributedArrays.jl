@@ -646,6 +646,9 @@ function Base.getindex(d::DArray, i::Int...)
 end
 
 Base.getindex(d::DArray) = d[1]
+if VERSION > v"1.1-"
+Base.getindex(d::SubDArray, I::Int...) = invoke(getindex, Tuple{SubArray{<:Any,N},Vararg{Int,N}} where N, d, I...)
+end
 Base.getindex(d::SubOrDArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
 
 function Base.isassigned(D::DArray, i::Integer...)
