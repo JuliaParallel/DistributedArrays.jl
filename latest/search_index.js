@@ -233,7 +233,7 @@ var documenterSearchIndex = {"docs": [
 },
 
 {
-    "location": "api.html#DistributedArrays.makelocal-Union{Tuple{AT}, Tuple{N}, Tuple{DArray{#s44,#s43,AT} where #s43 where #s44,Vararg{Any,N}}} where AT where N",
+    "location": "api.html#DistributedArrays.makelocal-Union{Tuple{AT}, Tuple{N}, Tuple{DArray{#s49,#s48,AT} where #s48 where #s49,Vararg{Any,N}}} where AT where N",
     "page": "API",
     "title": "DistributedArrays.makelocal",
     "category": "method",
