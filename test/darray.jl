@@ -71,8 +71,9 @@ using Random
         Y = nworkers() * block
         X = nworkers() * block
 
+        @assert nworkers() > 1
         @test_throws ErrorException DArray((X, Y)) do I
-            eltype = first(I[1]) == 1 ? Int64 : Float64
+            eltype = first(CartesianIndices(I)) == CartesianIndex(1, 1) ? Int64 : Float64
             zeros(eltype, map(length, I))
         end
     end
