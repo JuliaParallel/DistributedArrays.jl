@@ -78,23 +78,31 @@ Base.hash(d::DArray, h::UInt) = Base.hash(d.id, h)
 ## core constructors ##
 
 function DArray(id, init, dims, pids, idxs, cuts)
-    r=Channel(1)
+    localtypes = Vector{DataType}(undef,length(pids))
+
     @sync begin
         for i = 1:length(pids)
             @async begin
                 local typA
                 if isa(init, Function)
-                    typA=remotecall_fetch(construct_localparts, pids[i], init, id, dims, pids, idxs, cuts)
+                    typA = remotecall_fetch(construct_localparts, pids[i], init, id, dims, pids, idxs, cuts)
                 else
                     # constructing from an array of remote refs.
-                    typA=remotecall_fetch(construct_localparts, pids[i], init[i], id, dims, pids, idxs, cuts)
+                    typA = remotecall_fetch(construct_localparts, pids[i], init[i], id, dims, pids, idxs, cuts)
                 end
-                !isready(r) && put!(r, typA)
+                localtypes[i] = typA
             end
         end
     end
 
-    A = take!(r)
+    if length(unique(localtypes)) != 1
+        @sync for p in pids
+            @async remotecall_fetch(release_localpart, p, id)
+        end
+        throw(ErrorException("Constructed localparts have different `eltype`: $(localtypes)"))
+    end
+    A = first(localtypes)
+
     if myid() in pids
         d = registry[id]
         d = isa(d, WeakRef) ? d.value : d
