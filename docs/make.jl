@@ -2,7 +2,7 @@ using Documenter, DistributedArrays
 
 makedocs(
     modules = [DistributedArrays],
-    format = :html,
+    format = Documenter.HTML(),
     sitename = "DistributedArrays.jl",
     pages = [
         "Introduction" => "index.md"
@@ -13,9 +13,4 @@ makedocs(
 
 deploydocs(
     repo = "github.com/JuliaParallel/DistributedArrays.jl.git",
-    julia = "1.0",
-    # no need to build anything here, re-use output of `makedocs`
-    target = "build",
-    deps = nothing,
-    make = nothing
 )

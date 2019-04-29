@@ -3,7 +3,7 @@
 ##
 
 using Base.Broadcast
-import Base.Broadcast: BroadcastStyle, Broadcasted, _max
+import Base.Broadcast: BroadcastStyle, Broadcasted
 
 # We define a custom ArrayStyle here since we need to keep track of
 # the fact that it is Distributed and what kind of underlying broadcast behaviour
