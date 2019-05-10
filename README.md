@@ -45,7 +45,7 @@ Contributions are very welcome, as are feature requests and suggestions. Please 
 [discourse-tag-url]: https://discourse.julialang.org/c/domain/parallel
 
 [docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
-[docs-dev-url]: https://juliaparallel.github.io/DistributedArrays.jl/latest
+[docs-dev-url]: https://juliaparallel.github.io/DistributedArrays.jl/dev
 
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
 [docs-stable-url]: https://juliaparallel.github.io/DistributedArrays.jl/stable
