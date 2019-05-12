@@ -57,15 +57,15 @@ equal the number of processes.
 * `distribute(a::Array)` converts a local array to a distributed array.
 
 * `localpart(d::DArray)` obtains the locally-stored portion
-of a  `DArray`.
+  of a  `DArray`.
 
 * Localparts can be retrived and set via the indexing syntax too.
-Indexing via symbols is used for this, specifically symbols `:L`,`:LP`,`:l`,`:lp` which
-are all equivalent. For example, `d[:L]` returns the localpart of `d`
-while `d[:L]=v` sets `v` as the localpart of `d`.
+  Indexing via symbols is used for this, specifically symbols `:L`,`:LP`,`:l`,`:lp` which
+  are all equivalent. For example, `d[:L]` returns the localpart of `d`
+  while `d[:L]=v` sets `v` as the localpart of `d`.
 
 * `localindices(a::DArray)` gives a tuple of the index ranges owned by the
-local process.
+  local process.
 
 * `convert(Array, a::DArray)` brings all the data to the local process.
 
@@ -154,7 +154,7 @@ is convenient for many problems. As an example, consider implementing the
 "life" cellular automaton, where each cell in a grid is updated according
 to its neighboring cells. To compute a chunk of the result of one iteration,
 each process needs the immediate neighbor cells of its local chunk. The
-following code accomplishes this::
+following code accomplishes this:
 
 ```julia
 function life_step(d::DArray)
@@ -185,7 +185,7 @@ data into a local array `old`. Note that the `do` block syntax is
 convenient for passing `init` functions to the `DArray` constructor.
 Next, the serial function `life_rule` is called to apply the update rules
 to the data, yielding the needed `DArray` chunk. Nothing about `life_rule`
-is `DArray`\ -specific, but we list it here for completeness::
+is `DArray`\ -specific, but we list it here for completeness:
 
 ```julia
 function life_rule(old)
