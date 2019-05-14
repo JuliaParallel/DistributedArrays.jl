@@ -672,6 +672,9 @@ function Base.isassigned(D::DArray, i::Integer...)
     end
 end
 
+Base.copy(d::SubDArray) = copyto!(similar(d), d)
+Base.copy(d::SubDArray{<:Any,2}) = copyto!(similar(d), d)
+
 function Base.copyto!(dest::SubOrDArray, src::AbstractArray)
     asyncmap(procs(dest)) do p
         remotecall_fetch(p) do
