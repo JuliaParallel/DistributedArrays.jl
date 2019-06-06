@@ -79,7 +79,14 @@ Base.hash(d::DArray, h::UInt) = Base.hash(d.id, h)
 
 function DArray(id, init, dims, pids, idxs, cuts)
     localtypes = Vector{DataType}(undef,length(pids))
-
+    
+    # fixes issue #206
+    pids=collect(copy(pids))
+    ind=findfirst(isequal(myid()),pids)
+    if ind != nothing
+        pids[end],pids[ind]=pids[ind],pids[end]
+    end
+    
     @sync begin
         for i = 1:length(pids)
             @async begin
