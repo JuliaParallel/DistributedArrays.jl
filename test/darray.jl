@@ -349,6 +349,13 @@ end
 
 check_leaks()
 
+unpack(ex::Base.CapturedException) = unpack(ex.ex)
+unpack(ex::Distributed.RemoteException) = unpack(ex.captured)
+if VERSION >= v"1.3.0-alpha.110"
+unpack(ex::Base.TaskFailedException) = unpack(ex.task.exception)
+end
+unpack(ex) = ex
+
 @testset "test sum on DArrays" begin
     A = randn(100,100)
     DA = distribute(A)
@@ -361,7 +368,7 @@ check_leaks()
             @test !isempty(err.exceptions)
             for excep in err.exceptions
                 # Unpack the remote exception
-                orig_err = excep.ex.captured.ex
+                orig_err = unpack(excep)
                 @test isa(orig_err, ArgumentError)
             end
         else
@@ -375,7 +382,7 @@ check_leaks()
             @test !isempty(err.exceptions)
             for excep in err.exceptions
                 # Unpack the remote exception
-                orig_err = excep.ex.captured.ex
+                orig_err = unpack(excep)
                 @test isa(orig_err, ArgumentError)
             end
         else
