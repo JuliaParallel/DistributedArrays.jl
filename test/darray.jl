@@ -1064,13 +1064,13 @@ function testaccum(desdim,procslist)
             oa=fill(0,desdim)
             cumsum!(oa,fill(1,desdim),dims=i)
             c=(partions...,)
-            da=dfill(0,desdim,procslist,c)
+            da=dfill(0,(desdim...,),procslist,c)
 
             daccumulate!(+,da,dfill(1,desdim,procslist,c),i)
 
              oda=convert(Array,da)
             @test oda==oa
-            println("pass")
+            #println("pass")
             close(da)
         end
         return
@@ -1084,8 +1084,8 @@ function testaccum(desdim,procslist)
     dfs(1,1)
 
 end
-
 @testset "test daccumulat!" begin
+    testaccum((100,),workers())
     testaccum((10,10),workers())
     testaccum((10,10,10),workers())
     testaccum((10,10,10,10),workers())
