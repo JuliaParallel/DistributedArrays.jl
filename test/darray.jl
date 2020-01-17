@@ -2,6 +2,8 @@ using Test, LinearAlgebra, SpecialFunctions
 using Statistics: mean
 using SparseArrays: nnz
 using Random
+import Primes: factor
+
 @everywhere using SparseArrays: sprandn
 
 @testset "test distribute and other constructors" begin
