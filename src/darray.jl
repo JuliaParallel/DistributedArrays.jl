@@ -851,6 +851,8 @@ function Random.rand!(A::DArray, ::Type{T}) where T
         remotecall_wait((A, T)->rand!(localpart(A), T), p, A, T)
     end
 end
+
+
 function daccumulateindep!(op,darray1::DArray{T},darray2::DArray{T}, procsarray,dimis,dimstuble) where{T}
 
     noprocs=length(procsarray)
@@ -915,10 +917,11 @@ function daccumulateindep!(op,darray1::DArray{T},darray2::DArray{T}, procsarray,
             myselec=[selec[1:dimis-1]...,i,selec[dimis:end]...]
             myarray[myselec...]+=x
             end=#
+            if typeof(x)<:Array
             newshape=size(x)
             newshape=(newshape[1:dimis-1]...,1,newshape[dimis:end]...)
             x=reshape(x,newshape)
-
+             end
             broadcast!(op,dest,dest,x)
 
 
