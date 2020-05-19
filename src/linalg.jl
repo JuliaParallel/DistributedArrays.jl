@@ -80,7 +80,7 @@ function add!(dest, src, scale = one(dest[1]))
     return dest
 end
 
-function mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Number = 0)
+function LinearAlgebra.mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Number = 0)
 
     # error checks
     if size(A, 2) != length(x)
@@ -127,7 +127,7 @@ function mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Number = 1, β::Num
     return y
 end
 
-function mul!(y::DVector, adjA::Adjoint{<:Number,<:DMatrix}, x::AbstractVector, α::Number = 1, β::Number = 0)
+function LinearAlgebra.mul!(y::DVector, adjA::Adjoint{<:Number,<:DMatrix}, x::AbstractVector, α::Number = 1, β::Number = 0)
 
     A = parent(adjA)
 
@@ -259,9 +259,9 @@ function _matmatmul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number, β::
     return C
 end
 
-mul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number = 1, β::Number = 0) = _matmatmul!(C, A, B, α, β, 'N')
-mul!(C::DMatrix, A::Adjoint{<:Number,<:DMatrix}, B::AbstractMatrix, α::Number = 1, β::Number = 0) = _matmatmul!(C, parent(A), B, α, β, 'C')
-mul!(C::DMatrix, A::Transpose{<:Number,<:DMatrix}, B::AbstractMatrix, α::Number = 1, β::Number = 0) = _matmatmul!(C, parent(A), B, α, β, 'T')
+LinearAlgebra.mul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number = 1, β::Number = 0) = _matmatmul!(C, A, B, α, β, 'N')
+LinearAlgebra.mul!(C::DMatrix, A::Adjoint{<:Number,<:DMatrix}, B::AbstractMatrix, α::Number = 1, β::Number = 0) = _matmatmul!(C, parent(A), B, α, β, 'C')
+LinearAlgebra.mul!(C::DMatrix, A::Transpose{<:Number,<:DMatrix}, B::AbstractMatrix, α::Number = 1, β::Number = 0) = _matmatmul!(C, parent(A), B, α, β, 'T')
 
 _matmul_op = (t,s) -> t*s + t*s
 
