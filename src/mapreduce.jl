@@ -136,7 +136,7 @@ function Base.extrema(d::DArray)
     return reduce((t,s) -> (min(t[1], s[1]), max(t[2], s[2])), r)
 end
 
-Statistics._mean(A::DArray, region) = sum(A, dims = region) ./ prod((size(A, i) for i in region))
+Statistics._mean(f, A::DArray, region) = sum(f, A, dims = region) ./ prod((size(A, i) for i in region))
 
 # Unary vector functions
 (-)(D::DArray) = map(-, D)
