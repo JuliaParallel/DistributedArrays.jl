@@ -241,7 +241,10 @@ macro DArray(ex0::Expr)
         var = ex.args[d+1].args[1]
         ex.args[d+1] = :( $(esc(var)) = ($(ranges[d]))[I[$d]] )
     end
-    return :( DArray((I::Tuple{Vararg{UnitRange{Int}}})->($ex0),
+    
+    fdef=:(local _ff(I::Tuple{Vararg{UnitRange{Int}}}) = $ex0)
+            
+    return :( DArray($fdef,
                 tuple($(map(r->:(length($r)), ranges)...))) )
 end
 
