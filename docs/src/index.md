@@ -405,7 +405,7 @@ on the node that created it.
 
 Nested `spmd` calls
 -------------------
-As `spmd` executes the the specified function on all participating nodes, we need to be careful with nesting `spmd` calls.
+As `spmd` executes the specified function on all participating nodes, we need to be careful with nesting `spmd` calls.
 
 An example of an unsafe(wrong) way:
 ```julia
@@ -451,6 +451,6 @@ function foo(d::DArray)
 end
 spmd(foo,....)
 ```
-Without the `myid()` check, the `spmd` call to `foo` would execute `map!` from all nodes, which is not what we probably want.
+Without the `myid()` check, the `spmd` call to `foo` would execute `map!` from all nodes, which is probably not what we want.
 
 Similarly `@everywhere` from within a SPMD run should also be driven from the master node only.
