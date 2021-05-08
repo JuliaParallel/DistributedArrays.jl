@@ -485,6 +485,7 @@ dzeros(::Type{T}, d1::Integer, drest::Integer...) where {T} = dzeros(T, convert(
 dzeros(d1::Integer, drest::Integer...) = dzeros(Float64, convert(Dims, tuple(d1, drest...)))
 dzeros(d::Dims) = dzeros(Float64, d)
 
+Base.zero(d::DArray) = dzeros(eltype(d), size(d), procs(d))
 
 """
     dones(dims, ...)

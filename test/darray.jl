@@ -562,6 +562,12 @@ check_leaks()
         @test size(A) == (10,10)
         close(A)
     end
+
+    @testset "zero" begin
+        A = dzeros(Int, 10, 10)
+        B = zero(A)
+        @test A == B
+    end
 end
 
 check_leaks()
