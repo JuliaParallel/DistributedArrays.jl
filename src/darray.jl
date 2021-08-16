@@ -597,7 +597,7 @@ function Base.copyto!(a::Array, s::SubDArray)
     return a
 end
 
-VERSION < v"1.2"
+if VERSION < v"1.2"
     # This is an internal API that has changed
     reindex(A, I, J) = Base.reindex(A, I, J)
 else
