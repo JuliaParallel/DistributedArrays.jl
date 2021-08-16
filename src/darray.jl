@@ -597,10 +597,17 @@ function Base.copyto!(a::Array, s::SubDArray)
     return a
 end
 
+if VERSION < v"1.2"
+    # This is an internal API that has changed
+    reindex(A, I, J) = Base.reindex(A, I, J)
+else
+    reindex(A, I, J) = Base.reindex(I, J)
+end
+
 function DArray(SD::SubArray{T,N}) where {T,N}
     D = SD.parent
     DArray(size(SD), procs(D)) do I
-        lindices = Base.reindex(SD, SD.indices, I)
+        lindices = reindex(SD, SD.indices, I)
         convert(Array, D[lindices...])
     end
 end
