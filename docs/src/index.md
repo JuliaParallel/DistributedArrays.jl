@@ -245,7 +245,7 @@ array is distributed, which processor holds which indices and so on. When the `D
 on the master process is garbage collected, all participating workers are notified and
 localparts of the `DArray` freed on each worker.
 
-Since the size of the `DArray object itself is small, a problem arises as `gc` on the master faces no memory pressure to
+Since the size of the `DArray` object itself is small, a problem arises as `gc` on the master faces no memory pressure to
 collect the `DArray` immediately. This results in a delay of the memory being released on the participating workers.
 
 Therefore it is highly recommended to explicitly call `close(d::DArray)` as soon as user code
