@@ -233,29 +233,29 @@ julia> sum(A) == sum(DA)
 false
 ```
 
-The ultimate ordering of operations will be dependent on how the Array is distributed.
+The ultimate ordering of operations will be dependent on how the `Array` is distributed.
 
 
 
-Garbage Collection and DArrays
+Garbage Collection and `DArray`s
 ------------------------------
 
-When a DArray is constructed (typically on the master process), the returned DArray objects stores information on how the
-array is distributed, which processor holds which indices and so on. When the DArray object
+When a `DArray` is constructed (typically on the master process), the returned `DArray` objects stores information on how the
+array is distributed, which processor holds which indices and so on. When the `DArray` object
 on the master process is garbage collected, all participating workers are notified and
-localparts of the DArray freed on each worker.
+localparts of the `DArray` freed on each worker.
 
-Since the size of the DArray object itself is small, a problem arises as `gc` on the master faces no memory pressure to
-collect the DArray immediately. This results in a delay of the memory being released on the participating workers.
+Since the size of the `DArray` object itself is small, a problem arises as `gc` on the master faces no memory pressure to
+collect the `DArray` immediately. This results in a delay of the memory being released on the participating workers.
 
 Therefore it is highly recommended to explicitly call `close(d::DArray)` as soon as user code
 has finished working with the distributed array.
 
-It is also important to note that the localparts of the DArray is collected from all participating workers
-when the DArray object on the process creating the DArray is collected. It is therefore important to maintain
-a reference to a DArray object on the creating process for as long as it is being computed upon.
+It is also important to note that the localparts of the `DArray` is collected from all participating workers
+when the `DArray` object on the process creating the `DArray` is collected. It is therefore important to maintain
+a reference to a `DArray` object on the creating process for as long as it is being computed upon.
 
-`d_closeall()` is another useful function to manage distributed memory. It releases all darrays created from
+`d_closeall()` is another useful function to manage distributed memory. It releases all `DArrays` created from
 the calling process, including any temporaries created during computation.
 
 
@@ -275,7 +275,7 @@ Argument `data` if supplied is distributed over the `pids`. `length(data)` must 
 If the multiple is 1, returns a `DArray{T,1,T}` where T is `eltype(data)`. If the multiple is greater than 1,
 returns a `DArray{T,1,Array{T,1}}`, i.e., it is equivalent to calling `distribute(data)`.
 
-`gather{T}(d::DArray{T,1,T})` returns an Array{T,1} consisting of all distributed elements of `d`
+`gather{T}(d::DArray{T,1,T})` returns an `Array{T,1}` consisting of all distributed elements of `d`.
 
 Given a `DArray{T,1,T}` object `d`, `d[:L]` returns the localpart on a worker. `d[i]` returns the `localpart`
 on the ith worker that `d` is distributed over.
@@ -284,7 +284,7 @@ on the ith worker that `d` is distributed over.
 
 SPMD Mode (An MPI Style SPMD mode with MPI like primitives, requires Julia 0.6)
 -------------------------------------------------------------------------------
-SPMD, i.e., a Single Program Multiple Data mode is implemented by submodule `DistributedArrays.SPMD`. In this mode the same function is executed in parallel on all participating nodes. This is a typical style of MPI programs where the same program is executed on all processors. A basic subset of MPI-like primitives are currently supported. As a programming model it should be familiar to folks with an MPI background.
+SPMD, i.e., a Single Program Multiple Data mode, is implemented by submodule `DistributedArrays.SPMD`. In this mode the same function is executed in parallel on all participating nodes. This is a typical style of MPI programs where the same program is executed on all processors. A basic subset of MPI-like primitives are currently supported. As a programming model it should be familiar to folks with an MPI background.
 
 The same block of code is executed concurrently on all workers using the `spmd` function.
 
