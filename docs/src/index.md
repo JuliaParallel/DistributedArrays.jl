@@ -210,7 +210,7 @@ Numerical Results of Distributed Computations
 
 Floating point arithmetic is not associative and this comes up
 when performing distributed computations over `DArray`s.  All `DArray`
-operations are performed over the localparts and then aggregated.
+operations are performed over the `localpart` chunks and then aggregated.
 The change in ordering of the operations will change the numeric result as
 seen in this simple example:
 
