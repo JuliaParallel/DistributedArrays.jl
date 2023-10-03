@@ -44,7 +44,10 @@ function d_closeall()
     crefs = copy(refs)
     for id in crefs
         if id[1] ==  myid() # sanity check
-            haskey(registry, id) && close(d_from_weakref_or_d(id))
+            if haskey(registry, id)
+                d = d_from_weakref_or_d(id)
+                (d === nothing) || close(d)
+            end
             yield()
         end
     end
