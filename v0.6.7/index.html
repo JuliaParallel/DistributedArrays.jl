@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Introduction · DistributedArrays.jl</title><meta name="title" content="Introduction · DistributedArrays.jl"/><meta property="og:title" content="Introduction · DistributedArrays.jl"/><meta property="twitter:title" content="Introduction · DistributedArrays.jl"/><meta name="description" content="Documentation for DistributedArrays.jl."/><meta property="og:description" content="Documentation for DistributedArrays.jl."/><meta property="twitter:description" content="Documentation for DistributedArrays.jl."/><script data-outdated-warner src="assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="assets/documenter.js"></script><script src="search_index.js"></script><script src="siteinfo.js"></script><script src="../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href>DistributedArrays.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li class="is-active"><a class="tocitem" href>Introduction</a><ul class="internal"><li><a class="tocitem" href="#Distributed-Arrays"><span>Distributed Arrays</span></a></li><li><a class="tocitem" href="#Constructing-Distributed-Arrays"><span>Constructing Distributed Arrays</span></a></li><li><a class="tocitem" href="#Distributed-Array-Operations"><span>Distributed Array Operations</span></a></li><li><a class="tocitem" href="#Numerical-Results-of-Distributed-Computations"><span>Numerical Results of Distributed Computations</span></a></li><li><a class="tocitem" href="#Garbage-Collection-and-DArrays"><span>Garbage Collection and <code>DArray</code>s</span></a></li><li><a class="tocitem" href="#Working-with-distributed-non-array-data-(requires-Julia-0.6)"><span>Working with distributed non-array data (requires Julia 0.6)</span></a></li><li><a class="tocitem" href="#SPMD-Mode-(An-MPI-Style-SPMD-mode-with-MPI-like-primitives,-requires-Julia-0.6)"><span>SPMD Mode (An MPI Style SPMD mode with MPI like primitives, requires Julia 0.6)</span></a></li><li><a class="tocitem" href="#Example"><span>Example</span></a></li><li><a class="tocitem" href="#SPMD-Context"><span>SPMD Context</span></a></li><li><a class="tocitem" href="#Nested-spmd-calls"><span>Nested <code>spmd</code> calls</span></a></li></ul></li><li><a class="tocitem" href="api/">API</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Introduction</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Introduction</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaParallel/DistributedArrays.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaParallel/DistributedArrays.jl/blob/master/docs/src/index.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="DistributedArrays.jl"><a class="docs-heading-anchor" href="#DistributedArrays.jl">DistributedArrays.jl</a><a id="DistributedArrays.jl-1"></a><a class="docs-heading-anchor-permalink" href="#DistributedArrays.jl" title="Permalink"></a></h1><ul><li><a href="api/#API">API</a></li><li><a href="#DistributedArrays.jl">DistributedArrays.jl</a></li><li class="no-marker"><ul><li><a href="#Distributed-Arrays">Distributed Arrays</a></li><li><a href="#Constructing-Distributed-Arrays">Constructing Distributed Arrays</a></li><li><a href="#Distributed-Array-Operations">Distributed Array Operations</a></li><li><a href="#Numerical-Results-of-Distributed-Computations">Numerical Results of Distributed Computations</a></li><li><a href="#Garbage-Collection-and-DArrays">Garbage Collection and <code>DArray</code>s</a></li><li><a href="#Working-with-distributed-non-array-data-(requires-Julia-0.6)">Working with distributed non-array data (requires Julia 0.6)</a></li><li><a href="#SPMD-Mode-(An-MPI-Style-SPMD-mode-with-MPI-like-primitives,-requires-Julia-0.6)">SPMD Mode (An MPI Style SPMD mode with MPI like primitives, requires Julia 0.6)</a></li><li><a href="#Example">Example</a></li><li><a href="#SPMD-Context">SPMD Context</a></li><li><a href="#Nested-spmd-calls">Nested <code>spmd</code> calls</a></li></ul></li></ul><h2 id="Distributed-Arrays"><a class="docs-heading-anchor" href="#Distributed-Arrays">Distributed Arrays</a><a id="Distributed-Arrays-1"></a><a class="docs-heading-anchor-permalink" href="#Distributed-Arrays" title="Permalink"></a></h2><p>Large computations are often organized around large arrays of data. In these cases, a particularly natural way to obtain parallelism is to distribute arrays among several processes. This combines the memory resources of multiple machines, allowing use of arrays too large to fit on one machine. Each process can read and write to the part of the array it owns and has read-only access to the parts it doesn&#39;t own. This provides a ready answer to the question of how a program should be divided among machines.</p><p>Julia distributed arrays are implemented by the <code>DArray</code> type. A <code>DArray</code> has an element type and dimensions just like an <code>Array</code>. A <code>DArray</code> can also use arbitrary array-like types to represent the local chunks that store actual data. The data in a <code>DArray</code> is distributed by dividing the index space into some number of blocks in each dimension.</p><p>Common kinds of arrays can be constructed with functions beginning with <code>d</code>:</p><pre><code class="language-julia hljs">dzeros(100,100,10)
+dones(100,100,10)
+drand(100,100,10)
+drandn(100,100,10)
+dfill(x,100,100,10)</code></pre><p>In the last case, each element will be initialized to the specified value <code>x</code>. These functions automatically pick a distribution for you. For more control, you can specify which processes to use, and how the data should be distributed:</p><pre><code class="language-julia hljs">dzeros((100,100), workers()[1:4], [1,4])</code></pre><p>The second argument specifies that the array should be created on the first four workers. When dividing data among a large number of processes, one often sees diminishing returns in performance. Placing <code>DArray</code>s on a subset of processes allows multiple <code>DArray</code> computations to happen at once, with a higher ratio of work to communication on each process.</p><p>The third argument specifies a distribution; the nth element of this array specifies how many pieces dimension n should be divided into. In this example the first dimension will not be divided, and the second dimension will be divided into 4 pieces. Therefore each local chunk will be of size <code>(100,25)</code>. Note that the product of the distribution array must equal the number of processes.</p><ul><li><p><code>distribute(a::Array)</code> converts a local array to a distributed array.</p></li><li><p><code>localpart(d::DArray)</code> obtains the locally-stored portion of a  <code>DArray</code>.</p></li><li><p>Localparts can be retrived and set via the indexing syntax too. Indexing via symbols is used for this, specifically symbols <code>:L</code>,<code>:LP</code>,<code>:l</code>,<code>:lp</code> which are all equivalent. For example, <code>d[:L]</code> returns the localpart of <code>d</code> while <code>d[:L]=v</code> sets <code>v</code> as the localpart of <code>d</code>.</p></li><li><p><code>localindices(a::DArray)</code> gives a tuple of the index ranges owned by the local process.</p></li><li><p><code>convert(Array, a::DArray)</code> brings all the data to the local process.</p></li></ul><p>Indexing a <code>DArray</code> (square brackets) with ranges of indices always creates a <code>SubArray</code>, not copying any data.</p><h2 id="Constructing-Distributed-Arrays"><a class="docs-heading-anchor" href="#Constructing-Distributed-Arrays">Constructing Distributed Arrays</a><a id="Constructing-Distributed-Arrays-1"></a><a class="docs-heading-anchor-permalink" href="#Constructing-Distributed-Arrays" title="Permalink"></a></h2><p>The primitive <code>DArray</code> constructor has the following somewhat elaborate signature:</p><pre><code class="language-julia hljs">DArray(init, dims[, procs, dist])</code></pre><p><code>init</code> is a function that accepts a tuple of index ranges. This function should allocate a local chunk of the distributed array and initialize it for the specified indices. <code>dims</code> is the overall size of the distributed array. <code>procs</code> optionally specifies a vector of process IDs to use. <code>dist</code> is an integer vector specifying how many chunks the distributed array should be divided into in each dimension.</p><p>The last two arguments are optional, and defaults will be used if they are omitted.</p><p>As an example, here is how to turn the local array constructor <code>fill</code> into a distributed array constructor:</p><pre><code class="language-julia hljs">dfill(v, args...) = DArray(I-&gt;fill(v, map(length,I)), args...)</code></pre><p>In this case the <code>init</code> function only needs to call <code>fill</code> with the dimensions of the local piece it is creating.</p><p><code>DArray</code>s can also be constructed from multidimensional <code>Array</code> comprehensions with the <code>@DArray</code> macro syntax.  This syntax is just sugar for the primitive <code>DArray</code> constructor:</p><pre><code class="language-julia hljs">julia&gt; [i+j for i = 1:5, j = 1:5]
+5x5 Array{Int64,2}:
+ 2  3  4  5   6
+ 3  4  5  6   7
+ 4  5  6  7   8
+ 5  6  7  8   9
+ 6  7  8  9  10
+
+julia&gt; @DArray [i+j for i = 1:5, j = 1:5]
+5x5 DistributedArrays.DArray{Int64,2,Array{Int64,2}}:
+ 2  3  4  5   6
+ 3  4  5  6   7
+ 4  5  6  7   8
+ 5  6  7  8   9
+ 6  7  8  9  10</code></pre><h3 id="Construction-from-arrays-generated-on-separate-processes"><a class="docs-heading-anchor" href="#Construction-from-arrays-generated-on-separate-processes">Construction from arrays generated on separate processes</a><a id="Construction-from-arrays-generated-on-separate-processes-1"></a><a class="docs-heading-anchor-permalink" href="#Construction-from-arrays-generated-on-separate-processes" title="Permalink"></a></h3><p><code>DArray</code>s can also be constructed from arrays that have been constructed on separate processes, as demonstrated below:</p><pre><code class="language-julia hljs">ras = [@spawnat p rand(30,30) for p in workers()[1:4]]
+ras = reshape(ras,(2,2))
+D   = DArray(ras)</code></pre><p>An alternative syntax is:</p><pre><code class="language-julia hljs">r1 = DistributedArrays.remotecall(() -&gt; rand(10,10), workers()[1]) 
+r2 = DistributedArrays.remotecall(() -&gt; rand(10,10), workers()[2]) 
+r3 = DistributedArrays.remotecall(() -&gt; rand(10,10), workers()[3]) 
+r4 = DistributedArrays.remotecall(() -&gt; rand(10,10), workers()[4]) 
+D  = DArray(reshape([r1 r2 r3 r4], (2,2))) </code></pre><p>The distribution of indices across workers can be checked with</p><pre><code class="language-julia hljs">[@fetchfrom p localindices(D) for p in workers()]</code></pre><h2 id="Distributed-Array-Operations"><a class="docs-heading-anchor" href="#Distributed-Array-Operations">Distributed Array Operations</a><a id="Distributed-Array-Operations-1"></a><a class="docs-heading-anchor-permalink" href="#Distributed-Array-Operations" title="Permalink"></a></h2><p>At this time, distributed arrays do not have much functionality. Their major utility is allowing communication to be done via array indexing, which is convenient for many problems. As an example, consider implementing the &quot;life&quot; cellular automaton, where each cell in a grid is updated according to its neighboring cells. To compute a chunk of the result of one iteration, each process needs the immediate neighbor cells of its local chunk. The following code accomplishes this:</p><pre><code class="language-julia hljs">function life_step(d::DArray)
+    DArray(size(d),procs(d)) do I
+        top   = mod(first(I[1])-2,size(d,1))+1
+        bot   = mod( last(I[1])  ,size(d,1))+1
+        left  = mod(first(I[2])-2,size(d,2))+1
+        right = mod( last(I[2])  ,size(d,2))+1
+
+        old = Array{Bool}(undef, length(I[1])+2, length(I[2])+2)
+        old[1      , 1      ] = d[top , left]   # left side
+        old[2:end-1, 1      ] = d[I[1], left]
+        old[end    , 1      ] = d[bot , left]
+        old[1      , 2:end-1] = d[top , I[2]]
+        old[2:end-1, 2:end-1] = d[I[1], I[2]]   # middle
+        old[end    , 2:end-1] = d[bot , I[2]]
+        old[1      , end    ] = d[top , right]  # right side
+        old[2:end-1, end    ] = d[I[1], right]
+        old[end    , end    ] = d[bot , right]
+
+        life_rule(old)
+    end
+end</code></pre><p>As you can see, we use a series of indexing expressions to fetch data into a local array <code>old</code>. Note that the <code>do</code> block syntax is convenient for passing <code>init</code> functions to the <code>DArray</code> constructor. Next, the serial function <code>life_rule</code> is called to apply the update rules to the data, yielding the needed <code>DArray</code> chunk. Nothing about <code>life_rule</code> is <code>DArray</code>-specific, but we list it here for completeness:</p><pre><code class="language-julia hljs">function life_rule(old)
+    m, n = size(old)
+    new = similar(old, m-2, n-2)
+    for j = 2:n-1
+        for i = 2:m-1
+            nc = +(old[i-1,j-1], old[i-1,j], old[i-1,j+1],
+                   old[i  ,j-1],             old[i  ,j+1],
+                   old[i+1,j-1], old[i+1,j], old[i+1,j+1])
+            new[i-1,j-1] = (nc == 3 || nc == 2 &amp;&amp; old[i,j])
+        end
+    end
+    new
+end</code></pre><h2 id="Numerical-Results-of-Distributed-Computations"><a class="docs-heading-anchor" href="#Numerical-Results-of-Distributed-Computations">Numerical Results of Distributed Computations</a><a id="Numerical-Results-of-Distributed-Computations-1"></a><a class="docs-heading-anchor-permalink" href="#Numerical-Results-of-Distributed-Computations" title="Permalink"></a></h2><p>Floating point arithmetic is not associative and this comes up when performing distributed computations over <code>DArray</code>s.  All <code>DArray</code> operations are performed over the <code>localpart</code> chunks and then aggregated. The change in ordering of the operations will change the numeric result as seen in this simple example:</p><pre><code class="language-julia hljs">julia&gt; addprocs(8);
+
+julia&gt; using DistributedArrays
+
+julia&gt; A = fill(1.1, (100,100));
+
+julia&gt; sum(A)
+11000.000000000013
+
+julia&gt; DA = distribute(A);
+
+julia&gt; sum(DA)
+11000.000000000127
+
+julia&gt; sum(A) == sum(DA)
+false</code></pre><p>The ultimate ordering of operations will be dependent on how the <code>Array</code> is distributed.</p><h2 id="Garbage-Collection-and-DArrays"><a class="docs-heading-anchor" href="#Garbage-Collection-and-DArrays">Garbage Collection and <code>DArray</code>s</a><a id="Garbage-Collection-and-DArrays-1"></a><a class="docs-heading-anchor-permalink" href="#Garbage-Collection-and-DArrays" title="Permalink"></a></h2><p>When a <code>DArray</code> is constructed (typically on the master process), the returned <code>DArray</code> objects stores information on how the array is distributed, which processor holds which indices and so on. When the <code>DArray</code> object on the master process is garbage collected, all participating workers are notified and localparts of the <code>DArray</code> freed on each worker.</p><p>Since the size of the <code>DArray</code> object itself is small, a problem arises as <code>gc</code> on the master faces no memory pressure to collect the <code>DArray</code> immediately. This results in a delay of the memory being released on the participating workers.</p><p>Therefore it is highly recommended to explicitly call <code>close(d::DArray)</code> as soon as user code has finished working with the distributed array.</p><p>It is also important to note that the localparts of the <code>DArray</code> is collected from all participating workers when the <code>DArray</code> object on the process creating the <code>DArray</code> is collected. It is therefore important to maintain a reference to a <code>DArray</code> object on the creating process for as long as it is being computed upon.</p><p><code>d_closeall()</code> is another useful function to manage distributed memory. It releases all <code>DArrays</code> created from the calling process, including any temporaries created during computation.</p><h2 id="Working-with-distributed-non-array-data-(requires-Julia-0.6)"><a class="docs-heading-anchor" href="#Working-with-distributed-non-array-data-(requires-Julia-0.6)">Working with distributed non-array data (requires Julia 0.6)</a><a id="Working-with-distributed-non-array-data-(requires-Julia-0.6)-1"></a><a class="docs-heading-anchor-permalink" href="#Working-with-distributed-non-array-data-(requires-Julia-0.6)" title="Permalink"></a></h2><p>The function <code>ddata(;T::Type=Any, init::Function=I-&gt;nothing, pids=workers(), data::Vector=[])</code> can be used to created a distributed vector whose localparts need not be Arrays.</p><p>It returns a <code>DArray{T,1,T}</code>, i.e., the element type and localtype of the array are the same.</p><p><code>ddata()</code> constructs a distributed vector of length <code>nworkers()</code> where each localpart can hold any value, initially initialized to <code>nothing</code>.</p><p>Argument <code>data</code> if supplied is distributed over the <code>pids</code>. <code>length(data)</code> must be a multiple of <code>length(pids)</code>. If the multiple is 1, returns a <code>DArray{T,1,T}</code> where T is <code>eltype(data)</code>. If the multiple is greater than 1, returns a <code>DArray{T,1,Array{T,1}}</code>, i.e., it is equivalent to calling <code>distribute(data)</code>.</p><p><code>gather{T}(d::DArray{T,1,T})</code> returns an <code>Array{T,1}</code> consisting of all distributed elements of <code>d</code>.</p><p>Given a <code>DArray{T,1,T}</code> object <code>d</code>, <code>d[:L]</code> returns the localpart on a worker. <code>d[i]</code> returns the <code>localpart</code> on the ith worker that <code>d</code> is distributed over.</p><h2 id="SPMD-Mode-(An-MPI-Style-SPMD-mode-with-MPI-like-primitives,-requires-Julia-0.6)"><a class="docs-heading-anchor" href="#SPMD-Mode-(An-MPI-Style-SPMD-mode-with-MPI-like-primitives,-requires-Julia-0.6)">SPMD Mode (An MPI Style SPMD mode with MPI like primitives, requires Julia 0.6)</a><a id="SPMD-Mode-(An-MPI-Style-SPMD-mode-with-MPI-like-primitives,-requires-Julia-0.6)-1"></a><a class="docs-heading-anchor-permalink" href="#SPMD-Mode-(An-MPI-Style-SPMD-mode-with-MPI-like-primitives,-requires-Julia-0.6)" title="Permalink"></a></h2><p>SPMD, i.e., a Single Program Multiple Data mode, is implemented by submodule <code>DistributedArrays.SPMD</code>. In this mode the same function is executed in parallel on all participating nodes. This is a typical style of MPI programs where the same program is executed on all processors. A basic subset of MPI-like primitives are currently supported. As a programming model it should be familiar to folks with an MPI background.</p><p>The same block of code is executed concurrently on all workers using the <code>spmd</code> function.</p><pre><code class="language-julia hljs"># define foo() on all workers
+@everywhere function foo(arg1, arg2)
+    ....
+end
+
+# call foo() everywhere using the `spmd` function
+d_in=DArray(.....)
+d_out=ddata()
+spmd(foo,d_in,d_out; pids=workers()) # executes on all workers</code></pre><p><code>spmd</code> is defined as <code>spmd(f, args...; pids=procs(), context=nothing)</code></p><p><code>args</code> is one or more arguments to be passed to <code>f</code>. <code>pids</code> identifies the workers that <code>f</code> needs to be run on. <code>context</code> identifies a run context, which is explained later.</p><p>The following primitives can be used in SPMD mode.</p><ul><li><p><code>sendto(pid, data; tag=nothing)</code> - sends <code>data</code> to <code>pid</code></p></li><li><p><code>recvfrom(pid; tag=nothing)</code> - receives data from <code>pid</code></p></li><li><p><code>recvfrom_any(; tag=nothing)</code> - receives data from any <code>pid</code></p></li><li><p><code>barrier(;pids=procs(), tag=nothing)</code> - all tasks wait and then proceeed</p></li><li><p><code>bcast(data, pid; tag=nothing, pids=procs())</code> - broadcasts the same data over <code>pids</code> from <code>pid</code></p></li><li><p><code>scatter(x, pid; tag=nothing, pids=procs())</code> - distributes <code>x</code> over <code>pids</code> from <code>pid</code></p></li><li><p><code>gather(x, pid; tag=nothing, pids=procs())</code> - collects data from <code>pids</code> onto worker <code>pid</code></p></li></ul><p>Tag <code>tag</code> should be used to differentiate between consecutive calls of the same type, for example, consecutive <code>bcast</code> calls.</p><p><code>spmd</code> and spmd related functions are defined in submodule <code>DistributedArrays.SPMD</code>. You will need to import it explicitly, or prefix functions that can can only be used in spmd mode with <code>SPMD.</code>, for example, <code>SPMD.sendto</code>.</p><h2 id="Example"><a class="docs-heading-anchor" href="#Example">Example</a><a id="Example-1"></a><a class="docs-heading-anchor-permalink" href="#Example" title="Permalink"></a></h2><p>This toy example exchanges data with each of its neighbors <code>n</code> times.</p><pre><code class="language-julia hljs">using Distributed
+using DistributedArrays
+addprocs(8)
+@everywhere using DistributedArrays
+@everywhere using DistributedArrays.SPMD
+
+d_in=d=DArray(I-&gt;fill(myid(), (map(length,I)...,)), (nworkers(), 2), workers(), [nworkers(),1])
+d_out=ddata();
+
+# define the function everywhere
+@everywhere function foo_spmd(d_in, d_out, n)
+    pids = sort(vec(procs(d_in)))
+    pididx = findfirst(isequal(myid()), pids)
+    mylp = d_in[:L]
+    localsum = 0
+
+    # Have each worker exchange data with its neighbors
+    n_pididx = pididx+1 &gt; length(pids) ? 1 : pididx+1
+    p_pididx = pididx-1 &lt; 1 ? length(pids) : pididx-1
+
+    for i in 1:n
+        sendto(pids[n_pididx], mylp[2])
+        sendto(pids[p_pididx], mylp[1])
+
+        mylp[2] = recvfrom(pids[p_pididx])
+        mylp[1] = recvfrom(pids[n_pididx])
+
+        barrier(;pids=pids)
+        localsum = localsum + mylp[1] + mylp[2]
+    end
+
+    # finally store the sum in d_out
+    d_out[:L] = localsum
+end
+
+# run foo_spmd on all workers
+spmd(foo_spmd, d_in, d_out, 10, pids=workers())
+
+# print values of d_in and d_out after the run
+println(d_in)
+println(d_out)</code></pre><h2 id="SPMD-Context"><a class="docs-heading-anchor" href="#SPMD-Context">SPMD Context</a><a id="SPMD-Context-1"></a><a class="docs-heading-anchor-permalink" href="#SPMD-Context" title="Permalink"></a></h2><p>Each SPMD run is implicitly executed in a different context. This allows for multiple <code>spmd</code> calls to be active at the same time. A SPMD context can be explicitly specified via keyword arg <code>context</code> to <code>spmd</code>.</p><p><code>context(pids=procs())</code> returns a new SPMD context.</p><p>A SPMD context also provides a context local storage, a dict, which can be used to store key-value pairs between spmd runs under the same context.</p><p><code>context_local_storage()</code> returns the dictionary associated with the context.</p><p>NOTE: Implicitly defined contexts, i.e., <code>spmd</code> calls without specifying a <code>context</code> create a context which live only for the duration of the call. Explicitly created context objects can be released early by calling <code>close(ctxt::SPMDContext)</code>. This will release the local storage dictionaries on all participating <code>pids</code>. Else they will be released when the context object is gc&#39;ed on the node that created it.</p><h2 id="Nested-spmd-calls"><a class="docs-heading-anchor" href="#Nested-spmd-calls">Nested <code>spmd</code> calls</a><a id="Nested-spmd-calls-1"></a><a class="docs-heading-anchor-permalink" href="#Nested-spmd-calls" title="Permalink"></a></h2><p>As <code>spmd</code> executes the specified function on all participating nodes, we need to be careful with nesting <code>spmd</code> calls.</p><p>An example of an unsafe(wrong) way:</p><pre><code class="language-julia hljs">function foo(.....)
+    ......
+    spmd(bar, ......)
+    ......
+end
+
+function bar(....)
+    ......
+    spmd(baz, ......)
+    ......
+end
+
+spmd(foo,....)</code></pre><p>In the above example, <code>foo</code>, <code>bar</code> and <code>baz</code> are all functions wishing to leverage distributed computation. However, they themselves may be currently part of a <code>spmd</code> call. A safe way to handle such a scenario is to only drive parallel computation from the master process.</p><p>The correct way (only have the driver process initiate <code>spmd</code> calls):</p><pre><code class="language-julia hljs">function foo()
+    ......
+    myid()==1 &amp;&amp; spmd(bar, ......)
+    ......
+end
+
+function bar()
+    ......
+    myid()==1 &amp;&amp; spmd(baz, ......)
+    ......
+end
+
+spmd(foo,....)</code></pre><p>This is also true of functions which automatically distribute computation on DArrays.</p><pre><code class="language-julia hljs">function foo(d::DArray)
+    ......
+    myid()==1 &amp;&amp; map!(bar, d)
+    ......
+end
+spmd(foo,....)</code></pre><p>Without the <code>myid()</code> check, the <code>spmd</code> call to <code>foo</code> would execute <code>map!</code> from all nodes, which is probably not what we want.</p><p>Similarly <code>@everywhere</code> from within a SPMD run should also be driven from the master node only.</p></article><nav class="docs-footer"><a class="docs-footer-nextpage" href="api/">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="auto">Automatic (OS)</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.1.0 on <span class="colophon-date" title="Wednesday 4 October 2023 15:53">Wednesday 4 October 2023</span>. Using Julia version 1.9.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
