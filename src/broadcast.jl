@@ -56,7 +56,7 @@ end
 # We purposefully only specialise `copyto!`,
 # Broadcast implementation that defers to the underlying BroadcastStyle. We can't 
 # assume that `getindex` is fast, furthermore  we can't assume that the distribution of
-# DArray accross workers is equal or that the underlying array type is consistent.
+# DArray across workers is equal or that the underlying array type is consistent.
 #
 # Implementation:
 #   - first distribute all arguments

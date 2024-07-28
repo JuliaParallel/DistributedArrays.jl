@@ -814,7 +814,7 @@ import Base: checkbounds_indices
 #    from all other arrays, wherein we simply iterate over the source array’s
 #    elements.  You need to *both* know which elements in `J` were skipped
 #    (`indexin_mask`) and which dimensions should match up (`restrict_indices`)
-# 4. If `K` doesn’t correspond to an entire chunk, reinterpret `K` in terms of
+# 4. If `K` doesn't correspond to an entire chunk, reinterpret `K` in terms of
 #    the local portion of the source array
 function Base.setindex!(a::Array, s::SubDArray,
         I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
