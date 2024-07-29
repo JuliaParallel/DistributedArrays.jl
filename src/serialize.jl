@@ -52,7 +52,7 @@ end
 
 DestinationSerializer(f::Function, pids::Array) = DestinationSerializer(f, pids, nothing)
 
-# contructs a DestinationSerializer after verifying that the shape of pids.
+# constructs a DestinationSerializer after verifying that the shape of pids.
 function verified_destination_serializer(f::Function, pids::Array, verify_size)
     @assert size(pids) == verify_size
     return DestinationSerializer(f, pids)

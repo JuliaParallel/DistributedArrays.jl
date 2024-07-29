@@ -63,7 +63,7 @@ function mapreducedim_within(f, op, A::DArray, region)
         tuple(arraysize...), procs(A), indx, cuts)
 end
 
-# Compute mapreducedim accros the processes. This should be done after mapreducedim
+# Compute mapreducedim across the processes. This should be done after mapreducedim
 # has been run on each localpart with mapreducedim_within. Eventually, we might
 # want to write mapreducedim_between! as a binary reduction.
 function mapreducedim_between!(f, op, R::DArray, A::DArray, region)

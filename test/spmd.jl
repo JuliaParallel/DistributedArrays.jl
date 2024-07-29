@@ -104,7 +104,7 @@ spmd(spmd_test1)
     d_out[:L] = localsum
 end
 
-# run foo_spmd on all workers, many of them, all concurrently using implictly different contexts.
+# run foo_spmd on all workers, many of them, all concurrently using implicitly different contexts.
 in_arrays = map(x->DArray(I->fill(myid(), (map(length,I)...,)), (nworkers(), 2), workers(), [nworkers(),1]), 1:8)
 out_arrays = map(x->ddata(), 1:8)
 
@@ -117,7 +117,7 @@ end
 
 println("SPMD: Passed testing of spmd function run concurrently")
 
-# run concurrently with explictly different contexts
+# run concurrently with explicitly different contexts
 
 # define the function everywhere
 @everywhere function foo_spmd2(d_in, d_out, n)

@@ -28,7 +28,7 @@ using Random
         close(DA)
     end
 
-    @testset "Create darray with unconventional distribution and distibute like it" begin
+    @testset "Create darray with unconventional distribution and distribute like it" begin
         block = 10
         Y = nworkers() * block
         X = nworkers() * block
@@ -66,7 +66,7 @@ using Random
         @test DistributedArrays.defaultdist(50,4) == [1,14,27,39,51]
     end
     
-    @testset "Inhomogenous typeof(localpart)" begin
+    @testset "Inhomogeneous typeof(localpart)" begin
         block = 10
         Y = nworkers() * block
         X = nworkers() * block
@@ -531,7 +531,7 @@ check_leaks()
         close(A)
     end
 
-    @testset "2D dzeros default element type, Dims constuctor" begin
+    @testset "2D dzeros default element type, Dims constructor" begin
         A = dzeros((10,10))
         @test A == zeros((10,10))
         @test eltype(A) == Float64
@@ -582,7 +582,7 @@ check_leaks()
         close(A)
     end
 
-    @testset "2D dones default element type, Dims constuctor" begin
+    @testset "2D dones default element type, Dims constructor" begin
         A = dones((10,10))
         @test A == ones((10,10))
         @test eltype(A) == Float64

@@ -59,7 +59,7 @@ equal the number of processes.
 * `localpart(d::DArray)` obtains the locally-stored portion
   of a  `DArray`.
 
-* Localparts can be retrived and set via the indexing syntax too.
+* Localparts can be retrieved and set via the indexing syntax too.
   Indexing via symbols is used for this, specifically symbols `:L`,`:LP`,`:l`,`:lp` which
   are all equivalent. For example, `d[:L]` returns the localpart of `d`
   while `d[:L]=v` sets `v` as the localpart of `d`.
@@ -314,7 +314,7 @@ The following primitives can be used in SPMD mode.
 
 - `recvfrom_any(; tag=nothing)` - receives data from any `pid`
 
-- `barrier(;pids=procs(), tag=nothing)` - all tasks wait and then proceeed
+- `barrier(;pids=procs(), tag=nothing)` - all tasks wait and then proceed
 
 - `bcast(data, pid; tag=nothing, pids=procs())` - broadcasts the same data over `pids` from `pid`
 
