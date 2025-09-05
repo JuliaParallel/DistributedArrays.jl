@@ -32,6 +32,7 @@ function check_leaks()
     end
 end
 
+include("aqua.jl")
 include("darray.jl")
 include("spmd.jl")
 

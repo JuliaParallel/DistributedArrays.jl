@@ -14,6 +14,8 @@ import LinearAlgebra: axpy!, dot, norm, mul!
 import Primes
 import Primes: factor
 
+import SparseArrays
+
 # DArray exports
 export DArray, SubDArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindices, ppeval
