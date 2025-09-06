@@ -21,7 +21,7 @@ function close_by_id(id, pids)
     global refs
     @sync begin
         for p in pids
-            @async remotecall_fetch(release_localpart, p, id)
+            @async remotecall_wait(release_localpart, p, id)
         end
         if !(myid() in pids)
             release_localpart(id)

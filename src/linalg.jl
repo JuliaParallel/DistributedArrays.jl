@@ -25,10 +25,9 @@ function axpy!(α, x::DArray, y::DArray)
     if length(x) != length(y)
         throw(DimensionMismatch("vectors must have same length"))
     end
-    asyncmap(procs(y)) do p
-        @async remotecall_fetch(p) do
+    @sync for p in procs(y)
+        @async remotecall_wait(p) do
             axpy!(α, localpart(x), localpart(y))
-            return nothing
         end
     end
     return y
@@ -39,26 +38,22 @@ function dot(x::DVector, y::DVector)
         throw(DimensionMismatch(""))
     end
 
-    results=Any[]
-    asyncmap(procs(x)) do p
-            push!(results, remotecall_fetch((x, y) -> dot(localpart(x), makelocal(y, localindices(x)...)), p, x, y))
+    results = asyncmap(procs(x)) do p
+        remotecall_fetch((x, y) -> dot(localpart(x), makelocal(y, localindices(x)...)), p, x, y)
     end
     return reduce(+, results)
 end
 
 function norm(x::DArray, p::Real = 2)
-    results = []
-    @sync begin
-        for pp in procs(x)
-            @async push!(results, remotecall_fetch(() -> norm(localpart(x), p), pp))
-        end
+    results = asyncmap(procs(x)) do pp
+        remotecall_fetch(() -> norm(localpart(x), p), pp)
     end
     return norm(results, p)
 end
 
 function LinearAlgebra.rmul!(A::DArray, x::Number)
     @sync for p in procs(A)
-        @async remotecall_fetch((A,x)->(rmul!(localpart(A), x); nothing), p, A, x)
+        @async remotecall_wait((A,x)->rmul!(localpart(A), x), p, A, x)
     end
     return A
 end
@@ -104,13 +99,12 @@ function LinearAlgebra.mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Numbe
     # Scale y if necessary
     if β != one(β)
         asyncmap(procs(y)) do p
-            remotecall_fetch(p) do
+            remotecall_wait(p) do
                 if !iszero(β)
                     rmul!(localpart(y), β)
                 else
                     fill!(localpart(y), 0)
                 end
-                return nothing
             end
         end
     end
@@ -120,7 +114,7 @@ function LinearAlgebra.mul!(y::DVector, A::DMatrix, x::AbstractVector, α::Numbe
         p = y.pids[i]
         for j = 1:size(R, 2)
             rij = R[i,j]
-            @async remotecall_fetch(() -> (add!(localpart(y), fetch(rij), α); nothing), p)
+            @async remotecall_wait(() -> add!(localpart(y), fetch(rij), α), p)
         end
     end
 
@@ -150,14 +144,13 @@ function LinearAlgebra.mul!(y::DVector, adjA::Adjoint{<:Number,<:DMatrix}, x::Ab
 
     # Scale y if necessary
     if β != one(β)
-        asyncmap(procs(y)) do p
-            remotecall_fetch(p) do
+        @sync for p in procs(y)
+            @async remotecall_wait(p) do
                 if !iszero(β)
                     rmul!(localpart(y), β)
                 else
                     fill!(localpart(y), 0)
                 end
-                return nothing
             end
         end
     end
@@ -167,7 +160,7 @@ function LinearAlgebra.mul!(y::DVector, adjA::Adjoint{<:Number,<:DMatrix}, x::Ab
         p = y.pids[i]
         for j = 1:size(R, 2)
             rij = R[i,j]
-            @async remotecall_fetch(() -> (add!(localpart(y), fetch(rij), α); nothing), p)
+            @async remotecall_wait(() -> add!(localpart(y), fetch(rij), α), p)
         end
     end
     return y
@@ -238,10 +231,10 @@ function _matmatmul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number, β::
     # Scale C if necessary
     if β != one(β)
         @sync for p in C.pids
-            if β != zero(β)
-                @async remotecall_fetch(() -> (rmul!(localpart(C), β); nothing), p)
+            if iszero(β)
+                @async remotecall_wait(() -> fill!(localpart(C), 0), p)
             else
-                @async remotecall_fetch(() -> (fill!(localpart(C), 0); nothing), p)
+                @async remotecall_wait(() -> rmul!(localpart(C), β), p)
             end
         end
     end
@@ -252,7 +245,7 @@ function _matmatmul!(C::DMatrix, A::DMatrix, B::AbstractMatrix, α::Number, β::
             p = C.pids[i,k]
             for j = 1:size(R, 2)
                 rijk = R[i,j,k]
-                @async remotecall_fetch(d -> (add!(localpart(d), fetch(rijk), α); nothing), p, C)
+                @async remotecall_wait(d -> add!(localpart(d), fetch(rijk), α), p, C)
             end
         end
     end

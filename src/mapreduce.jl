@@ -6,10 +6,9 @@ import SparseArrays: nnz
 Base.map(f, d0::DArray, ds::AbstractArray...) = broadcast(f, d0, ds...)
 
 function Base.map!(f::F, dest::DArray, src::DArray{<:Any,<:Any,A}) where {F,A}
-    asyncmap(procs(dest)) do p
-        remotecall_fetch(p) do
+    @sync for p in procs(dest)
+        @async remotecall_wait(p) do
             map!(f, localpart(dest), makelocal(src, localindices(dest)...))
-            return nothing
         end
     end
     return dest
@@ -41,8 +40,8 @@ function Base.reducedim_initarray(A::DArray, region, v0, ::Type{R}) where {R}
     # Store reduction on lowest pids
     pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
     chunks = similar(pids, Future)
-    @sync for i in eachindex(pids)
-        @async chunks[i...] = remotecall_wait(() -> Base.reducedim_initarray(localpart(A), region, v0, R), pids[i...])
+    asyncmap!(chunks, pids) do p
+        remotecall_wait(() -> Base.reducedim_initarray(localpart(A), region, v0, R), p)
     end
     return DArray(chunks)
 end
@@ -67,13 +66,12 @@ end
 # has been run on each localpart with mapreducedim_within. Eventually, we might
 # want to write mapreducedim_between! as a binary reduction.
 function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
-    asyncmap(procs(R)) do p
-        remotecall_fetch(p, f, op, R, A, region) do f, op, R, A, region
+    @sync for p in procs(R)
+        @async remotecall_wait(p, f, op, R, A, region) do f, op, R, A, region
             localind = [r for r = localindices(A)]
             localind[[region...]] = [1:n for n = size(A)[[region...]]]
             B = convert(Array, A[localind...])
             Base.mapreducedim!(f, op, localpart(R), B)
-            nothing
         end
     end
     return R
@@ -170,8 +168,8 @@ function map_localparts(f::Callable, A::Array, DA::DArray)
 end
 
 function map_localparts!(f::Callable, d::DArray)
-    asyncmap(procs(d)) do p
-        remotecall_fetch((f,d)->(f(localpart(d)); nothing), p, f, d)
+    @sync for p in procs(d)
+        @async remotecall_wait((f,d)->f(localpart(d)), p, f, d)
     end
     return d
 end

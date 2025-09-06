@@ -243,7 +243,7 @@ function spmd(f, args...; pids=procs(), context=nothing)
         ctxt_id = context.id
     end
     @sync for p in pids
-        @async remotecall_fetch(spmd_local, p, f_noarg, ctxt_id, clear_ctxt)
+        @async remotecall_wait(spmd_local, p, f_noarg, ctxt_id, clear_ctxt)
     end
     nothing
 end
