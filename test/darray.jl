@@ -1048,9 +1048,21 @@ check_leaks()
     close(d)
 end
 
+check_leaks()
+
 @testset "rand!" begin
     d = dzeros(30, 30)
     rand!(d)
+
+    close(d)
+end
+
+check_leaks()
+
+@testset "fill!" begin
+    d = dzeros(30, 30)
+    fill!(d, 3.14)
+    @test all(x-> x == 3.14, d)
 
     close(d)
 end
