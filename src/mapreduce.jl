@@ -15,7 +15,13 @@ function Base.map!(f::F, dest::DArray, src::DArray{<:Any,<:Any,A}) where {F,A}
     return dest
 end
 
-function Base.reduce(f, d::DArray)
+# Only defining `reduce(f, ::DArray)` causes method ambiguity issues with
+# - `reduce(hcat, ::AbstractVector{<:AbstractVecOrMat})`
+# - `reduce(vcat, ::AbstractVector{<:AbstractVecOrMat})`
+Base.reduce(f, d::DArray) = _reduce(f, d)
+Base.reduce(::typeof(hcat), d::DArray{<:AbstractVecOrMat, 1}) = _reduce(hcat, d)
+Base.reduce(::typeof(vcat), d::DArray{<:AbstractVecOrMat, 1}) = _reduce(vcat, d)
+function _reduce(f, d::DArray)
     results = asyncmap(procs(d)) do p
         remotecall_fetch(p) do
             return reduce(f, localpart(d))

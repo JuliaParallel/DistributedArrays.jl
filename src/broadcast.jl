@@ -63,7 +63,7 @@ end
 #     - Q: How do decide on the cuts
 #   - then localise arguments on each node
 ##
-@inline function Base.copyto!(dest::DDestArray, bc::Broadcasted)
+@inline function Base.copyto!(dest::DDestArray, bc::Broadcasted{Nothing})
     axes(dest) == axes(bc) || Broadcast.throwdm(axes(dest), axes(bc))
 
     # Distribute Broadcasted

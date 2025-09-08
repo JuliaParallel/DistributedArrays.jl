@@ -384,7 +384,9 @@ function makelocal(A::DArray{<:Any, <:Any, AT}, I::Vararg{Any, N}) where {N, AT}
 end
 
 # shortcut to set/get localparts of a distributed object
-function Base.getindex(d::DArray, s::Symbol)
+Base.getindex(d::DArray, s::Symbol) = _getindex(d, s)
+Base.getindex(d::DistributedArrays.DArray{<:Any, 1}, s::Symbol) = _getindex(d, s)
+function _getindex(d::DArray, s::Symbol)
     @assert s in [:L, :l, :LP, :lp]
     return localpart(d)
 end
@@ -454,6 +456,14 @@ function Base.:(==)(d1::SubDArray, d2::SubDArray)
     return t
 end
 
+# Fix method ambiguities
+for T in (:DArray, :SubDArray)
+    @eval begin
+        Base.:(==)(d1::$T{<:Any,1}, d2::SparseArrays.ReadOnly) = d1 == parent(d2)
+        Base.:(==)(d1::SparseArrays.ReadOnly, d2::$T{<:Any,1}) = parent(d1) == d2
+    end
+end
+
 """
     locate(d::DArray, I::Int...)
 
@@ -513,10 +523,28 @@ dfill(v, d1::Integer, drest::Integer...) = dfill(v, convert(Dims, tuple(d1, dres
 Construct a distributed uniform random array.
 Trailing arguments are the same as those accepted by `DArray`.
 """
-drand(r, dims::Dims, args...) = DArray(I -> rand(r, map(length,I)), dims, args...)
-drand(r, d1::Integer, drest::Integer...) = drand(r, convert(Dims, tuple(d1, drest...)))
-drand(d1::Integer, drest::Integer...) = drand(Float64, convert(Dims, tuple(d1, drest...)))
-drand(d::Dims, args...)  = drand(Float64, d, args...)
+drand(::Type{T}, dims::Dims) where {T} = DArray(I -> rand(T, map(length, I)), dims)
+drand(X, dims::Dims) = DArray(I -> rand(X, map(length, I)), dims)
+drand(dims::Dims) = drand(Float64, dims)
+
+drand(::Type{T}, d1::Integer, drest::Integer...) where {T} = drand(T, Dims((d1, drest...)))
+drand(X, d1::Integer, drest::Integer...) = drand(X, Dims((d1, drest...)))
+drand(d1::Integer, drest::Integer...) = drand(Float64, Dims((d1, drest...)))
+
+# With optional process IDs and number of chunks
+for N in (1, 2)
+    @eval begin
+        drand(::Type{T}, dims::Dims, args::Vararg{Any,$N}) where {T} = DArray(I -> rand(T, map(length, I)), dims, args...)
+        drand(X, dims::Dims, args::Vararg{Any,$N}) = DArray(I -> rand(X, map(length, I)), dims, args...)
+        drand(dims::Dims, args::Vararg{Any,$N}) = drand(Float64, dims, args...)
+    end
+end
+
+# Fix method ambiguities
+drand(dims::Dims, procs::Tuple{Vararg{Int}}) = drand(Float64, dims, procs)
+drand(dims::Dims, procs::Tuple{Vararg{Int}}, dist) = drand(Float64, dims, procs, dist)
+drand(X::Tuple{Vararg{Int}}, dim::Integer) = drand(X, Dims((dim,)))
+drand(X::Tuple{Vararg{Int}}, d1::Integer, d2::Integer) = drand(X, Dims((d1, d2)))
 
 """
      drandn(dims, ...)
@@ -643,7 +671,7 @@ allowscalar(flag = true) = (_allowscalar[] = flag)
 _scalarindexingallowed() = _allowscalar[] || throw(ErrorException("scalar indexing disabled"))
 
 getlocalindex(d::DArray, idx...) = localpart(d)[idx...]
-function getindex_tuple(d::DArray{T}, I::Tuple{Vararg{Int}}) where T
+function getindex_tuple(d::DArray{T,N}, I::NTuple{N,Int}) where {T,N}
     chidx = locate(d, I...)
     idxs = d.indices[chidx...]
     localidx = ntuple(i -> (I[i] - first(idxs[i]) + 1), ndims(d))
@@ -655,16 +683,16 @@ function Base.getindex(d::DArray, i::Int)
     _scalarindexingallowed()
     return getindex_tuple(d, Tuple(CartesianIndices(d)[i]))
 end
-function Base.getindex(d::DArray, i::Int...)
+function Base.getindex(d::DArray{<:Any,N}, i::Vararg{Int,N}) where {N}
     _scalarindexingallowed()
     return getindex_tuple(d, i)
 end
 
-Base.getindex(d::DArray) = d[1]
-if VERSION > v"1.1-"
-Base.getindex(d::SubDArray, I::Int...) = invoke(getindex, Tuple{SubArray{<:Any,N},Vararg{Int,N}} where N, d, I...)
+function Base.getindex(d::DArray{<:Any,N}, I::Vararg{Any,N}) where {N}
+    return view(d, I...)
 end
-Base.getindex(d::SubOrDArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
+
+Base.getindex(d::DArray) = d[1]
 
 function Base.isassigned(D::DArray, i::Integer...)
     try
@@ -690,6 +718,15 @@ function Base.copyto!(dest::SubOrDArray, src::AbstractArray)
         end
     end
     return dest
+end
+
+# Fix method ambiguities
+# TODO: Improve efficiency?
+Base.copyto!(dest::SubOrDArray{<:Any,2}, src::SparseArrays.AbstractSparseMatrixCSC) = copyto!(dest, Matrix(src))
+@static if isdefined(SparseArrays, :CHOLMOD)
+    Base.copyto!(dest::SubOrDArray, src::SparseArrays.CHOLMOD.Dense) = copyto!(dest, Array(src))
+    Base.copyto!(dest::SubOrDArray{T}, src::SparseArrays.CHOLMOD.Dense{T}) where {T<:Union{Float32,Float64,ComplexF32,ComplexF64}} = copyto!(dest, Array(src))
+    Base.copyto!(dest::SubOrDArray{T,2}, src::SparseArrays.CHOLMOD.Dense{T}) where {T<:Union{Float32,Float64,ComplexF32,ComplexF64}} = copyto!(dest, Array(src))
 end
 
 function Base.deepcopy(src::DArray)
