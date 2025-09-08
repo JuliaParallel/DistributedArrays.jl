@@ -2,3 +2,4 @@ Manifest.toml
 *.jl.cov
 *.jl.mem
 .DS_Store
+.vscode/
