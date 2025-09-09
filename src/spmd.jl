@@ -1,6 +1,6 @@
 module SPMD
 
-using Distributed: RemoteChannel, myid, procs, remote_do, remotecall_fetch
+using Distributed: RemoteChannel, myid, procs, remote_do, remotecall_fetch, remotecall_wait
 using ..DistributedArrays: DistributedArrays, gather, next_did
 
 export sendto, recvfrom, recvfrom_any, barrier, bcast, scatter, gather
