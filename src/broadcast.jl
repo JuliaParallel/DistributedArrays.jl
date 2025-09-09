@@ -67,8 +67,8 @@ end
     # This will turn local AbstractArrays into DArrays
     dbc = bcdistribute(bc)
 
-    asyncmap(procs(dest)) do p
-        remotecall_fetch(p) do
+    @sync for p in procs(dest)
+        @async remotecall_wait(p) do
             # get the indices for the localpart
             lpidx = localpartindex(dest)
             @assert lpidx != 0
@@ -76,9 +76,9 @@ end
             # Note: creates copies of the argument
             lbc = bclocal(dbc, dest.indices[lpidx])
             copyto!(localpart(dest), lbc)
-            return nothing
         end
     end
+
     return dest
 end
 

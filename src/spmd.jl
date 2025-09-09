@@ -1,6 +1,6 @@
 module SPMD
 
-using Distributed: RemoteChannel, myid, procs, remote_do, remotecall_fetch
+using Distributed: RemoteChannel, myid, procs, remote_do, remotecall_fetch, remotecall_wait
 using ..DistributedArrays: DistributedArrays, gather, next_did
 
 export sendto, recvfrom, recvfrom_any, barrier, bcast, scatter, gather
@@ -243,7 +243,7 @@ function spmd(f, args...; pids=procs(), context=nothing)
         ctxt_id = context.id
     end
     @sync for p in pids
-        @async remotecall_fetch(spmd_local, p, f_noarg, ctxt_id, clear_ctxt)
+        @async remotecall_wait(spmd_local, p, f_noarg, ctxt_id, clear_ctxt)
     end
     nothing
 end
