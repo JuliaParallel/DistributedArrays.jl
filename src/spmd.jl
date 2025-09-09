@@ -1,8 +1,8 @@
 module SPMD
 
-using Distributed
+using Distributed: RemoteChannel, myid, procs, remote_do, remotecall_fetch
+using ..DistributedArrays: DistributedArrays, gather, next_did
 
-import DistributedArrays: gather, next_did, close
 export sendto, recvfrom, recvfrom_any, barrier, bcast, scatter, gather
 export context_local_storage, context, spmd
 
@@ -206,7 +206,7 @@ function scatter(x, pid::Int; tag=nothing, pids=procs())
     end
 end
 
-function gather(x, pid::Int; tag=nothing, pids=procs())
+function DistributedArrays.gather(x, pid::Int; tag=nothing, pids=procs())
     if myid() == pid
         gathered_data = Array{Any}(undef, length(pids))
         myidx = findfirst(isequal(pid), sort(pids))

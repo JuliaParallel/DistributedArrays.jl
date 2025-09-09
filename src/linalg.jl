@@ -21,7 +21,7 @@ const DMatrix{T,A} = DArray{T,2,A}
 
 # Level 1
 
-function axpy!(α, x::DArray, y::DArray)
+function LinearAlgebra.axpy!(α, x::DArray, y::DArray)
     if length(x) != length(y)
         throw(DimensionMismatch("vectors must have same length"))
     end
@@ -34,7 +34,7 @@ function axpy!(α, x::DArray, y::DArray)
     return y
 end
 
-function dot(x::DVector, y::DVector)
+function LinearAlgebra.dot(x::DVector, y::DVector)
     if length(x) != length(y)
         throw(DimensionMismatch(""))
     end
@@ -46,7 +46,7 @@ function dot(x::DVector, y::DVector)
     return reduce(+, results)
 end
 
-function norm(x::DArray, p::Real = 2)
+function LinearAlgebra.norm(x::DArray, p::Real = 2)
     results = []
     @sync begin
         for pp in procs(x)

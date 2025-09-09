@@ -33,7 +33,11 @@ julia> import Pkg; Pkg.add("DistributedArrays")
 
 ## Project Status
 
-The package is tested against Julia `0.7`, `1.0` and the nightly builds of the Julia `master` branch on Linux, and macOS.
+The package is tested against
+Julia 1.10.0 (oldest supported Julia version),
+the Julia LTS version,
+the latest stable release of Julia,
+and the pre-release version of Julia.
 
 ## Questions and Contributions
 
