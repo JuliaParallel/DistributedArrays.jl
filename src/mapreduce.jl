@@ -1,8 +1,5 @@
 ## higher-order functions ##
 
-import Base: +, -, div, mod, rem, &, |, xor
-import SparseArrays: nnz
-
 Base.map(f, d0::DArray, ds::AbstractArray...) = broadcast(f, d0, ds...)
 
 function Base.map!(f::F, dest::DArray, src::DArray{<:Any,<:Any,A}) where {F,A}
@@ -118,7 +115,7 @@ function Base.count(f, A::DArray)
     return sum(B)
 end
 
-function nnz(A::DArray)
+function SparseArrays.nnz(A::DArray)
     B = asyncmap(A.pids) do p
         remotecall_fetch(nnz∘localpart, p, A)
     end
@@ -134,14 +131,10 @@ function Base.extrema(d::DArray)
     return reduce((t,s) -> (min(t[1], s[1]), max(t[2], s[2])), r)
 end
 
-if VERSION < v"1.3"
-    Statistics._mean(A::DArray, region) = sum(A, dims = region) ./ prod((size(A, i) for i in region))
-else
-    Statistics._mean(f, A::DArray, region) = sum(f, A, dims = region) ./ prod((size(A, i) for i in region))
-end
+Statistics._mean(f, A::DArray, region) = sum(f, A, dims = region) ./ prod((size(A, i) for i in region))
 
 # Unary vector functions
-(-)(D::DArray) = map(-, D)
+Base.:(-)(D::DArray) = map(-, D)
 
 
 map_localparts(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
@@ -189,12 +182,12 @@ end
 
 for f in (:+, :-, :div, :mod, :rem, :&, :|, :xor)
     @eval begin
-        function ($f)(A::DArray{T}, B::DArray{T}) where T
+        function Base.$f(A::DArray{T}, B::DArray{T}) where T
             B = samedist(A, B)
             map_localparts($f, A, B)
         end
-        ($f)(A::DArray{T}, B::Array{T}) where {T} = map_localparts($f, A, B)
-        ($f)(A::Array{T}, B::DArray{T}) where {T} = map_localparts($f, A, B)
+        Base.$f(A::DArray{T}, B::Array{T}) where {T} = map_localparts($f, A, B)
+        Base.$f(A::Array{T}, B::DArray{T}) where {T} = map_localparts($f, A, B)
     end
 end
 
