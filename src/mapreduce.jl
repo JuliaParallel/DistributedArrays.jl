@@ -117,13 +117,6 @@ function Base.count(f, A::DArray)
     return sum(B)
 end
 
-function SparseArrays.nnz(A::DArray)
-    B = asyncmap(A.pids) do p
-        remotecall_fetch(nnz∘localpart, p, A)
-    end
-    return reduce(+, B)
-end
-
 function Base.extrema(d::DArray)
     r = asyncmap(procs(d)) do p
         remotecall_fetch(p) do
@@ -132,8 +125,6 @@ function Base.extrema(d::DArray)
     end
     return reduce((t,s) -> (min(t[1], s[1]), max(t[2], s[2])), r)
 end
-
-Statistics._mean(f, A::DArray, region) = sum(f, A, dims = region) ./ prod((size(A, i) for i in region))
 
 # Unary vector functions
 Base.:(-)(D::DArray) = map(-, D)
