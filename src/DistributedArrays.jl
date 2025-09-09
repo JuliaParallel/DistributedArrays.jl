@@ -7,8 +7,6 @@ using Distributed: Distributed, RemoteChannel, Future, myid, nworkers, procs, re
 using LinearAlgebra: LinearAlgebra, Adjoint, Diagonal, I, Transpose, adjoint, adjoint!, axpy!, dot, lmul!, mul!, norm, rmul!, transpose, transpose!
 using Random: Random, rand!
 using Serialization: Serialization, AbstractSerializer, deserialize, serialize
-using SparseArrays: SparseArrays, nnz
-using Statistics: Statistics
 
 using Primes: factor
 
