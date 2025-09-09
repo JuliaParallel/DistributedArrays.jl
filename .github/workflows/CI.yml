@@ -31,13 +31,6 @@ jobs:
           - ubuntu-latest
           - windows-latest
           - macOS-latest
-        exclude:
-          # For Julia 1.6 no aarch64 binary exists
-          - version: 'min'
-            os: macOS-latest
-        include:
-          - version: 'min'
-            os: macOS-13 # uses x64
     steps:
       - uses: actions/checkout@v5
       - uses: julia-actions/setup-julia@v2

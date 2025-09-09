@@ -363,8 +363,7 @@ _localindex(i::AbstractUnitRange, offset) = (first(i)-offset):(last(i)-offset)
 Equivalent to `Array(view(A, I...))` but optimised for the case that the data is local.
 Can return a view into `localpart(A)`
 """
-function makelocal(A::DArray{<:Any, <:Any, AT}, I::Vararg{Any, N}) where {N, AT}
-    Base.@_inline_meta
+@inline function makelocal(A::DArray{<:Any, <:Any, AT}, I::Vararg{Any, N}) where {N, AT}
     J = map(i->Base.unalias(A, i), to_indices(A, I))
     J = map(j-> isa(j, Base.Slice) ? j.indices : j, J)
     @boundscheck checkbounds(A, J...)
@@ -597,17 +596,10 @@ function Base.copyto!(a::Array, s::SubDArray)
     return a
 end
 
-if VERSION < v"1.2"
-    # This is an internal API that has changed
-    reindex(A, I, J) = Base.reindex(A, I, J)
-else
-    reindex(A, I, J) = Base.reindex(I, J)
-end
-
 function DArray(SD::SubArray{T,N}) where {T,N}
     D = SD.parent
     DArray(size(SD), procs(D)) do I
-        lindices = reindex(SD, SD.indices, I)
+        lindices = Base.reindex(SD.indices, I)
         convert(Array, D[lindices...])
     end
 end
@@ -661,9 +653,7 @@ function Base.getindex(d::DArray, i::Int...)
 end
 
 Base.getindex(d::DArray) = d[1]
-if VERSION > v"1.1-"
 Base.getindex(d::SubDArray, I::Int...) = invoke(getindex, Tuple{SubArray{<:Any,N},Vararg{Int,N}} where N, d, I...)
-end
 Base.getindex(d::SubOrDArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
 
 function Base.isassigned(D::DArray, i::Integer...)
@@ -793,13 +783,12 @@ Base.@propagate_inbounds Base.getindex(M::MergedIndices{J,N}, I::Vararg{Int, N})
 const ReshapedMergedIndices{T,N,M<:MergedIndices} = Base.ReshapedArray{T,N,M}
 const SubMergedIndices{T,N,M<:Union{MergedIndices, ReshapedMergedIndices}} = SubArray{T,N,M}
 const MergedIndicesOrSub = Union{MergedIndices, ReshapedMergedIndices, SubMergedIndices}
-import Base: checkbounds_indices
-@inline checkbounds_indices(::Type{Bool}, inds::Tuple{}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
-    checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
-@inline checkbounds_indices(::Type{Bool}, inds::Tuple{Any}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
-    checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
-@inline checkbounds_indices(::Type{Bool}, inds::Tuple, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
-    checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
+@inline Base.checkbounds_indices(::Type{Bool}, inds::Tuple{}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
+    Base.checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
+@inline Base.checkbounds_indices(::Type{Bool}, inds::Tuple{Any}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
+    Base.checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
+@inline Base.checkbounds_indices(::Type{Bool}, inds::Tuple, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
+    Base.checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
 
 # The tricky thing here is that we want to optimize the accesses into the
 # distributed array, but in doing so, we lose track of which indices in I we
@@ -850,8 +839,6 @@ function Base.fill!(A::DArray, x)
     end
     return A
 end
-
-using Random
 
 function Random.rand!(A::DArray, ::Type{T}) where T
     asyncmap(procs(A)) do p

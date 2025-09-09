@@ -2,9 +2,6 @@
 # Distributed broadcast implementation
 ##
 
-using Base.Broadcast
-import Base.Broadcast: BroadcastStyle, Broadcasted
-
 # We define a custom ArrayStyle here since we need to keep track of
 # the fact that it is Distributed and what kind of underlying broadcast behaviour
 # we will encounter.
@@ -13,11 +10,11 @@ DArrayStyle(::S) where {S} = DArrayStyle{S}()
 DArrayStyle(::S, ::Val{N}) where {S,N} = DArrayStyle(S(Val(N)))
 DArrayStyle(::Val{N}) where N = DArrayStyle{Broadcast.DefaultArrayStyle{N}}()
 
-BroadcastStyle(::Type{<:DArray{<:Any, N, A}}) where {N, A} = DArrayStyle(BroadcastStyle(A), Val(N))
+Broadcast.BroadcastStyle(::Type{<:DArray{<:Any, N, A}}) where {N, A} = DArrayStyle(BroadcastStyle(A), Val(N))
 
 # promotion rules
 # TODO: test this
-function BroadcastStyle(::DArrayStyle{AStyle}, ::DArrayStyle{BStyle}) where {AStyle, BStyle}
+function Broadcast.BroadcastStyle(::DArrayStyle{AStyle}, ::DArrayStyle{BStyle}) where {AStyle, BStyle}
     DArrayStyle(BroadcastStyle(AStyle, BStyle))
 end
 
@@ -78,7 +75,7 @@ end
             # create a local version of the broadcast, by constructing views
             # Note: creates copies of the argument
             lbc = bclocal(dbc, dest.indices[lpidx])
-            Base.copyto!(localpart(dest), lbc)
+            copyto!(localpart(dest), lbc)
             return nothing
         end
     end

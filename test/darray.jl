@@ -351,9 +351,7 @@ check_leaks()
 
 unpack(ex::Base.CapturedException) = unpack(ex.ex)
 unpack(ex::Distributed.RemoteException) = unpack(ex.captured)
-if VERSION >= v"1.3.0-alpha.110"
 unpack(ex::Base.TaskFailedException) = unpack(ex.task.exception)
-end
 unpack(ex) = ex
 
 @testset "test sum on DArrays" begin
