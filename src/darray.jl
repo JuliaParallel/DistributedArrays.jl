@@ -23,32 +23,30 @@ dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 ```
 """
 mutable struct DArray{T,N,A} <: AbstractArray{T,N}
-    id::Tuple
+    id::Tuple{Int,Int}
     dims::NTuple{N,Int}
     pids::Array{Int,N}                          # pids[i]==p ⇒ processor p has piece i
     indices::Array{NTuple{N,UnitRange{Int}},N}  # indices held by piece i
     cuts::Vector{Vector{Int}}                   # cuts[d][i] = first index of chunk i in dimension d
     localpart::Union{A,Nothing}
-    release::Bool
 
-    function DArray{T,N,A}(id, dims, pids, indices, cuts, lp) where {T,N,A}
+    function DArray{T,N,A}(id::Tuple{Int,Int}, dims::NTuple{N,Int}, pids, indices, cuts, lp) where {T,N,A}
         # check invariants
         if dims != map(last, last(indices))
             throw(ArgumentError("dimension of DArray (dim) and indices do not match"))
         end
-        release = (myid() == id[1])
 
         d = d_from_weakref_or_d(id)
         if d === nothing
-            d = new(id, dims, pids, indices, cuts, lp, release)
+            d = new(id, dims, pids, indices, cuts, lp)
         end
 
-        if release
-            push!(refs, id)
-            registry[id] = WeakRef(d)
-
-#            println("Installing finalizer for : ", d.id, ", : ", object_id(d), ", isbits: ", isbits(d))
-            finalizer(close, d)
+        if first(id) == myid()
+            push!(REFS, id)
+            REGISTRY[id] = WeakRef(d)
+            finalizer(d) do d
+                @async close_by_id(d.id, d.pids)
+            end
         end
         d
     end
@@ -56,11 +54,9 @@ mutable struct DArray{T,N,A} <: AbstractArray{T,N}
     DArray{T,N,A}() where {T,N,A} = new()
 end
 
-function d_from_weakref_or_d(id)
-    d = get(registry, id, nothing)
-    isa(d, WeakRef) && return d.value
-    return d
-end
+unpack_weakref(x) = x
+unpack_weakref(x::WeakRef) = x.value
+d_from_weakref_or_d(id::Tuple{Int,Int}) = unpack_weakref(get(REGISTRY, id, nothing))
 
 Base.eltype(::Type{DArray{T}}) where {T} = T
 empty_localpart(T,N,A) = A(Array{T}(undef, ntuple(zero, N)))
@@ -77,41 +73,34 @@ Base.hash(d::DArray, h::UInt) = Base.hash(d.id, h)
 
 ## core constructors ##
 
-function DArray(id, init, dims, pids, idxs, cuts)
+function DArray(id::Tuple{Int,Int}, init::I, dims, pids, idxs, cuts) where {I}
     localtypes = Vector{DataType}(undef,length(pids))
-
-    @sync begin
-        for i = 1:length(pids)
-            @async begin
-                local typA
-                if isa(init, Function)
-                    typA = remotecall_fetch(construct_localparts, pids[i], init, id, dims, pids, idxs, cuts)
-                else
-                    # constructing from an array of remote refs.
-                    typA = remotecall_fetch(construct_localparts, pids[i], init[i], id, dims, pids, idxs, cuts)
-                end
-                localtypes[i] = typA
-            end
+    if init isa Function
+        asyncmap!(localtypes, pids) do pid
+            return remotecall_fetch(construct_localparts, pid, init, id, dims, pids, idxs, cuts)
+        end
+    else
+        asyncmap!(localtypes, pids, init) do pid, pid_init
+            # constructing from an array of remote refs.
+            return remotecall_fetch(construct_localparts, pid, pid_init, id, dims, pids, idxs, cuts)
         end
     end
 
-    if length(unique(localtypes)) != 1
+    if !allequal(localtypes)
         @sync for p in pids
             @async remotecall_fetch(release_localpart, p, id)
         end
-        throw(ErrorException("Constructed localparts have different `eltype`: $(localtypes)"))
+        throw(ErrorException(lazy"Constructed localparts have different `eltype`: $(localtypes)"))
     end
     A = first(localtypes)
 
     if myid() in pids
-        d = registry[id]
-        d = isa(d, WeakRef) ? d.value : d
+        return unpack_weakref(REGISTRY[id])
     else
         T = eltype(A)
         N = length(dims)
-        d = DArray{T,N,A}(id, dims, pids, idxs, cuts, empty_localpart(T,N,A))
+        return DArray{T,N,A}(id, dims, pids, idxs, cuts, empty_localpart(T,N,A))
     end
-    d
 end
 
 function construct_localparts(init, id, dims, pids, idxs, cuts; T=nothing, A=nothing)
@@ -124,7 +113,7 @@ function construct_localparts(init, id, dims, pids, idxs, cuts; T=nothing, A=not
     end
     N = length(dims)
     d = DArray{T,N,A}(id, dims, pids, idxs, cuts, localpart)
-    registry[id] = d
+    REGISTRY[id] = d
     A
 end
 
@@ -152,12 +141,10 @@ function ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Ve
     end
 
     if myid() in pids
-        d = registry[id]
-        d = isa(d, WeakRef) ? d.value : d
+        return unpack_weakref(REGISTRY[id])
     else
-        d = DArray{T,1,T}(id, (npids,), pids, idxs, cuts, nothing)
+        return DArray{T,1,T}(id, (npids,), pids, idxs, cuts, nothing)
     end
-    d
 end
 
 function gather(d::DArray{T,1,T}) where T
@@ -428,7 +415,7 @@ end
 function Base.:(==)(d::SubDArray, a::AbstractArray)
     cd = copy(d)
     t = cd == a
-    close(cd)
+    finalize(cd)
     return t
 end
 Base.:(==)(a::AbstractArray, d::DArray) = d == a
@@ -437,19 +424,19 @@ Base.:(==)(d1::DArray, d2::DArray) = invoke(==, Tuple{DArray, AbstractArray}, d1
 function Base.:(==)(d1::SubDArray, d2::DArray)
     cd1 = copy(d1)
     t = cd1 == d2
-    close(cd1)
+    finalize(cd1)
     return t
 end
 function Base.:(==)(d1::DArray, d2::SubDArray)
     cd2 = copy(d2)
     t = d1 == cd2
-    close(cd2)
+    finalize(cd2)
     return t
 end
 function Base.:(==)(d1::SubDArray, d2::SubDArray)
     cd1 = copy(d1)
     t = cd1 == d2
-    close(cd1)
+    finalize(cd1)
     return t
 end
 
@@ -845,4 +832,3 @@ function Random.rand!(A::DArray, ::Type{T}) where T
         remotecall_wait((A, T)->rand!(localpart(A), T), p, A, T)
     end
 end
-

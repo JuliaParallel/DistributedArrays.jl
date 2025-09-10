@@ -1,57 +1,108 @@
-const registry=Dict{Tuple, Any}()
-const refs=Set()  # Collection of darray identities created on this node
-
-let DID::Int = 1
-    global next_did
-    next_did() = (id = DID; DID += 1; (myid(), id))
+# Thread-safe registry of DArray references
+struct DArrayRegistry
+    data::Dict{Tuple{Int,Int}, Any}
+    lock::ReentrantLock
+    DArrayRegistry() = new(Dict{Tuple{Int,Int}, Any}(), ReentrantLock())
 end
+const REGISTRY = DArrayRegistry()
+
+function Base.get(r::DArrayRegistry, id::Tuple{Int,Int}, default)
+    @lock r.lock begin
+        return get(r.data, id, default)
+    end
+end
+function Base.getindex(r::DArrayRegistry, id::Tuple{Int,Int})
+    @lock r.lock begin
+        return r.data[id]
+    end
+end
+function Base.setindex!(r::DArrayRegistry, val, id::Tuple{Int,Int})
+    @lock r.lock begin
+        r.data[id] = val
+    end
+    return r
+end
+function Base.delete!(r::DArrayRegistry, id::Tuple{Int,Int})
+    @lock r.lock delete!(r.data, id)
+    return r
+end
+
+# Thread-safe set of IDs of DArrays created on this node
+struct DArrayRefs
+    data::Set{Tuple{Int,Int}}
+    lock::ReentrantLock
+    DArrayRefs() = new(Set{Tuple{Int,Int}}(), ReentrantLock())
+end
+const REFS = DArrayRefs()
+
+function Base.push!(r::DArrayRefs, id::Tuple{Int,Int})
+    # Ensure id refers to a DArray created on this node
+    if first(id) != myid()
+        throw(
+            ArgumentError(
+                lazy"`DArray` is not created on the current worker: Only `DArray`s created on worker $(myid()) can be stored in this set but the `DArray` was created on worker $(first(id))."))
+    end
+    @lock r.lock begin
+        return push!(r.data, id)
+    end
+end
+function Base.delete!(r::DArrayRefs, id::Tuple{Int,Int})
+    @lock r.lock delete!(r.data, id)
+    return r
+end
+
+# Global counter to generate a unique ID for each DArray
+const DID = Threads.Atomic{Int}(1)
 
 """
     next_did()
 
-Produces an incrementing ID that will be used for DArrays.
+Increment a global counter and return a tuple of the current worker ID and the incremented
+value of the counter.
+
+This tuple is used as a unique ID for a new `DArray`.
 """
-next_did
+next_did() = (myid(), Threads.atomic_add!(DID, 1))
 
-release_localpart(id::Tuple) = (delete!(registry, id); nothing)
-release_localpart(d) = release_localpart(d.id)
-
-function close_by_id(id, pids)
-#   @async println("Finalizer for : ", id)
-    global refs
+release_localpart(id::Tuple{Int,Int}) = (delete!(REGISTRY, id); nothing)
+function release_allparts(id::Tuple{Int,Int}, pids::Array{Int})
     @sync begin
+        released_myid = false
         for p in pids
-            @async remotecall_fetch(release_localpart, p, id)
+            if p == myid()
+                @async release_localpart(id)
+                released_myid = true
+            else
+                @async remotecall_fetch(release_localpart, p, id)
+            end
         end
-        if !(myid() in pids)
-            release_localpart(id)
+        if !released_myid
+            @async release_localpart(id)
         end
     end
-    delete!(refs, id)
-    nothing
+    return nothing
 end
 
-function Base.close(d::DArray)
-#    @async println("close : ", d.id, ", object_id : ", object_id(d), ", myid : ", myid() )
-    if (myid() == d.id[1]) && d.release
-        @async close_by_id(d.id, d.pids)
-        d.release = false
-    end
+function close_by_id(id::Tuple{Int,Int}, pids::Array{Int})
+    release_allparts(id, pids)
+    delete!(REFS, id)
     nothing
 end
 
 function d_closeall()
-    crefs = copy(refs)
-    for id in crefs
-        if id[1] ==  myid() # sanity check
-            if haskey(registry, id)
-                d = d_from_weakref_or_d(id)
-                (d === nothing) || close(d)
+    @lock REFS.lock begin
+        while !isempty(REFS.data)
+            id = pop!(REFS.data)
+            d = d_from_weakref_or_d(id)
+            if d isa DArray
+                finalize(d)
             end
-            yield()
         end
     end
+    return nothing
 end
+
+Base.close(d::DArray) = finalize(d)
 
 """
     procs(d::DArray)
@@ -67,4 +118,3 @@ Distributed.procs(d::SubDArray) = procs(parent(d))
 The identity when input is not distributed
 """
 localpart(A) = A
-

@@ -1052,10 +1052,10 @@ d_closeall()
 
 @testset "test for any leaks" begin
     sleep(1.0)     # allow time for any cleanup to complete
-    allrefszero = Bool[remotecall_fetch(()->length(DistributedArrays.refs) == 0, p) for p in procs()]
+    allrefszero = Bool[remotecall_fetch(()-> @lock(DistributedArrays.REFS.lock, isempty(DistributedArrays.REFS.data)), p) for p in procs()]
     @test all(allrefszero)
 
-    allregistrieszero = Bool[remotecall_fetch(()->length(DistributedArrays.registry) == 0, p) for p in procs()]
+    allregistrieszero = Bool[remotecall_fetch(()-> @lock(DistributedArrays.REGISTRY.lock, isempty(DistributedArrays.REGISTRY.data)), p) for p in procs()]
     @test all(allregistrieszero)
 end
 

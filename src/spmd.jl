@@ -16,41 +16,52 @@ mutable struct WorkerDataChannel
 end
 
 mutable struct SPMDContext
-    id::Tuple
+    id::Tuple{Int,Int}
     chnl::Channel
     store::Dict{Any,Any}
-    pids::Array
-    release::Bool
+    pids::Array{Int}
 
-    function SPMDContext(id)
-        ctxt = new(id, Channel(typemax(Int)), Dict{Any,Any}(), [], false)
-        finalizer(finalize_ctxt, ctxt)
-        ctxt
+    function SPMDContext(id::Tuple{Int,Int}, pids::Vector{Int})
+        ctxt = new(id, Channel(typemax(Int)), Dict{Any,Any}(), pids)
+        if first(id) == myid()
+            finalizer(ctxt) do ctxt
+                for p in ctxt.pids
+                    @async remote_do(delete_ctxt_id, p, ctxt.id)
+                end
+            end
+        end
+        return ctxt
     end
 end
 
-function finalize_ctxt(ctxt::SPMDContext)
-    ctxt.release && close(ctxt)
+
+# Every worker is associated with its own RemoteChannel
+struct WorkerChannelDict
+    data::Dict{Int, WorkerDataChannel}
+    lock::ReentrantLock
+    WorkerChannelDict() = new(Dict{Int, WorkerDataChannel}(), ReentrantLock())
 end
+const WORKERCHANNELS = WorkerChannelDict()
+
+Base.get!(f, x::WorkerChannelDict, id::Int) = @lock x.lock get!(f, x.data, id)
+
+# mapping between a context id and context object
+struct SPMDContextDict
+    data::Dict{Tuple{Int,Int}, SPMDContext}
+    lock::ReentrantLock
+    SPMDContextDict() = new(Dict{Tuple{Int,Int}, SPMDContext}(), ReentrantLock())
+end
+const CONTEXTS = SPMDContextDict()
+
+Base.delete!(x::SPMDContextDict, id::Tuple{Int,Int}) = @lock x.lock delete!(x.data, id)
+Base.get!(f, x::SPMDContextDict, id::Tuple{Int,Int}) = @lock x.lock get!(f, x.data, id)
 
 function context_local_storage()
     ctxt = get_ctxt_from_id(task_local_storage(:SPMD_CTXT))
     ctxt.store
 end
 
-function context(pids=procs())
-    global map_ctxts
-    ctxt = SPMDContext(next_did())
-    ctxt.pids = pids
-    ctxt.release = true
-    ctxt
-end
-
-# Every worker is associated with its own RemoteChannel
-const map_worker_channels = Dict{Int, WorkerDataChannel}()
-
-# mapping between a context id and context object
-const map_ctxts = Dict{Tuple, SPMDContext}()
+context(pids::Vector{Int}=procs()) = SPMDContext(next_did(), pids)
 
 # Multiple SPMD blocks can be executed concurrently,
 # each in its own context. Messages are still sent as part of the
@@ -86,27 +97,21 @@ function get_dc(wc::WorkerDataChannel)
     return wc.rc
 end
 
-function get_ctxt_from_id(ctxt_id)
-    global map_ctxts
-    ctxt = get(map_ctxts, ctxt_id, nothing)
-    if ctxt == nothing
-        ctxt = SPMDContext(ctxt_id)
-        map_ctxts[ctxt_id] = ctxt
+function get_ctxt_from_id(ctxt_id::Tuple{Int,Int})
+    ctxt = get!(CONTEXTS, ctxt_id) do
+        return SPMDContext(ctxt_id, Int[])
     end
     return ctxt
 end
 
-
 # Since modules may be loaded in any order on the workers,
 # and workers may be dynamically added, pull in the remote channel
 # handles when accessed for the first time.
-function get_remote_dc(pid)
-    global map_worker_channels
-    if !haskey(map_worker_channels, pid)
-        map_worker_channels[pid] = WorkerDataChannel(pid)
+function get_remote_dc(pid::Int)
+    wc = get!(WORKERCHANNELS, pid) do
+        return WorkerDataChannel(pid)
     end
-
-    return get_dc(map_worker_channels[pid])
+    return get_dc(wc)
 end
 
 function send_msg(to, typ, data, tag)
@@ -248,17 +253,8 @@ function spmd(f, args...; pids=procs(), context=nothing)
     nothing
 end
 
-function delete_ctxt_id(ctxt_id)
-    global map_ctxts
-    haskey(map_ctxts, ctxt_id) && delete!(map_ctxts, ctxt_id)
-    nothing
-end
+delete_ctxt_id(ctxt_id::Tuple{Int,Int}) = delete!(CONTEXTS, ctxt_id)
 
-function Base.close(ctxt::SPMDContext)
-    for p in ctxt.pids
-        remote_do(delete_ctxt_id, p, ctxt.id)
-    end
-    ctxt.release = false
-end
+Base.close(ctxt::SPMDContext) = finalize(ctxt)
 
 end

@@ -171,25 +171,27 @@ end
 @everywhere begin
     if myid() != 1
         local n = 0
-        for (k,v) in DistributedArrays.SPMD.map_ctxts
-            store = v.store
-            localsum = store[:LOCALSUM]
-            if localsum != 2*sum(workers())*2
-                println("localsum ", localsum, " != $(2*sum(workers())*2)")
-                error("localsum mismatch")
+        @lock DistributedArrays.SPMD.CONTEXTS.lock begin
+            for (k,v) in DistributedArrays.SPMD.CONTEXTS.data
+                store = v.store
+                localsum = store[:LOCALSUM]
+                if localsum != 2*sum(workers())*2
+                    println("localsum ", localsum, " != $(2*sum(workers())*2)")
+                    error("localsum mismatch")
+                end
+                n += 1
             end
-            n += 1
         end
         @assert n == 8
     end
 end
 
 # close the contexts
-foreach(x->close(x), contexts)
+foreach(close, contexts)
 
 # verify that the localstores have been deleted.
 @everywhere begin
-    @assert isempty(DistributedArrays.SPMD.map_ctxts)
+    @assert @lock DistributedArrays.SPMD.CONTEXTS.lock isempty(DistributedArrays.SPMD.CONTEXTS.data)
 end
 
 println("SPMD: Passed spmd function with explicit context run concurrently")
