@@ -2,6 +2,8 @@ using Test, LinearAlgebra, SpecialFunctions
 using Statistics: mean
 using SparseArrays: nnz
 using Random
+import Primes: factor
+
 @everywhere using SparseArrays: sprandn
 
 @testset "test distribute and other constructors" begin
@@ -1044,6 +1046,47 @@ end
     rand!(d)
 
     close(d)
+end
+
+function testaccum(desdim,procslist)
+    u=length(procslist)
+    factorrs=factor(Vector,u)
+    ndims=length(desdim)
+    partions=fill(1,ndims)
+
+
+    function dfs(ind,start)
+
+      if ind==length(factorrs)+1
+        for i in 1:ndims
+            oa=fill(0,desdim)
+            cumsum!(oa,fill(1,desdim),dims=i)
+            c=(partions...,)
+            da=dfill(0,(desdim...,),procslist,c)
+
+            daccumulate!(+,da,dfill(1,desdim,procslist,c),i)
+
+             oda=convert(Array,da)
+            @test oda==oa
+            #println("pass")
+            close(da)
+        end
+        return
+      end
+      for i in start:length(partions)
+        partions[i]*=factorrs[ind]
+        dfs(ind+1,ind!=length(factorrs)&&factorrs[ind+1]==factorrs[ind] ? i : 1)
+        partions[i]/=factorrs[ind]
+      end
+    end
+    dfs(1,1)
+
+end
+@testset "test daccumulat!" begin
+    testaccum((100,),workers())
+    testaccum((10,10),workers())
+    testaccum((10,10,10),workers())
+    testaccum((10,10,10,10),workers())
 end
 
 check_leaks()

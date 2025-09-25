@@ -14,7 +14,7 @@ using Primes: factor
 
 # DArray exports
 export DArray, SubDArray, SubOrDArray, @DArray
-export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindices, ppeval
+export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindices, ppeval,daccumulate!
 
 # non-array distributed data
 export ddata, gather
