@@ -88,7 +88,7 @@ function DArray(id::Tuple{Int,Int}, init::I, dims, pids, idxs, cuts) where {I}
 
     if !allequal(localtypes)
         @sync for p in pids
-            @async remotecall_fetch(release_localpart, p, id)
+            @async remotecall_wait(release_localpart, p, id)
         end
         throw(ErrorException(lazy"Constructed localparts have different `eltype`: $(localtypes)"))
     end
@@ -136,8 +136,8 @@ function ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Ve
         end
     end
 
-    @sync for i = 1:length(pids)
-        @async remotecall_fetch(construct_localparts, pids[i], init, id, (npids,), pids, idxs, cuts; T=T, A=T)
+    @sync for p in pids
+        @async remotecall_wait(construct_localparts, p, init, id, (npids,), pids, idxs, cuts; T=T, A=T)
     end
 
     if myid() in pids
@@ -148,9 +148,10 @@ function ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Ve
 end
 
 function gather(d::DArray{T,1,T}) where T
-    a=Array{T}(undef, length(procs(d)))
-    @sync for (i,p) in enumerate(procs(d))
-        @async a[i] = remotecall_fetch(localpart, p, d)
+    pids = procs(d)
+    a = Vector{T}(undef, length(pids))
+    asyncmap!(a, pids) do p
+        remotecall_fetch(localpart, p, d)
     end
     a
 end
@@ -182,12 +183,9 @@ function DArray(refs)
     dimdist = size(refs)
     id = next_did()
 
-    npids = [r.where for r in refs]
     nsizes = Array{Tuple}(undef, dimdist)
-    @sync for i in 1:length(refs)
-        let i=i
-            @async nsizes[i] = remotecall_fetch(sz_localpart_ref, npids[i], refs[i], id)
-        end
+    asyncmap!(nsizes, refs) do r
+        remotecall_fetch(sz_localpart_ref, r.where, r, id)
     end
 
     nindices = Array{NTuple{length(dimdist),UnitRange{Int}}}(undef, dimdist...)
@@ -210,7 +208,7 @@ function DArray(refs)
     ncuts = Array{Int,1}[pushfirst!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
     ndims = tuple([sort(unique(lastidxs[x,:]))[end]-1 for x in 1:length(dimdist)]...)
 
-    DArray(id, refs, ndims, reshape(npids, dimdist), nindices, ncuts)
+    DArray(id, refs, ndims, map(r -> r.where, refs), nindices, ncuts)
 end
 
 macro DArray(ex0::Expr)
@@ -660,8 +658,8 @@ Base.copy(d::SubDArray) = copyto!(similar(d), d)
 Base.copy(d::SubDArray{<:Any,2}) = copyto!(similar(d), d)
 
 function Base.copyto!(dest::SubOrDArray, src::AbstractArray)
-    asyncmap(procs(dest)) do p
-        remotecall_fetch(p) do
+    @sync for p in procs(dest)
+        @async remotecall_wait(p) do
             ldest = localpart(dest)
             copyto!(ldest, view(src, localindices(dest)...))
         end
@@ -671,8 +669,8 @@ end
 
 function Base.deepcopy(src::DArray)
     dest = similar(src)
-    asyncmap(procs(src)) do p
-        remotecall_fetch(p) do
+    @sync for p in procs(src)
+        @async remotecall_wait(p) do
             dest[:L] = deepcopy(src[:L])
         end
     end
@@ -822,13 +820,14 @@ end
 
 function Base.fill!(A::DArray, x)
     @sync for p in procs(A)
-        @async remotecall_fetch((A,x)->(fill!(localpart(A), x); nothing), p, A, x)
+        @async remotecall_wait((A,x)->fill!(localpart(A), x), p, A, x)
     end
     return A
 end
 
 function Random.rand!(A::DArray, ::Type{T}) where T
-    asyncmap(procs(A)) do p
-        remotecall_wait((A, T)->rand!(localpart(A), T), p, A, T)
+    @sync for p in procs(A)
+        @async remotecall_wait((A, T)->rand!(localpart(A), T), p, A, T)
     end
+    return A
 end

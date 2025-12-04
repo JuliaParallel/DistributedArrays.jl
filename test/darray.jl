@@ -358,7 +358,8 @@ unpack(ex) = ex
     A = randn(100,100)
     DA = distribute(A)
 
-    # sum either throws an ArgumentError or a CompositeException of ArgumentErrors
+    # sum either throws an ArgumentError, a CompositeException of ArgumentErrors,
+    # or a RemoteException wrapping an ArgumentError
     try
         sum(DA, dims=-1)
     catch err
@@ -369,6 +370,9 @@ unpack(ex) = ex
                 orig_err = unpack(excep)
                 @test isa(orig_err, ArgumentError)
             end
+        elseif isa(err, RemoteException)
+            @test err.captured isa CapturedException
+            @test err.captured.ex isa ArgumentError
         else
             @test isa(err, ArgumentError)
         end
@@ -383,6 +387,9 @@ unpack(ex) = ex
                 orig_err = unpack(excep)
                 @test isa(orig_err, ArgumentError)
             end
+        elseif isa(err, RemoteException)
+            @test err.captured isa CapturedException
+            @test err.captured.ex isa ArgumentError
         else
             @test isa(err, ArgumentError)
         end
@@ -778,7 +785,7 @@ check_leaks()
               erfcx, erfi, erfinv, exp, exp10, exp2,
               expm1, exponent, float, floor, gamma, imag,
               invdigamma, isfinite, isinf, isnan,
-              lgamma, log, log10, log1p, log2, rad2deg, real,
+              loggamma, log, log10, log1p, log2, rad2deg, real,
               sec, secd, sech, sign, sin, sinc, sind,
               sinh, sinpi, sqrt, tan, tand, tanh, trigamma)
         @test f.(a) == f.(b)
@@ -1039,9 +1046,21 @@ check_leaks()
     close(d)
 end
 
+check_leaks()
+
 @testset "rand!" begin
     d = dzeros(30, 30)
     rand!(d)
+
+    close(d)
+end
+
+check_leaks()
+
+@testset "fill!" begin
+    d = dzeros(30, 30)
+    fill!(d, 3.14)
+    @test all(x-> x == 3.14, d)
 
     close(d)
 end
