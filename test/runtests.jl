@@ -26,9 +26,13 @@ const MYID = myid()
 const OTHERIDS = filter(id-> id != MYID, procs())[rand(1:(nprocs()-1))]
 
 function check_leaks()
-    if length(DistributedArrays.refs) > 0
+    nrefs = @lock DistributedArrays.REFS.lock length(DistributedArrays.REFS.data)
+    if !iszero(nrefs)
         sleep(0.1)  # allow time for any cleanup to complete and test again
-        length(DistributedArrays.refs) > 0 && @warn("Probable leak of ", length(DistributedArrays.refs), " darrays")
+        nrefs = @lock DistributedArrays.REFS.lock length(DistributedArrays.REFS.data)
+        if !iszero(nrefs)
+            @warn("Probable leak of ", nrefs, " darrays")
+        end
     end
 end
 
