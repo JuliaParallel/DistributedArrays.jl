@@ -1,15 +1,11 @@
 ## higher-order functions ##
 
-import Base: +, -, div, mod, rem, &, |, xor
-import SparseArrays: nnz
-
 Base.map(f, d0::DArray, ds::AbstractArray...) = broadcast(f, d0, ds...)
 
 function Base.map!(f::F, dest::DArray, src::DArray{<:Any,<:Any,A}) where {F,A}
-    asyncmap(procs(dest)) do p
-        remotecall_fetch(p) do
+    @sync for p in procs(dest)
+        @async remotecall_wait(p) do
             map!(f, localpart(dest), makelocal(src, localindices(dest)...))
-            return nothing
         end
     end
     return dest
@@ -47,8 +43,8 @@ function Base.reducedim_initarray(A::DArray, region, v0, ::Type{R}) where {R}
     # Store reduction on lowest pids
     pids = A.pids[ntuple(i -> i in region ? (1:1) : (:), ndims(A))...]
     chunks = similar(pids, Future)
-    @sync for i in eachindex(pids)
-        @async chunks[i...] = remotecall_wait(() -> Base.reducedim_initarray(localpart(A), region, v0, R), pids[i...])
+    asyncmap!(chunks, pids) do p
+        remotecall_wait(() -> Base.reducedim_initarray(localpart(A), region, v0, R), p)
     end
     return DArray(chunks)
 end
@@ -73,13 +69,12 @@ end
 # has been run on each localpart with mapreducedim_within. Eventually, we might
 # want to write mapreducedim_between! as a binary reduction.
 function mapreducedim_between!(f, op, R::DArray, A::DArray, region)
-    asyncmap(procs(R)) do p
-        remotecall_fetch(p, f, op, R, A, region) do f, op, R, A, region
+    @sync for p in procs(R)
+        @async remotecall_wait(p, f, op, R, A, region) do f, op, R, A, region
             localind = [r for r = localindices(A)]
             localind[[region...]] = [1:n for n = size(A)[[region...]]]
             B = convert(Array, A[localind...])
             Base.mapreducedim!(f, op, localpart(R), B)
-            nothing
         end
     end
     return R
@@ -126,13 +121,6 @@ function Base.count(f, A::DArray)
     return sum(B)
 end
 
-function nnz(A::DArray)
-    B = asyncmap(A.pids) do p
-        remotecall_fetch(nnz∘localpart, p, A)
-    end
-    return reduce(+, B)
-end
-
 function Base.extrema(d::DArray)
     r = asyncmap(procs(d)) do p
         remotecall_fetch(p) do
@@ -142,14 +130,8 @@ function Base.extrema(d::DArray)
     return reduce((t,s) -> (min(t[1], s[1]), max(t[2], s[2])), r)
 end
 
-if VERSION < v"1.3"
-    Statistics._mean(A::DArray, region) = sum(A, dims = region) ./ prod((size(A, i) for i in region))
-else
-    Statistics._mean(f, A::DArray, region) = sum(f, A, dims = region) ./ prod((size(A, i) for i in region))
-end
-
 # Unary vector functions
-(-)(D::DArray) = map(-, D)
+Base.:(-)(D::DArray) = map(-, D)
 
 
 map_localparts(f::Callable, d::DArray) = DArray(i->f(localpart(d)), d)
@@ -176,8 +158,8 @@ function map_localparts(f::Callable, A::Array, DA::DArray)
 end
 
 function map_localparts!(f::Callable, d::DArray)
-    asyncmap(procs(d)) do p
-        remotecall_fetch((f,d)->(f(localpart(d)); nothing), p, f, d)
+    @sync for p in procs(d)
+        @async remotecall_wait((f,d)->f(localpart(d)), p, f, d)
     end
     return d
 end
@@ -197,12 +179,12 @@ end
 
 for f in (:+, :-, :div, :mod, :rem, :&, :|, :xor)
     @eval begin
-        function ($f)(A::DArray{T}, B::DArray{T}) where T
+        function Base.$f(A::DArray{T}, B::DArray{T}) where T
             B = samedist(A, B)
             map_localparts($f, A, B)
         end
-        ($f)(A::DArray{T}, B::Array{T}) where {T} = map_localparts($f, A, B)
-        ($f)(A::Array{T}, B::DArray{T}) where {T} = map_localparts($f, A, B)
+        Base.$f(A::DArray{T}, B::Array{T}) where {T} = map_localparts($f, A, B)
+        Base.$f(A::Array{T}, B::DArray{T}) where {T} = map_localparts($f, A, B)
     end
 end
 

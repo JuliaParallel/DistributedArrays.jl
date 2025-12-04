@@ -23,32 +23,30 @@ dfill(v, args...) = DArray(I->fill(v, map(length,I)), args...)
 ```
 """
 mutable struct DArray{T,N,A} <: AbstractArray{T,N}
-    id::Tuple
+    id::Tuple{Int,Int}
     dims::NTuple{N,Int}
     pids::Array{Int,N}                          # pids[i]==p ⇒ processor p has piece i
     indices::Array{NTuple{N,UnitRange{Int}},N}  # indices held by piece i
     cuts::Vector{Vector{Int}}                   # cuts[d][i] = first index of chunk i in dimension d
     localpart::Union{A,Nothing}
-    release::Bool
 
-    function DArray{T,N,A}(id, dims, pids, indices, cuts, lp) where {T,N,A}
+    function DArray{T,N,A}(id::Tuple{Int,Int}, dims::NTuple{N,Int}, pids, indices, cuts, lp) where {T,N,A}
         # check invariants
         if dims != map(last, last(indices))
             throw(ArgumentError("dimension of DArray (dim) and indices do not match"))
         end
-        release = (myid() == id[1])
 
         d = d_from_weakref_or_d(id)
         if d === nothing
-            d = new(id, dims, pids, indices, cuts, lp, release)
+            d = new(id, dims, pids, indices, cuts, lp)
         end
 
-        if release
-            push!(refs, id)
-            registry[id] = WeakRef(d)
-
-#            println("Installing finalizer for : ", d.id, ", : ", object_id(d), ", isbits: ", isbits(d))
-            finalizer(close, d)
+        if first(id) == myid()
+            push!(REFS, id)
+            REGISTRY[id] = WeakRef(d)
+            finalizer(d) do d
+                @async close_by_id(d.id, d.pids)
+            end
         end
         d
     end
@@ -56,11 +54,9 @@ mutable struct DArray{T,N,A} <: AbstractArray{T,N}
     DArray{T,N,A}() where {T,N,A} = new()
 end
 
-function d_from_weakref_or_d(id)
-    d = get(registry, id, nothing)
-    isa(d, WeakRef) && return d.value
-    return d
-end
+unpack_weakref(x) = x
+unpack_weakref(x::WeakRef) = x.value
+d_from_weakref_or_d(id::Tuple{Int,Int}) = unpack_weakref(get(REGISTRY, id, nothing))
 
 Base.eltype(::Type{DArray{T}}) where {T} = T
 empty_localpart(T,N,A) = A(Array{T}(undef, ntuple(zero, N)))
@@ -77,41 +73,34 @@ Base.hash(d::DArray, h::UInt) = Base.hash(d.id, h)
 
 ## core constructors ##
 
-function DArray(id, init, dims, pids, idxs, cuts)
+function DArray(id::Tuple{Int,Int}, init::I, dims, pids, idxs, cuts) where {I}
     localtypes = Vector{DataType}(undef,length(pids))
-
-    @sync begin
-        for i = 1:length(pids)
-            @async begin
-                local typA
-                if isa(init, Function)
-                    typA = remotecall_fetch(construct_localparts, pids[i], init, id, dims, pids, idxs, cuts)
-                else
-                    # constructing from an array of remote refs.
-                    typA = remotecall_fetch(construct_localparts, pids[i], init[i], id, dims, pids, idxs, cuts)
-                end
-                localtypes[i] = typA
-            end
+    if init isa Function
+        asyncmap!(localtypes, pids) do pid
+            return remotecall_fetch(construct_localparts, pid, init, id, dims, pids, idxs, cuts)
+        end
+    else
+        asyncmap!(localtypes, pids, init) do pid, pid_init
+            # constructing from an array of remote refs.
+            return remotecall_fetch(construct_localparts, pid, pid_init, id, dims, pids, idxs, cuts)
         end
     end
 
-    if length(unique(localtypes)) != 1
+    if !allequal(localtypes)
         @sync for p in pids
-            @async remotecall_fetch(release_localpart, p, id)
+            @async remotecall_wait(release_localpart, p, id)
         end
-        throw(ErrorException("Constructed localparts have different `eltype`: $(localtypes)"))
+        throw(ErrorException(lazy"Constructed localparts have different `eltype`: $(localtypes)"))
     end
     A = first(localtypes)
 
     if myid() in pids
-        d = registry[id]
-        d = isa(d, WeakRef) ? d.value : d
+        return unpack_weakref(REGISTRY[id])
     else
         T = eltype(A)
         N = length(dims)
-        d = DArray{T,N,A}(id, dims, pids, idxs, cuts, empty_localpart(T,N,A))
+        return DArray{T,N,A}(id, dims, pids, idxs, cuts, empty_localpart(T,N,A))
     end
-    d
 end
 
 function construct_localparts(init, id, dims, pids, idxs, cuts; T=nothing, A=nothing)
@@ -124,7 +113,7 @@ function construct_localparts(init, id, dims, pids, idxs, cuts; T=nothing, A=not
     end
     N = length(dims)
     d = DArray{T,N,A}(id, dims, pids, idxs, cuts, localpart)
-    registry[id] = d
+    REGISTRY[id] = d
     A
 end
 
@@ -147,23 +136,22 @@ function ddata(;T::Type=Any, init::Function=I->nothing, pids=workers(), data::Ve
         end
     end
 
-    @sync for i = 1:length(pids)
-        @async remotecall_fetch(construct_localparts, pids[i], init, id, (npids,), pids, idxs, cuts; T=T, A=T)
+    @sync for p in pids
+        @async remotecall_wait(construct_localparts, p, init, id, (npids,), pids, idxs, cuts; T=T, A=T)
     end
 
     if myid() in pids
-        d = registry[id]
-        d = isa(d, WeakRef) ? d.value : d
+        return unpack_weakref(REGISTRY[id])
     else
-        d = DArray{T,1,T}(id, (npids,), pids, idxs, cuts, nothing)
+        return DArray{T,1,T}(id, (npids,), pids, idxs, cuts, nothing)
     end
-    d
 end
 
 function gather(d::DArray{T,1,T}) where T
-    a=Array{T}(undef, length(procs(d)))
-    @sync for (i,p) in enumerate(procs(d))
-        @async a[i] = remotecall_fetch(localpart, p, d)
+    pids = procs(d)
+    a = Vector{T}(undef, length(pids))
+    asyncmap!(a, pids) do p
+        remotecall_fetch(localpart, p, d)
     end
     a
 end
@@ -195,12 +183,9 @@ function DArray(refs)
     dimdist = size(refs)
     id = next_did()
 
-    npids = [r.where for r in refs]
     nsizes = Array{Tuple}(undef, dimdist)
-    @sync for i in 1:length(refs)
-        let i=i
-            @async nsizes[i] = remotecall_fetch(sz_localpart_ref, npids[i], refs[i], id)
-        end
+    asyncmap!(nsizes, refs) do r
+        remotecall_fetch(sz_localpart_ref, r.where, r, id)
     end
 
     nindices = Array{NTuple{length(dimdist),UnitRange{Int}}}(undef, dimdist...)
@@ -223,7 +208,7 @@ function DArray(refs)
     ncuts = Array{Int,1}[pushfirst!(sort(unique(lastidxs[x,:])), 1) for x in 1:length(dimdist)]
     ndims = tuple([sort(unique(lastidxs[x,:]))[end]-1 for x in 1:length(dimdist)]...)
 
-    DArray(id, refs, ndims, reshape(npids, dimdist), nindices, ncuts)
+    DArray(id, refs, ndims, map(r -> r.where, refs), nindices, ncuts)
 end
 
 macro DArray(ex0::Expr)
@@ -363,8 +348,7 @@ _localindex(i::AbstractUnitRange, offset) = (first(i)-offset):(last(i)-offset)
 Equivalent to `Array(view(A, I...))` but optimised for the case that the data is local.
 Can return a view into `localpart(A)`
 """
-function makelocal(A::DArray{<:Any, <:Any, AT}, I::Vararg{Any, N}) where {N, AT}
-    Base.@_inline_meta
+@inline function makelocal(A::DArray{<:Any, <:Any, AT}, I::Vararg{Any, N}) where {N, AT}
     J = map(i->Base.unalias(A, i), to_indices(A, I))
     J = map(j-> isa(j, Base.Slice) ? j.indices : j, J)
     @boundscheck checkbounds(A, J...)
@@ -431,7 +415,7 @@ end
 function Base.:(==)(d::SubDArray, a::AbstractArray)
     cd = copy(d)
     t = cd == a
-    close(cd)
+    finalize(cd)
     return t
 end
 Base.:(==)(a::AbstractArray, d::DArray) = d == a
@@ -440,19 +424,19 @@ Base.:(==)(d1::DArray, d2::DArray) = invoke(==, Tuple{DArray, AbstractArray}, d1
 function Base.:(==)(d1::SubDArray, d2::DArray)
     cd1 = copy(d1)
     t = cd1 == d2
-    close(cd1)
+    finalize(cd1)
     return t
 end
 function Base.:(==)(d1::DArray, d2::SubDArray)
     cd2 = copy(d2)
     t = d1 == cd2
-    close(cd2)
+    finalize(cd2)
     return t
 end
 function Base.:(==)(d1::SubDArray, d2::SubDArray)
     cd1 = copy(d1)
     t = cd1 == d2
-    close(cd1)
+    finalize(cd1)
     return t
 end
 
@@ -625,17 +609,10 @@ function Base.copyto!(a::Array, s::SubDArray)
     return a
 end
 
-if VERSION < v"1.2"
-    # This is an internal API that has changed
-    reindex(A, I, J) = Base.reindex(A, I, J)
-else
-    reindex(A, I, J) = Base.reindex(I, J)
-end
-
 function DArray(SD::SubArray{T,N}) where {T,N}
     D = SD.parent
     DArray(size(SD), procs(D)) do I
-        lindices = reindex(SD, SD.indices, I)
+        lindices = Base.reindex(SD.indices, I)
         convert(Array, D[lindices...])
     end
 end
@@ -687,12 +664,12 @@ function Base.getindex(d::DArray{<:Any,N}, i::Vararg{Int,N}) where {N}
     _scalarindexingallowed()
     return getindex_tuple(d, i)
 end
-
 function Base.getindex(d::DArray{<:Any,N}, I::Vararg{Any,N}) where {N}
     return view(d, I...)
-end
-
+end                                                
 Base.getindex(d::DArray) = d[1]
+Base.getindex(d::SubDArray, I::Int...) = invoke(getindex, Tuple{SubArray{<:Any,N},Vararg{Int,N}} where N, d, I...)
+Base.getindex(d::SubOrDArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
 
 function Base.isassigned(D::DArray, i::Integer...)
     try
@@ -711,8 +688,8 @@ Base.copy(d::SubDArray) = copyto!(similar(d), d)
 Base.copy(d::SubDArray{<:Any,2}) = copyto!(similar(d), d)
 
 function Base.copyto!(dest::SubOrDArray, src::AbstractArray)
-    asyncmap(procs(dest)) do p
-        remotecall_fetch(p) do
+    @sync for p in procs(dest)
+        @async remotecall_wait(p) do
             ldest = localpart(dest)
             copyto!(ldest, view(src, localindices(dest)...))
         end
@@ -731,8 +708,8 @@ end
 
 function Base.deepcopy(src::DArray)
     dest = similar(src)
-    asyncmap(procs(src)) do p
-        remotecall_fetch(p) do
+    @sync for p in procs(src)
+        @async remotecall_wait(p) do
             dest[:L] = deepcopy(src[:L])
         end
     end
@@ -830,13 +807,12 @@ Base.@propagate_inbounds Base.getindex(M::MergedIndices{J,N}, I::Vararg{Int, N})
 const ReshapedMergedIndices{T,N,M<:MergedIndices} = Base.ReshapedArray{T,N,M}
 const SubMergedIndices{T,N,M<:Union{MergedIndices, ReshapedMergedIndices}} = SubArray{T,N,M}
 const MergedIndicesOrSub = Union{MergedIndices, ReshapedMergedIndices, SubMergedIndices}
-import Base: checkbounds_indices
-@inline checkbounds_indices(::Type{Bool}, inds::Tuple{}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
-    checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
-@inline checkbounds_indices(::Type{Bool}, inds::Tuple{Any}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
-    checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
-@inline checkbounds_indices(::Type{Bool}, inds::Tuple, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
-    checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
+@inline Base.checkbounds_indices(::Type{Bool}, inds::Tuple{}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
+    Base.checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
+@inline Base.checkbounds_indices(::Type{Bool}, inds::Tuple{Any}, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
+    Base.checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
+@inline Base.checkbounds_indices(::Type{Bool}, inds::Tuple, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
+    Base.checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
 
 # The tricky thing here is that we want to optimize the accesses into the
 # distributed array, but in doing so, we lose track of which indices in I we
@@ -883,16 +859,14 @@ end
 
 function Base.fill!(A::DArray, x)
     @sync for p in procs(A)
-        @async remotecall_fetch((A,x)->(fill!(localpart(A), x); nothing), p, A, x)
+        @async remotecall_wait((A,x)->fill!(localpart(A), x), p, A, x)
     end
     return A
 end
 
-using Random
-
 function Random.rand!(A::DArray, ::Type{T}) where T
-    asyncmap(procs(A)) do p
-        remotecall_wait((A, T)->rand!(localpart(A), T), p, A, T)
+    @sync for p in procs(A)
+        @async remotecall_wait((A, T)->rand!(localpart(A), T), p, A, T)
     end
+    return A
 end
-

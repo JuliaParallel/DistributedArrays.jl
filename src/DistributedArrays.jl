@@ -1,18 +1,14 @@
-__precompile__()
-
 module DistributedArrays
 
-using Distributed
-using Serialization
-using LinearAlgebra
-using Statistics
+using Base: Callable
+using Base.Broadcast: BroadcastStyle, Broadcasted
 
-import Base: +, -, *, div, mod, rem, &, |, xor
-import Base.Callable
-import LinearAlgebra: axpy!, dot, norm, mul!
+using Distributed: Distributed, RemoteChannel, Future, myid, nworkers, procs, remotecall, remotecall_fetch, remotecall_wait, worker_id_from_socket, workers
+using LinearAlgebra: LinearAlgebra, Adjoint, Diagonal, I, Transpose, adjoint, adjoint!, axpy!, dot, lmul!, mul!, norm, rmul!, transpose, transpose!
+using Random: Random, rand!
+using Serialization: Serialization, AbstractSerializer, deserialize, serialize
 
-import Primes
-import Primes: factor
+using Primes: factor
 
 import SparseArrays
 
@@ -24,7 +20,7 @@ export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindices,
 export ddata, gather
 
 # immediate release of localparts
-export close, d_closeall
+export d_closeall
 
 include("darray.jl")
 include("core.jl")
