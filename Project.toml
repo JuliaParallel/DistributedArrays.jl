@@ -18,13 +18,21 @@ SparseArraysExt = "SparseArrays"
 StatisticsExt = "Statistics"
 
 [compat]
+Aqua = "0.8.12"
+Distributed = "<0.0.1, 1"
 ExplicitImports = "1.13.2"
+LinearAlgebra = "<0.0.1, 1"
 Primes = "0.4, 0.5"
+Random = "<0.0.1, 1"
+Serialization = "<0.0.1, 1"
 SparseArrays = "<0.0.1, 1"
+SpecialFunctions = "0.8, 1, 2"
 Statistics = "<0.0.1, 1"
+Test = "<0.0.1, 1"
 julia = "1.10"
 
 [extras]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
@@ -32,4 +40,4 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["ExplicitImports", "SparseArrays", "SpecialFunctions", "Statistics", "Test"]
+test = ["Aqua", "ExplicitImports", "SparseArrays", "SpecialFunctions", "Statistics", "Test"]
