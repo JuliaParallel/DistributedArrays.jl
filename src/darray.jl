@@ -369,7 +369,7 @@ end
 
 # shortcut to set/get localparts of a distributed object
 Base.getindex(d::DArray, s::Symbol) = _getindex(d, s)
-Base.getindex(d::DistributedArrays.DArray{<:Any, 1}, s::Symbol) = _getindex(d, s)
+Base.getindex(d::DArray{<:Any, 1}, s::Symbol) = _getindex(d, s)
 function _getindex(d::DArray, s::Symbol)
     @assert s in [:L, :l, :LP, :lp]
     return localpart(d)
@@ -438,14 +438,6 @@ function Base.:(==)(d1::SubDArray, d2::SubDArray)
     t = cd1 == d2
     finalize(cd1)
     return t
-end
-
-# Fix method ambiguities
-for T in (:DArray, :SubDArray)
-    @eval begin
-        Base.:(==)(d1::$T{<:Any,1}, d2::SparseArrays.ReadOnly) = d1 == parent(d2)
-        Base.:(==)(d1::SparseArrays.ReadOnly, d2::$T{<:Any,1}) = parent(d1) == d2
-    end
 end
 
 """
@@ -664,9 +656,6 @@ function Base.getindex(d::DArray{<:Any,N}, i::Vararg{Int,N}) where {N}
     _scalarindexingallowed()
     return getindex_tuple(d, i)
 end
-function Base.getindex(d::DArray{<:Any,N}, I::Vararg{Any,N}) where {N}
-    return view(d, I...)
-end                                                
 Base.getindex(d::DArray) = d[1]
 Base.getindex(d::SubDArray, I::Int...) = invoke(getindex, Tuple{SubArray{<:Any,N},Vararg{Int,N}} where N, d, I...)
 Base.getindex(d::SubOrDArray, I::Union{Int,UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...) = view(d, I...)
@@ -695,15 +684,6 @@ function Base.copyto!(dest::SubOrDArray, src::AbstractArray)
         end
     end
     return dest
-end
-
-# Fix method ambiguities
-# TODO: Improve efficiency?
-Base.copyto!(dest::SubOrDArray{<:Any,2}, src::SparseArrays.AbstractSparseMatrixCSC) = copyto!(dest, Matrix(src))
-@static if isdefined(SparseArrays, :CHOLMOD)
-    Base.copyto!(dest::SubOrDArray, src::SparseArrays.CHOLMOD.Dense) = copyto!(dest, Array(src))
-    Base.copyto!(dest::SubOrDArray{T}, src::SparseArrays.CHOLMOD.Dense{T}) where {T<:Union{Float32,Float64,ComplexF32,ComplexF64}} = copyto!(dest, Array(src))
-    Base.copyto!(dest::SubOrDArray{T,2}, src::SparseArrays.CHOLMOD.Dense{T}) where {T<:Union{Float32,Float64,ComplexF32,ComplexF64}} = copyto!(dest, Array(src))
 end
 
 function Base.deepcopy(src::DArray)

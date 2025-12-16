@@ -10,8 +10,6 @@ using Serialization: Serialization, AbstractSerializer, deserialize, serialize
 
 using Primes: factor
 
-import SparseArrays
-
 # DArray exports
 export DArray, SubDArray, SubOrDArray, @DArray
 export dzeros, dones, dfill, drand, drandn, distribute, localpart, localindices, ppeval

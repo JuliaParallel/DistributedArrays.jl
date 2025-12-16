@@ -43,7 +43,7 @@ struct WorkerChannelDict
 end
 const WORKERCHANNELS = WorkerChannelDict()
 
-Base.get!(f, x::WorkerChannelDict, id::Int) = @lock x.lock get!(f, x.data, id)
+Base.get!(f::Function, x::WorkerChannelDict, id::Int) = @lock x.lock get!(f, x.data, id)
 
 # mapping between a context id and context object
 struct SPMDContextDict
@@ -54,7 +54,7 @@ end
 const CONTEXTS = SPMDContextDict()
 
 Base.delete!(x::SPMDContextDict, id::Tuple{Int,Int}) = @lock x.lock delete!(x.data, id)
-Base.get!(f, x::SPMDContextDict, id::Tuple{Int,Int}) = @lock x.lock get!(f, x.data, id)
+Base.get!(f::Function, x::SPMDContextDict, id::Tuple{Int,Int}) = @lock x.lock get!(f, x.data, id)
 
 function context_local_storage()
     ctxt = get_ctxt_from_id(task_local_storage(:SPMD_CTXT))
