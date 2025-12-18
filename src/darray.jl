@@ -691,21 +691,6 @@ function Base.deepcopy(src::DArray)
     end
     return dest
 end
-
-# local copies are obtained by convert(Array, ) or assigning from
-# a SubDArray to a local Array.
-
-function Base.setindex!(a::Array, d::DArray,
-        I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
-    @sync for (pid, K) in zip(d.pids, d.indices)
-        idxs = map((Ij, Kj) -> Ij[Kj], I, K)
-        if !any(isempty, idxs)
-            @async a[idxs...] = chunk(d, pid)
-        end
-    end
-    return a
-end
-
 # We also want to optimize setindex! with a SubDArray source, but this is hard
 # and only works on 0.5.
 
