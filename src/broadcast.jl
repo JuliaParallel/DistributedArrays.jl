@@ -5,7 +5,7 @@
 # We define a custom ArrayStyle here since we need to keep track of
 # the fact that it is Distributed and what kind of underlying broadcast behaviour
 # we will encounter.
-struct DArrayStyle{Style <: BroadcastStyle} <: Broadcast.AbstractArrayStyle{Any} end
+struct DArrayStyle{Style <: Union{Nothing,BroadcastStyle}} <: Broadcast.AbstractArrayStyle{Any} end
 DArrayStyle(::S) where {S} = DArrayStyle{S}()
 DArrayStyle(::S, ::Val{N}) where {S,N} = DArrayStyle(S(Val(N)))
 DArrayStyle(::Val{N}) where N = DArrayStyle{Broadcast.DefaultArrayStyle{N}}()
@@ -50,6 +50,8 @@ function Base.similar(bc::Broadcasted{<:DArrayStyle{Style}}, ::Type{ElType}) whe
 end
 
 ##
+# Ref https://docs.julialang.org/en/v1/manual/interfaces/#extending-in-place-broadcast-2
+#
 # We purposefully only specialise `copyto!`,
 # Broadcast implementation that defers to the underlying BroadcastStyle. We can't 
 # assume that `getindex` is fast, furthermore  we can't assume that the distribution of
@@ -119,7 +121,7 @@ end
 
 # Distribute broadcast
 # TODO: How to decide on cuts
-@inline bcdistribute(bc::Broadcasted{Style}) where Style = Broadcasted{DArrayStyle{Style}}(bc.f, bcdistribute_args(bc.args), bc.axes)
+@inline bcdistribute(bc::Broadcasted{Style}) where Style<:Union{Nothing,BroadcastStyle} = Broadcasted{DArrayStyle{Style}}(bc.f, bcdistribute_args(bc.args), bc.axes)
 @inline bcdistribute(bc::Broadcasted{Style}) where Style<:DArrayStyle = Broadcasted{Style}(bc.f, bcdistribute_args(bc.args), bc.axes)
 
 # ask BroadcastStyle to decide if argument is in need of being distributed
@@ -135,7 +137,7 @@ bcdistribute_args(args::Tuple{Any}) = (bcdistribute(args[1]),)
 bcdistribute_args(args::Tuple{}) = ()
 
 # dropping axes here since recomputing is easier
-@inline bclocal(bc::Broadcasted{DArrayStyle{Style}}, idxs) where Style = Broadcasted{Style}(bc.f, bclocal_args(_bcview(axes(bc), idxs), bc.args))
+@inline bclocal(bc::Broadcasted{DArrayStyle{Style}}, idxs) where Style<:Union{Nothing,BroadcastStyle} = Broadcasted{Style}(bc.f, bclocal_args(_bcview(axes(bc), idxs), bc.args))
 
 # bclocal will do a view of the data and the copy it over
 # except when the data already is local

@@ -897,6 +897,13 @@ check_leaks()
        @test Array(g) == Array(a) .- Array(m) .* sin.(Array(c))
     end
 
+    @testset "Broadcasting into DArray" begin
+        a .= ones(nrows, ncols)
+        @test all(isone, a)
+        a .= 3 .+ abs2.(@view(zeros(nrows, ncols + 5)[:, 6:end]))
+        @test all(x -> x == 3, a)
+    end
+
     # @testset "lazy wrapped broadcast" begin
     #    l = similar(a)
     #    l[1:10, :] .= view(a, 1:10, : )
