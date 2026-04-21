@@ -236,9 +236,9 @@ DArray(init, d::DArray) = DArray(next_did(), init, size(d), procs(d), d.indices,
 sz_localpart_ref(ref, id) = size(fetch(ref))
 
 Base.similar(d::DArray, T::Type, dims::Dims) = DArray(I->Array{T}(undef, map(length,I)), dims, procs(d))
-Base.similar(d::DArray, T::Type) = similar(d, T, size(d))
+Base.similar(d::DArray, T::Type) = DArray(I->Array{T}(undef, map(length,I)), size(d), procs(d),size(d.indices))
 Base.similar(d::DArray{T}, dims::Dims) where {T} = similar(d, T, dims)
-Base.similar(d::DArray{T}) where {T} = similar(d, T, size(d))
+Base.similar(d::DArray{T}) where {T} = DArray(I->Array{T}(undef, map(length,I)), size(d), procs(d),size(d.indices))
 
 Base.size(d::DArray) = d.dims
 
