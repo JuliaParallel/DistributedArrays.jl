@@ -4,7 +4,7 @@ using Base: Callable
 using Base.Broadcast: BroadcastStyle, Broadcasted
 
 using Distributed: Distributed, RemoteChannel, Future, myid, nworkers, procs, remotecall, remotecall_fetch, remotecall_wait, worker_id_from_socket, workers
-using LinearAlgebra: LinearAlgebra, Adjoint, Diagonal, I, Transpose, adjoint, adjoint!, axpy!, dot, lmul!, mul!, norm, rmul!, transpose, transpose!
+using LinearAlgebra: LinearAlgebra, Adjoint, Diagonal, I, Transpose, adjoint!, axpy!, dot, lmul!, mul!, norm, rmul!, transpose!
 using Random: Random, rand!
 using Serialization: Serialization, AbstractSerializer, deserialize, serialize
 

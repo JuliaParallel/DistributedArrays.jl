@@ -780,6 +780,14 @@ const MergedIndicesOrSub = Union{MergedIndices, ReshapedMergedIndices, SubMerged
 @inline Base.checkbounds_indices(::Type{Bool}, inds::Tuple, I::Tuple{MergedIndicesOrSub,Vararg{Any}}) =
     Base.checkbounds_indices(Bool, inds, (parent(parent(I[1])).indices..., tail(I)...))
 
+# The internal `Base.setindex_shape_check` takes the shape as a tuple
+# instead of as separate arguments from Julia 1.14
+@static if VERSION >= v"1.14.0-"
+    _setindex_shape_check(X, shape::Tuple) = Base.setindex_shape_check(X, shape)
+else
+    _setindex_shape_check(X, shape::Tuple) = Base.setindex_shape_check(X, shape...)
+end
+
 # The tricky thing here is that we want to optimize the accesses into the
 # distributed array, but in doing so, we lose track of which indices in I we
 # should be using.
@@ -798,7 +806,7 @@ const MergedIndicesOrSub = Union{MergedIndices, ReshapedMergedIndices, SubMerged
 function Base.setindex!(a::Array, s::SubDArray,
         I::Union{UnitRange{Int},Colon,Vector{Int},StepRange{Int,Int}}...)
     Inew = Base.to_indices(a, I)
-    Base.setindex_shape_check(s, Base.index_lengths(Inew...)...)
+    _setindex_shape_check(s, Base.index_lengths(Inew...))
     d = parent(s)
     J = Base.to_indices(d, s.indices)
     @sync for (pid, K_c) in zip(d.pids, d.indices)
